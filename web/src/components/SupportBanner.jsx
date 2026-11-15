@@ -48,7 +48,7 @@ export default function SupportBanner({ onOpenSupport }) {
 
       <div className="flex items-center gap-2 ml-auto">
         <a
-          href="https://sociabuzz.com/tfbagas/tribe"
+          href="https://sociabuzz.com/tfbagas/support"
           target="_blank"
           rel="noopener noreferrer"
           className="m3-btn-morph inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-[#E2E4E9] border border-white/[0.09] text-xs font-medium"

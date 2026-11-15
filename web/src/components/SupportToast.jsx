@@ -48,7 +48,7 @@ export default function SupportToast({ visible, filename, onClose }) {
             Maybe Later
           </button>
           <a
-            href="https://sociabuzz.com/tfbagas/tribe"
+            href="https://sociabuzz.com/tfbagas/support"
             target="_blank"
             rel="noopener noreferrer"
             className="m3-btn-primary-morph inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[#6EE7B7] hover:bg-[#86EFAC] text-[#042F1E]"

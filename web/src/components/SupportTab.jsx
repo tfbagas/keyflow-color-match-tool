@@ -151,7 +151,7 @@ export default function SupportTab() {
           </div>
 
           <a
-            href="https://sociabuzz.com/tfbagas/tribe"
+            href="https://sociabuzz.com/tfbagas/support"
             target="_blank"
             rel="noopener noreferrer"
             className="m3-btn-primary-morph inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-xs bg-[#6EE7B7] hover:bg-[#86EFAC] text-[#042F1E] shrink-0"
