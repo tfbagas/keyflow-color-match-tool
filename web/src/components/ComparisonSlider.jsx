@@ -112,10 +112,10 @@ export default function ComparisonSlider({
             </button>
           )}
 
-          {/* Mode Selector Segmented Pill with Shared-Element Liquid Stretch */}
+          {/* Mode Selector Segmented Pill with Shared-Element Liquid Stretch (Zero Nested Backdrop Blur) */}
           <div
             ref={modeContainerRef}
-            className="relative flex items-center gap-0.5 bg-[#0A0A0D]/45 border border-white/[0.09] rounded-xl p-0.5 text-xs backdrop-blur-md"
+            className="relative flex items-center gap-0.5 bg-[#0A0A0D]/55 border border-white/[0.09] rounded-xl p-0.5 text-xs"
           >
             <div
               aria-hidden="true"

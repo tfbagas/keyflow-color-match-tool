@@ -14,9 +14,19 @@ import KeyflowLogo from "./KeyflowLogo";
 
 export const CHANGELOG_HISTORY = [
   {
-    version: "v0.6.4 Beta",
-    subtitle: "Latest: Bouncy Spring & Liquid Morph Motion",
+    version: "v0.6.5 Beta",
+    subtitle: "Latest: Performance Fix & Minimalist Intro",
     isLatest: true,
+    icon: Cpu,
+    items: [
+      "Removed heavy full-screen SVG filters, animated blur passes, and nested backdrop blurs to restore smooth 60fps rendering across mid-range laptops and mobile devices.",
+      "Redesigned the entrance screen into a lightweight, full-bleed minimalist studio header with faster spring transitions.",
+    ],
+  },
+  {
+    version: "v0.6.4 Beta",
+    subtitle: "Bouncy Spring & Liquid Morph Motion",
+    isLatest: false,
     icon: Sparkles,
     items: [
       "Added an interactive cursor-reactive monochrome liquid glass entrance intro with bouncy capsule morphing and a Replay Intro trigger in About.",
@@ -80,7 +90,7 @@ export const CHANGELOG_HISTORY = [
 
 export function ReleaseHistoryAccordion() {
   const [expandedMap, setExpandedMap] = useState({
-    "v0.6.4 Beta": true,
+    "v0.6.5 Beta": true,
   });
 
   const toggleVersion = (ver) => {
@@ -254,11 +264,11 @@ export default function ChangelogModal({ open, onClose, onViewFullHistory }) {
               className="inline-flex items-center gap-1.5 text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] transition-colors cursor-pointer"
             >
               <History className="w-3.5 h-3.5" />
-              <span>View Full Release History (v0.5 - v0.6.4)</span>
+              <span>View Full Release History (v0.5 - v0.6.5)</span>
             </button>
           ) : (
             <span className="text-[11px] font-mono text-[#9CA3AF]">
-              Build v0.6.4-beta • 100% Client-Side
+              Build v0.6.5-beta • 100% Client-Side
             </span>
           )}
 

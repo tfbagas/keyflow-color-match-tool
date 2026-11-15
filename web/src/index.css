@@ -38,130 +38,89 @@
   }
 }
 
-/* True Glassmorphism Workstation Panels (Apple / Material Liquid Glass) */
+/* Lightweight Glassmorphism Workstation Panels (12px Desktop / 6px Mobile, Zero Nested Blur) */
 .m3-panel {
   background: linear-gradient(
     155deg,
     rgba(255, 255, 255, 0.065) 0%,
-    rgba(18, 18, 23, 0.56) 45%,
-    rgba(14, 14, 18, 0.68) 100%
+    rgba(18, 18, 23, 0.64) 45%,
+    rgba(14, 14, 18, 0.76) 100%
   );
-  backdrop-filter: blur(24px) saturate(110%);
-  -webkit-backdrop-filter: blur(24px) saturate(110%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
-    0 12px 32px rgba(0, 0, 0, 0.55);
-  transition: border-color 220ms cubic-bezier(0.2, 0, 0, 1),
-    background 220ms cubic-bezier(0.2, 0, 0, 1),
-    box-shadow 220ms cubic-bezier(0.2, 0, 0, 1);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.2),
+    0 10px 28px rgba(0, 0, 0, 0.5);
+  transition: border-color 180ms var(--ease-liquid-morph),
+    background 180ms var(--ease-liquid-morph),
+    box-shadow 180ms var(--ease-liquid-morph);
+}
+
+@media (max-width: 767px) {
+  .m3-panel {
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
 }
 
 .m3-surface-high {
   background-color: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.09);
-  transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+  transition: background-color 180ms var(--ease-liquid-morph),
+    border-color 180ms var(--ease-liquid-morph);
 }
 
-/* GPU-Accelerated Organic Morphing Monochrome Liquid Blobs (0 Color Cast) */
-@keyframes m3LiquidBlob1 {
+/* 2 Lightweight GPU-Composited Monochrome Radial Gradients (Transform Only, Zero Blur Filter) */
+@keyframes m3LiquidOrb1 {
   0% {
-    border-radius: 42% 58% 70% 30% / 45% 45% 55% 55%;
-    transform: translate3d(-4vw, -2vh, 0) scale(1) rotate(0deg);
-  }
-  50% {
-    border-radius: 68% 32% 40% 60% / 60% 50% 50% 40%;
-    transform: translate3d(28vw, 18vh, 0) scale(1.18, 0.9) rotate(14deg);
+    transform: translate3d(-4vw, -2vh, 0) scale(1);
   }
   100% {
-    border-radius: 50% 50% 34% 66% / 55% 62% 38% 45%;
-    transform: translate3d(52vw, 8vh, 0) scale(0.94, 1.14) rotate(-10deg);
+    transform: translate3d(38vw, 12vh, 0) scale(1.12, 0.94);
   }
 }
 
-@keyframes m3LiquidBlob2 {
+@keyframes m3LiquidOrb2 {
   0% {
-    border-radius: 64% 36% 45% 55% / 52% 60% 40% 48%;
-    transform: translate3d(-2vw, 4vh, 0) scale(1) rotate(0deg);
-  }
-  50% {
-    border-radius: 38% 62% 64% 36% / 44% 38% 62% 56%;
-    transform: translate3d(30vw, -22vh, 0) scale(0.9, 1.16) rotate(-16deg);
+    transform: translate3d(2vw, 4vh, 0) scale(1);
   }
   100% {
-    border-radius: 58% 42% 38% 62% / 62% 45% 55% 38%;
-    transform: translate3d(54vw, -36vh, 0) scale(1.15, 0.92) rotate(12deg);
+    transform: translate3d(-34vw, -16vh, 0) scale(0.94, 1.1);
   }
 }
 
-@keyframes m3LiquidBlob3 {
-  0% {
-    border-radius: 45% 55% 62% 38% / 50% 42% 58% 50%;
-    transform: translate3d(-16vw, -8vh, 0) scale(0.95) rotate(0deg);
-  }
-  50% {
-    border-radius: 66% 34% 42% 58% / 58% 64% 36% 42%;
-    transform: translate3d(14vw, 14vh, 0) scale(1.22, 0.88) rotate(22deg);
-  }
-  100% {
-    border-radius: 40% 60% 55% 45% / 42% 54% 46% 58%;
-    transform: translate3d(26vw, -12vh, 0) scale(1.06, 1.16) rotate(-18deg);
-  }
-}
-
-/* Blob 1: Primary Flowing Liquid (White) — 560px, blur 34px */
 .m3-liquid-orb-1 {
-  width: 560px;
-  height: 560px;
-  border-radius: 42% 58% 70% 30% / 45% 45% 55% 55%;
-  background: radial-gradient(
-    circle at 35% 35%,
-    rgba(255, 255, 255, 0.34) 0%,
-    rgba(235, 238, 245, 0.14) 45%,
-    transparent 72%
-  );
-  filter: blur(34px);
-  will-change: transform, border-radius;
-  animation: m3LiquidBlob1 19s ease-in-out infinite alternate;
-}
-
-/* Blob 2: Secondary Silver Wave — 520px, blur 38px */
-.m3-liquid-orb-2 {
-  width: 520px;
-  height: 520px;
-  border-radius: 64% 36% 45% 55% / 52% 60% 40% 48%;
-  background: radial-gradient(
-    circle at 60% 40%,
-    rgba(245, 247, 250, 0.28) 0%,
-    rgba(190, 195, 205, 0.10) 50%,
-    transparent 74%
-  );
-  filter: blur(38px);
-  will-change: transform, border-radius;
-  animation: m3LiquidBlob2 23s ease-in-out infinite alternate;
-}
-
-/* Blob 3: Bright Core Caustic — 340px, blur 26px */
-.m3-liquid-orb-3 {
-  width: 340px;
-  height: 340px;
-  border-radius: 45% 55% 62% 38% / 50% 42% 58% 50%;
+  width: 680px;
+  height: 680px;
   background: radial-gradient(
     circle,
-    rgba(255, 255, 255, 0.30) 0%,
-    rgba(255, 255, 255, 0.08) 40%,
-    transparent 68%
+    rgba(255, 255, 255, 0.15) 0%,
+    rgba(235, 238, 245, 0.06) 42%,
+    transparent 70%
   );
-  filter: blur(26px);
-  will-change: transform, border-radius;
-  animation: m3LiquidBlob3 15s ease-in-out infinite alternate;
+  will-change: transform;
+  animation: m3LiquidOrb1 22s ease-in-out infinite alternate;
 }
 
-/* Smooth Material You Expressive & Liquid Morph Accordion Grid */
+.m3-liquid-orb-2 {
+  width: 620px;
+  height: 620px;
+  background: radial-gradient(
+    circle,
+    rgba(240, 242, 246, 0.12) 0%,
+    rgba(195, 200, 208, 0.045) 45%,
+    transparent 70%
+  );
+  will-change: transform;
+  animation: m3LiquidOrb2 26s ease-in-out infinite alternate;
+}
+
+/* Smooth Material You Expressive Accordion Grid (Transform + Opacity + Grid Rows) */
 .m3-collapse-grid {
   display: grid;
-  transition: grid-template-rows 320ms var(--ease-liquid-morph),
-    opacity 240ms var(--ease-liquid-morph),
-    margin-top 320ms var(--ease-liquid-morph);
+  transition: grid-template-rows 240ms var(--ease-liquid-morph),
+    opacity 200ms var(--ease-liquid-morph),
+    margin-top 240ms var(--ease-liquid-morph);
 }
 
 .m3-collapse-grid[data-expanded="true"] {
@@ -179,330 +138,133 @@
   overflow: hidden;
   min-height: 0;
   transform-origin: top center;
-  transition: transform 320ms var(--ease-liquid-morph),
-    opacity 240ms var(--ease-liquid-morph);
+  transition: transform 240ms var(--ease-liquid-morph),
+    opacity 200ms var(--ease-liquid-morph);
 }
 
 .m3-collapse-grid[data-expanded="true"] > .m3-collapse-inner {
-  transform: translateY(0) scale(1);
+  transform: translate3d(0, 0, 0) scale(1);
 }
 
 .m3-collapse-grid[data-expanded="false"] > .m3-collapse-inner {
-  transform: translateY(-4px) scale(0.99);
+  transform: translate3d(0, -4px, 0) scale(0.99);
 }
 
-/* Shared-Element Liquid Stretch Floating Pill Indicator */
+/* Fast Shared-Element Floating Pill Indicator (220ms Spring) */
 .m3-pill-indicator {
-  transition: left 360ms var(--ease-m3-spring),
-    width 360ms var(--ease-m3-spring),
-    transform 360ms var(--ease-m3-spring);
+  transition: left 220ms var(--ease-m3-spring),
+    width 220ms var(--ease-m3-spring);
   will-change: left, width;
 }
 
-/* Shape-Morphing Expressive Buttons */
+/* Fast Compositor-Only Tactile Spring Buttons (180ms - 220ms, No border-radius or blur animations) */
 .m3-btn-morph {
-  transition: transform 280ms var(--ease-m3-spring),
-    border-radius 260ms var(--ease-liquid-morph),
-    background-color 200ms var(--ease-liquid-morph),
-    border-color 200ms var(--ease-liquid-morph),
+  transition: transform 200ms var(--ease-m3-spring),
+    background-color 180ms var(--ease-liquid-morph),
+    border-color 180ms var(--ease-liquid-morph),
     color 180ms var(--ease-liquid-morph),
-    box-shadow 260ms var(--ease-liquid-morph);
+    box-shadow 200ms var(--ease-liquid-morph);
 }
 
 .m3-btn-morph:not(:disabled):hover {
-  border-radius: 0.75rem;
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.2),
-    0 6px 18px rgba(0, 0, 0, 0.36);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.18),
+    0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .m3-btn-morph:not(:disabled):active {
   transform: scale(0.965);
-  transition-duration: 90ms;
+  transition-duration: 80ms;
   transition-timing-function: var(--ease-tactile-press);
 }
 
 .m3-btn-primary-morph {
-  transition: transform 300ms var(--ease-m3-spring),
-    border-radius 280ms var(--ease-m3-spring),
-    background-color 200ms var(--ease-liquid-morph),
-    box-shadow 280ms var(--ease-liquid-morph);
+  transition: transform 200ms var(--ease-m3-spring),
+    background-color 180ms var(--ease-liquid-morph),
+    box-shadow 200ms var(--ease-liquid-morph);
 }
 
 .m3-btn-primary-morph:not(:disabled):hover {
-  border-radius: 1rem;
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.45),
-    0 8px 24px rgba(110, 231, 183, 0.22);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.4),
+    0 6px 18px rgba(110, 231, 183, 0.2);
 }
 
 .m3-btn-primary-morph:not(:disabled):active {
   transform: scale(0.965);
-  transition-duration: 90ms;
+  transition-duration: 80ms;
   transition-timing-function: var(--ease-tactile-press);
 }
 
-/* Smooth Tab, Dropdown & Modal Liquid Morph Animations */
+/* GPU-Composited View, Modal & Workstation Cascade Animations (Transform + Opacity Only, 0 Blur) */
 @keyframes m3FadeSlideIn {
   from {
     opacity: 0;
-    transform: scale(0.985) translateY(6px);
+    transform: translate3d(0, 6px, 0) scale(0.985);
   }
   to {
     opacity: 1;
-    transform: scale(1) translateY(0);
+    transform: translate3d(0, 0, 0) scale(1);
   }
 }
 
 @keyframes m3ModalIn {
   from {
     opacity: 0;
-    transform: scale(0.985) translateY(6px);
+    transform: translate3d(0, 6px, 0) scale(0.985);
   }
   to {
     opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-}
-
-@keyframes m3DropdownMorphIn {
-  from {
-    opacity: 0;
-    transform: translateY(-4px) scale(0.99);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translate3d(0, 0, 0) scale(1);
   }
 }
 
 @keyframes m3ToastIn {
   from {
     opacity: 0;
-    transform: translateY(14px) scale(0.97);
+    transform: translate3d(0, 12px, 0) scale(0.97);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translate3d(0, 0, 0) scale(1);
   }
 }
 
-.m3-tab-enter {
-  animation: m3FadeSlideIn 260ms var(--ease-liquid-morph) forwards;
-}
-
-.m3-modal-enter {
-  animation: m3ModalIn 260ms var(--ease-liquid-morph) forwards;
-}
-
-.m3-dropdown-enter {
-  transform-origin: top center;
-  animation: m3DropdownMorphIn 220ms var(--ease-liquid-morph) forwards;
-}
-
-.m3-toast-enter {
-  animation: m3ToastIn 280ms var(--ease-m3-spring) forwards;
-}
-
-/* v0.6.4 Beta: Apple-Style 4.8s Spatial Liquid Glass Intro & Portal Exit */
-@keyframes m3DropletCoalesce1 {
-  0% {
-    opacity: 0;
-    transform: translate3d(-38vw, -28vh, 0) scale(0.35) rotate(-25deg);
-    border-radius: 62% 38% 70% 30% / 45% 55% 45% 55%;
-  }
-  25% {
-    opacity: 0.9;
-  }
-  75% {
-    opacity: 0.95;
-    transform: translate3d(-2vw, -1vh, 0) scale(1.08) rotate(8deg);
-    border-radius: 48% 52% 55% 45% / 52% 48% 52% 48%;
-  }
-  100% {
-    opacity: 0.7;
-    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
-    border-radius: 50%;
-  }
-}
-
-@keyframes m3DropletCoalesce2 {
-  0% {
-    opacity: 0;
-    transform: translate3d(40vw, 26vh, 0) scale(0.3) rotate(30deg);
-    border-radius: 40% 60% 35% 65% / 58% 42% 58% 42%;
-  }
-  30% {
-    opacity: 0.85;
-  }
-  78% {
-    opacity: 0.9;
-    transform: translate3d(2vw, 1.5vh, 0) scale(1.06) rotate(-6deg);
-    border-radius: 54% 46% 48% 52% / 46% 54% 46% 54%;
-  }
-  100% {
-    opacity: 0.65;
-    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
-    border-radius: 50%;
-  }
-}
-
-@keyframes m3DropletCoalesce3 {
-  0% {
-    opacity: 0;
-    transform: translate3d(18vw, -34vh, 0) scale(0.28) rotate(15deg);
-    border-radius: 70% 30% 50% 50% / 35% 65% 35% 65%;
-  }
-  35% {
-    opacity: 0.85;
-  }
-  80% {
-    opacity: 0.9;
-    transform: translate3d(0.5vw, -1.5vh, 0) scale(1.1) rotate(-4deg);
-  }
-  100% {
-    opacity: 0.6;
-    transform: translate3d(0, 0, 0) scale(0.95) rotate(0deg);
-    border-radius: 50%;
-  }
-}
-
-@keyframes m3MonolithCoalesceIn {
-  0% {
-    opacity: 0;
-    transform: scale(0.52) translateY(22px);
-    border-radius: 999px;
-    filter: blur(20px);
-  }
-  42% {
-    opacity: 1;
-    transform: scale(0.86) translateY(6px);
-    border-radius: 68px;
-    filter: blur(6px);
-  }
-  78% {
-    transform: scale(1.025) translateY(-2px);
-    border-radius: 34px;
-    filter: blur(0px);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-    border-radius: 30px;
-    filter: blur(0px);
-  }
-}
-
-@keyframes m3PrismEmblemReveal {
-  0% {
-    opacity: 0;
-    transform: scale(0.62) translateY(10px);
-    filter: blur(14px);
-  }
-  65% {
-    opacity: 1;
-    transform: scale(1.06) translateY(-1px);
-    filter: blur(0px);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-    filter: blur(0px);
-  }
-}
-
-@keyframes m3SpecularLightSweep {
-  0% {
-    transform: translate3d(-160%, -20%, 0) rotate(25deg);
-    opacity: 0;
-  }
-  20% {
-    opacity: 1;
-  }
-  80% {
-    opacity: 0.9;
-  }
-  100% {
-    transform: translate3d(220%, 20%, 0) rotate(25deg);
-    opacity: 0;
-  }
-}
-
-@keyframes m3MaskedRiseIn {
-  0% {
-    opacity: 0;
-    transform: translate3d(0, 110%, 0);
-  }
-  100% {
-    opacity: 1;
-    transform: translate3d(0, 0%, 0);
-  }
-}
-
-@keyframes m3ButtonShimmer {
-  0% {
-    transform: translate3d(-140%, 0, 0) skewX(-20deg);
-  }
-  100% {
-    transform: translate3d(240%, 0, 0) skewX(-20deg);
-  }
-}
-
-@keyframes m3WorkstationCascadeIn {
-  0% {
-    opacity: 0;
-    transform: translateY(14px) scale(0.975);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-/* Seamless Liquid Shape-Morph & Bouncy Spring Cascade (Intro -> Workstation) */
 @keyframes liquidTopBarMorphIn {
   0% {
     opacity: 0;
-    transform: translate3d(0, -22px, 0) scaleX(0.92);
-    filter: blur(10px);
-  }
-  72% {
-    opacity: 1;
-    transform: translate3d(0, 2px, 0) scaleX(1.004);
-    filter: blur(0px);
+    transform: translate3d(0, -16px, 0) scale(0.98);
   }
   100% {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scaleX(1);
-    filter: blur(0px);
+    transform: translate3d(0, 0, 0) scale(1);
   }
 }
 
 @keyframes liquidPanelMorphIn {
   0% {
     opacity: 0;
-    transform: translate3d(0, 32px, 0) scale(0.91);
-    border-radius: 36px;
-    filter: blur(14px);
-  }
-  72% {
-    opacity: 1;
-    transform: translate3d(0, -3px, 0) scale(1.012);
-    border-radius: 14px;
-    filter: blur(0px);
-    box-shadow: inset 0 1.5px 0 0 rgba(255, 255, 255, 0.45),
-      0 16px 38px rgba(0, 0, 0, 0.6);
+    transform: translate3d(0, 18px, 0) scale(0.96);
   }
   100% {
     opacity: 1;
     transform: translate3d(0, 0, 0) scale(1);
-    border-radius: 16px;
-    filter: blur(0px);
   }
 }
 
 @keyframes liquidSliderRowMorphIn {
   0% {
     opacity: 0;
-    transform: translate3d(0, 10px, 0) scale(0.98);
+    transform: translate3d(0, 6px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes m3IntroElementRise {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0) scale(0.97);
   }
   100% {
     opacity: 1;
@@ -510,84 +272,41 @@
   }
 }
 
-.m3-droplet-1 {
-  animation: m3DropletCoalesce1 1500ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+.m3-tab-enter {
+  animation: m3FadeSlideIn 220ms var(--ease-liquid-morph) forwards;
 }
 
-.m3-droplet-2 {
-  animation: m3DropletCoalesce2 1500ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+.m3-modal-enter {
+  animation: m3ModalIn 220ms var(--ease-liquid-morph) forwards;
 }
 
-.m3-droplet-3 {
-  animation: m3DropletCoalesce3 1500ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-.m3-splash-capsule-enter {
-  border-radius: 30px;
-  animation: m3MonolithCoalesceIn 1450ms var(--ease-bouncy-spring) forwards;
-}
-
-.m3-splash-capsule-compress {
-  border-radius: 32px;
-  transform: scale(0.95);
-  transition: transform 110ms var(--ease-tactile-press),
-    border-radius 110ms var(--ease-tactile-press);
-}
-
-.m3-splash-capsule-exit {
-  border-radius: 42px;
-  opacity: 0;
-  transform: scale(1.25);
-  filter: blur(24px);
-  transition: transform 590ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 540ms cubic-bezier(0.22, 1, 0.36, 1),
-    filter 540ms cubic-bezier(0.22, 1, 0.36, 1),
-    border-radius 590ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.m3-prism-reveal {
-  opacity: 0;
-  animation: m3PrismEmblemReveal 1150ms var(--ease-bouncy-spring) 1280ms forwards;
-}
-
-.m3-specular-sweep {
-  opacity: 0;
-  animation: m3SpecularLightSweep 1650ms cubic-bezier(0.22, 1, 0.36, 1) 1420ms forwards;
-}
-
-.m3-masked-reveal {
-  opacity: 0;
-  animation: m3MaskedRiseIn 780ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-.m3-cta-shimmer {
-  animation: m3ButtonShimmer 2.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
-}
-
-.m3-cascade-item {
-  opacity: 0;
-  animation: m3WorkstationCascadeIn 480ms var(--ease-bouncy-spring) forwards;
-  animation-delay: calc(var(--cascade-index, 0) * 45ms);
+.m3-toast-enter {
+  animation: m3ToastIn 240ms var(--ease-m3-spring) forwards;
 }
 
 .m3-morph-topbar {
-  animation: liquidTopBarMorphIn 620ms cubic-bezier(0.22, 1.28, 0.36, 1) both;
+  animation: liquidTopBarMorphIn 340ms var(--ease-m3-spring) both;
   animation-delay: 0ms;
-  will-change: transform, opacity, filter;
+  will-change: transform, opacity;
 }
 
 .m3-morph-panel {
-  animation: liquidPanelMorphIn 620ms cubic-bezier(0.22, 1.28, 0.36, 1) both;
+  animation: liquidPanelMorphIn 380ms var(--ease-m3-spring) both;
   animation-delay: var(--morph-delay, 0ms);
-  will-change: transform, opacity, border-radius, filter;
+  will-change: transform, opacity;
 }
 
 .m3-morph-slider-row {
-  animation: liquidSliderRowMorphIn 420ms cubic-bezier(0.22, 1.28, 0.36, 1) both;
-  animation-delay: var(--row-delay, 160ms);
+  animation: liquidSliderRowMorphIn 320ms var(--ease-liquid-morph) both;
+  animation-delay: var(--row-delay, 120ms);
 }
 
-/* Respect System Reduced-Motion Preference (Disable Overshoot & Infinite Motion) */
+.m3-intro-item {
+  opacity: 0;
+  animation: m3IntroElementRise 420ms var(--ease-m3-spring) forwards;
+}
+
+/* Respect System Reduced-Motion Preference */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --ease-m3-spring: cubic-bezier(0.2, 0, 0, 1);
@@ -597,8 +316,7 @@
   }
 
   .m3-liquid-orb-1,
-  .m3-liquid-orb-2,
-  .m3-liquid-orb-3 {
+  .m3-liquid-orb-2 {
     animation: none !important;
   }
 
@@ -607,7 +325,7 @@
   .m3-btn-primary-morph,
   .m3-collapse-grid,
   .m3-collapse-inner {
-    transition-duration: 120ms !important;
+    transition-duration: 100ms !important;
   }
 
   .m3-btn-morph:not(:disabled):active,
@@ -617,22 +335,14 @@
 
   .m3-tab-enter,
   .m3-modal-enter,
-  .m3-dropdown-enter,
   .m3-toast-enter,
-  .m3-splash-capsule-enter,
-  .m3-prism-reveal,
-  .m3-masked-reveal,
-  .m3-droplet-1,
-  .m3-droplet-2,
-  .m3-droplet-3,
-  .m3-cascade-item,
   .m3-morph-topbar,
   .m3-morph-panel,
-  .m3-morph-slider-row {
+  .m3-morph-slider-row,
+  .m3-intro-item {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
-    filter: none !important;
   }
 }
 
@@ -643,7 +353,7 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #09090B;
+  background: #070709;
 }
 
 ::-webkit-scrollbar-thumb {

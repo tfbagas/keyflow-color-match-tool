@@ -63,8 +63,8 @@ const PARAM_CONTROLS = [
 ];
 
 const CALIBRATION_STORAGE_KEY = "kf_export_calibration_v1";
-const SEEN_UPDATE_STORAGE_KEY = "kf_seen_update_v064";
-const SPLASH_SESSION_KEY = "kf_splash_seen_v064";
+const SEEN_UPDATE_STORAGE_KEY = "kf_seen_update_v065";
+const SPLASH_SESSION_KEY = "kf_splash_seen_v065";
 const DEFAULT_CALIBRATION = {
   toneScale: 1.0,
   wbScale: 1.0,
@@ -353,7 +353,7 @@ export default function App() {
     setWorkspacePhase("morphing-in");
     settleTimerRef.current = setTimeout(() => {
       setWorkspacePhase("settled");
-    }, 1020);
+    }, 720);
   }, []);
 
   const handleSplashComplete = useCallback(() => {
@@ -900,7 +900,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col relative bg-transparent text-[#E2E4E9]">
-      {/* v0.6.4 Beta: Interactive Bouncy & Liquid Morph Entrance Intro */}
+      {/* v0.6.5 Beta: Minimalist Pro Studio Intro */}
       {showSplash && (
         <SplashIntro
           onStartExit={handleStartExit}
@@ -908,31 +908,30 @@ export default function App() {
         />
       )}
 
-      {/* High-Contrast Organic Monochrome Liquid Glass Background Layer (z-0, above #070709 base, behind z-10 content) */}
+      {/* Lightweight GPU-Composited Monochrome Ambient Layer (2 radial-gradient orbs, transform only) */}
       <div
         aria-hidden="true"
         className="fixed inset-0 z-0 pointer-events-none overflow-hidden bg-[#070709]"
       >
         <div className="m3-liquid-orb-1 absolute -top-20 -left-16" />
         <div className="m3-liquid-orb-2 absolute -bottom-24 left-8" />
-        <div className="m3-liquid-orb-3 absolute top-1/3 left-1/3" />
       </div>
 
       {/* Foreground Application Content Wrapper (relative z-10 bg-transparent, synchronized with SplashIntro exit) */}
       <div
         className={`relative z-10 min-h-screen flex flex-col bg-transparent ${
           workspacePhase === "hidden"
-            ? "opacity-0 pointer-events-none scale-[0.94]"
+            ? "opacity-0 pointer-events-none scale-[0.97]"
             : "opacity-100 scale-100"
         }`}
       >
-      {/* 1. Compact 48px Top App Bar (delay: 0ms liquid morph down) */}
+      {/* 1. Compact 48px Top App Bar (delay: 0ms fast spring down) */}
       <header
-        className={`sticky top-0 z-40 min-h-12 px-3 sm:px-5 py-1.5 bg-[#0E0E12]/65 backdrop-blur-2xl border-b border-white/[0.12] flex flex-wrap items-center justify-between gap-2 ${
+        className={`sticky top-0 z-40 min-h-12 px-3 sm:px-5 py-1.5 bg-[#0E0E12]/80 backdrop-blur-md border-b border-white/[0.12] flex flex-wrap items-center justify-between gap-2 ${
           workspacePhase === "morphing-in" ? "m3-morph-topbar" : ""
         }`}
       >
-        {/* Left: Achromatic Keyflow Logo + Brand Title + Interactive v0.6.4 Beta Changelog Button */}
+        {/* Left: Achromatic Keyflow Logo + Brand Title + Interactive v0.6.5 Beta Changelog Button */}
         <div className="flex items-center gap-2.5">
           <KeyflowLogo size={28} />
           <div className="flex items-center gap-2">
@@ -942,13 +941,13 @@ export default function App() {
             <button
               type="button"
               onClick={handleOpenChangelog}
-              title="View What's New in v0.6.4 Beta"
+              title="View What's New in v0.6.5 Beta"
               className="m3-btn-morph inline-flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.04] hover:bg-white/[0.09] text-[#E2E4E9] border border-white/[0.09] hover:border-white/25 cursor-pointer"
             >
               {hasUnreadUpdate && (
                 <span className="w-1.5 h-1.5 rounded-full bg-[#6EE7B7] animate-pulse" />
               )}
-              <span>v0.6.4 Beta</span>
+              <span>v0.6.5 Beta</span>
             </button>
           </div>
         </div>
@@ -958,7 +957,7 @@ export default function App() {
           <nav
             ref={navContainerRef}
             aria-label="Primary Navigation"
-            className="relative flex items-center gap-0.5 bg-[#0A0A0D]/45 border border-white/[0.09] rounded-xl p-0.5 backdrop-blur-md"
+            className="relative flex items-center gap-0.5 bg-[#0A0A0D]/55 border border-white/[0.09] rounded-xl p-0.5"
           >
             <div
               aria-hidden="true"
@@ -1587,10 +1586,10 @@ export default function App() {
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-lg font-bold font-display text-[#E2E4E9]">
-                        Color Match for Keyflow V.0.6.4 Beta
+                        Color Match for Keyflow V.0.6.5 Beta
                       </h2>
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.05] text-[#6EE7B7] border border-white/[0.09]">
-                        v0.6.4 Beta
+                        v0.6.5 Beta
                       </span>
                     </div>
                     <p className="text-xs text-[#9CA3AF] mt-0.5">
@@ -1637,7 +1636,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Permanent Release History / Changelog Accordion (v0.5.0 Beta -> v0.6.4 Beta) */}
+            {/* Permanent Release History / Changelog Accordion (v0.5.0 Beta -> v0.6.5 Beta) */}
             <div className="m3-panel rounded-2xl p-5 sm:p-6 space-y-3.5">
               <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
                 <div className="flex items-center gap-2">
@@ -1647,7 +1646,7 @@ export default function App() {
                   </h3>
                 </div>
                 <span className="text-[11px] font-mono text-[#9CA3AF]">
-                  v0.5.0 - v0.6.4 Beta
+                  v0.5.0 - v0.6.5 Beta
                 </span>
               </div>
 
@@ -1664,7 +1663,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Interactive "What's New in v0.6.4 Beta" Modal Dialog */}
+      {/* Interactive "What's New in v0.6.5 Beta" Modal Dialog */}
       <ChangelogModal
         open={isChangelogOpen}
         onClose={() => setIsChangelogOpen(false)}
