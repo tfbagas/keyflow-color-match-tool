@@ -159,7 +159,7 @@ export default function ImageDropCard({
       {/* Metadata footer */}
       {imageData && (
         <div className="text-[10px] text-[#91A69A] truncate px-1">
-          {imageData.name} • {imageData.width}×{imageData.height} px • {imageData.format} • {imageData.sizeMb} MB
+          {imageData.name} • <span className="font-mono">{imageData.width}×{imageData.height} px</span> • {imageData.format} • <span className="font-mono">{imageData.sizeMb} MB</span>
         </div>
       )}
     </div>

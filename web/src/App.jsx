@@ -253,8 +253,8 @@ export default function App() {
             className="w-8 h-8 md:w-14 md:h-14 object-contain drop-shadow-[0_0_12px_rgba(0,233,135,0.3)]"
           />
           <div className="flex flex-col md:hidden">
-            <span className="text-xs font-bold text-white leading-tight">Color Match</span>
-            <span className="text-[10px] text-[#00E987] font-semibold">for Keyflow</span>
+            <span className="text-xs font-bold text-white leading-tight font-display">Color Match</span>
+            <span className="text-[10px] text-[#00E987] font-semibold font-display">for Keyflow</span>
           </div>
         </div>
 
@@ -299,10 +299,10 @@ export default function App() {
 
         {/* Desktop Sidebar Watermark */}
         <div className="hidden md:flex flex-col items-center text-center mt-auto pt-6 border-t border-[#20352B]/40 w-full">
-          <span className="text-[9px] font-bold text-[#00E987]/50 tracking-wider">
+          <span className="text-[9px] font-bold text-[#00E987]/50 tracking-wider font-display">
             Color Match for Keyflow
           </span>
-          <span className="text-[8px] font-bold text-[#00E987]/40 tracking-wider">
+          <span className="text-[8px] font-bold text-[#00E987]/40 tracking-wider font-mono">
             V.0.5 Beta
           </span>
         </div>
@@ -316,10 +316,10 @@ export default function App() {
         <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+              <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight font-display">
                 Color Match Tool
               </h1>
-              <span className="text-xl sm:text-2xl font-bold text-[#00E987] tracking-tight">
+              <span className="text-xl sm:text-2xl font-bold text-[#00E987] tracking-tight font-display">
                 for Keyflow
               </span>
             </div>
@@ -341,7 +341,7 @@ export default function App() {
             </div>
 
             {/* Version Badge */}
-            <div className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#0E1C16]/80 text-[#91A69A] border border-[#00E987]/20">
+            <div className="px-2.5 py-1 rounded-full text-[11px] font-bold font-mono bg-[#0E1C16]/80 text-[#91A69A] border border-[#00E987]/20">
               v0.5 Beta
             </div>
           </div>
@@ -483,7 +483,7 @@ export default function App() {
         {activeTab === "settings" && (
           <div className="flex flex-col gap-4 max-w-2xl">
             <div className="liquid-glass rounded-2xl p-6 flex flex-col gap-4">
-              <h2 className="text-base font-bold text-white">Default Export Preferences</h2>
+              <h2 className="text-base font-bold text-white font-display">Default Export Preferences</h2>
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-bold text-[#E8F2ED]">
@@ -505,7 +505,7 @@ export default function App() {
                 <span className="font-bold text-[#00E987]">Multi-Plugin Co-existence Active</span>
                 <span>
                   Every exported look automatically generates an isolated package ID (e.g.{" "}
-                  <code className="text-[#00E987]">com.keyflow.matchgrade.&lt;slug&gt;</code>) to prevent
+                  <code className="text-[#00E987] font-mono">com.keyflow.matchgrade.&lt;slug&gt;</code>) to prevent
                   overwriting your existing installed plugins in Keyflow.
                 </span>
               </div>
@@ -522,7 +522,7 @@ export default function App() {
               <div className="flex items-center gap-4">
                 <img src="/keyflow_logo.png" alt="Keyflow" className="w-14 h-14 object-contain" />
                 <div className="flex flex-col">
-                  <h2 className="text-lg font-bold text-white">Color Match Tool for Keyflow</h2>
+                  <h2 className="text-lg font-bold text-white font-display">Color Match Tool for Keyflow</h2>
                   <span className="text-xs text-[#91A69A]">
                     Web Client-Side Edition (PWA Ready)
                   </span>

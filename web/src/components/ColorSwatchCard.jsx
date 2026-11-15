@@ -71,7 +71,7 @@ export default function ColorSwatchCard({
       </div>
 
       {/* RGB Readout */}
-      <span className="text-[9px] text-[#91A69A]">
+      <span className="text-[9px] text-[#91A69A] font-mono">
         {rInt}, {gInt}, {bInt}
       </span>
     </div>
