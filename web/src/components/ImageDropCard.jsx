@@ -1,5 +1,12 @@
 import React, { useRef, useState } from "react";
-import { Upload, RefreshCw, Trash2, Sparkles, Image as ImageIcon } from "lucide-react";
+import {
+  Upload,
+  RefreshCw,
+  Trash2,
+  Sparkles,
+  Image as ImageIcon,
+  ChevronDown,
+} from "lucide-react";
 
 export default function ImageDropCard({
   title,
@@ -8,9 +15,11 @@ export default function ImageDropCard({
   onClearImage,
   onTrySample,
   isAnalyzing = false,
+  defaultExpanded = true,
 }) {
   const inputRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   const handleFile = (file) => {
     if (!file || !file.type.startsWith("image/")) return;
@@ -25,142 +34,208 @@ export default function ImageDropCard({
   };
 
   return (
-    <div className="m3-panel rounded-2xl p-3.5 transition-all">
-      {/* Header Row: Technical Micro-Header */}
-      <div className="flex items-center justify-between mb-2.5">
+    <div className="m3-panel rounded-2xl p-3.5">
+      {/* Hidden File Input (Always Mounted for Quick Replace even when collapsed) */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          handleFile(e.target.files?.[0]);
+          e.target.value = "";
+        }}
+      />
+
+      {/* Header Row: Technical Micro-Header + Collapse Toggle */}
+      <div
+        onClick={() => setIsExpanded((prev) => !prev)}
+        className="flex items-center justify-between cursor-pointer select-none group"
+      >
         <div className="flex items-center gap-2">
-          <ImageIcon className="w-3.5 h-3.5 text-[#9CA3AF]" />
-          <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF]">
+          <ImageIcon className="w-3.5 h-3.5 text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors" />
+          <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors">
             {title}
           </h3>
         </div>
 
-        <span
-          className={`text-[11px] font-mono px-2 py-0.5 rounded-md border ${
-            isAnalyzing
-              ? "bg-[#1E1E24] text-[#E2E4E9] border-white/15 animate-pulse"
-              : imageInfo
-              ? "bg-[#1E1E24] text-[#E2E4E9] border-white/[0.08]"
-              : "bg-transparent text-[#9CA3AF]/60 border-white/[0.05]"
-          }`}
-        >
-          {isAnalyzing ? "ANALYZING..." : imageInfo ? "LOADED" : "EMPTY"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className={`text-[11px] font-mono px-2 py-0.5 rounded-md border ${
+              isAnalyzing
+                ? "bg-[#1E1E24] text-[#E2E4E9] border-white/15 animate-pulse"
+                : imageInfo
+                ? "bg-[#1E1E24] text-[#E2E4E9] border-white/[0.08]"
+                : "bg-transparent text-[#9CA3AF]/60 border-white/[0.05]"
+            }`}
+          >
+            {isAnalyzing ? "ANALYZING..." : imageInfo ? "LOADED" : "EMPTY"}
+          </span>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsExpanded((prev) => !prev);
+            }}
+            aria-expanded={isExpanded}
+            aria-label={`Toggle ${title} panel`}
+            className="p-1 rounded-lg bg-[#1E1E24]/70 hover:bg-[#1E1E24] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.06] transition-all cursor-pointer"
+          >
+            <ChevronDown
+              className={`w-3.5 h-3.5 transition-transform duration-300 ${
+                isExpanded ? "rotate-180" : "rotate-0"
+              }`}
+            />
+          </button>
+        </div>
       </div>
 
-      {/* Body Area */}
-      <div className="flex flex-col sm:flex-row gap-2.5 items-stretch">
-        {/* Dropzone / Thumbnail */}
-        <div
-          onClick={() => inputRef.current?.click()}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setIsDragging(true);
-          }}
-          onDragLeave={() => setIsDragging(false)}
-          onDrop={handleDrop}
-          className={`relative flex-1 min-h-[148px] sm:min-h-[164px] rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center overflow-hidden bg-[#0E0E11] ${
-            isDragging
-              ? "border-[#E2E4E9]/50 bg-[#1E1E24]/60"
-              : imageInfo
-              ? "border-white/[0.08] hover:border-white/20"
-              : "border-dashed border-white/[0.12] hover:border-white/25 hover:bg-[#1E1E24]/30"
-          }`}
-        >
-          {imageInfo ? (
+      {/* Collapsed 1-Line Summary Bar when Image is Loaded */}
+      {!isExpanded && imageInfo && (
+        <div className="mt-2.5 pt-2.5 border-t border-white/[0.06] flex items-center justify-between gap-2.5 m3-tab-enter">
+          <div className="flex items-center gap-2.5 min-w-0">
             <img
               src={imageInfo.dataUrl}
-              alt={title}
-              className="w-full h-[164px] object-contain p-1.5 select-none"
+              alt={imageInfo.name}
+              className="w-8 h-8 rounded-md object-cover bg-[#0E0E11] border border-white/10 shrink-0"
             />
-          ) : (
-            <div className="flex flex-col items-center text-center p-3">
-              <div className="w-9 h-9 rounded-lg bg-[#1E1E24] border border-white/[0.08] flex items-center justify-center mb-2 text-[#E2E4E9]">
-                <Upload className="w-4 h-4" />
+            <div className="min-w-0">
+              <div className="text-xs font-medium text-[#E2E4E9] truncate">
+                {imageInfo.name}
               </div>
-              <p className="text-xs font-medium text-[#E2E4E9]">
-                Drop image, click to browse, or press <span className="font-mono text-[11px] bg-[#1E1E24] px-1.5 py-0.5 rounded border border-white/[0.08]">Ctrl+V</span>
-              </p>
-              <div className="flex items-center gap-2 mt-2.5">
-                <span className="text-[11px] text-[#9CA3AF]/70">JPG, PNG, WEBP</span>
-                {onTrySample && (
-                  <>
-                    <span className="text-white/15">•</span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onTrySample();
-                      }}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#1E1E24] hover:bg-white/15 text-[#E2E4E9] border border-white/[0.1] text-[11px] font-medium transition-colors cursor-pointer"
-                    >
-                      <Sparkles className="w-3 h-3 text-[#9CA3AF]" />
-                      Try Sample
-                    </button>
-                  </>
-                )}
+              <div className="text-[10px] font-mono text-[#9CA3AF] truncate">
+                {imageInfo.width}×{imageInfo.height} px • {imageInfo.ext} • {imageInfo.sizeMB} MB
               </div>
             </div>
-          )}
+          </div>
 
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              handleFile(e.target.files?.[0]);
-              e.target.value = "";
-            }}
-          />
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex sm:flex-col gap-2 sm:w-24 shrink-0">
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-[#1E1E24] hover:bg-white/10 border border-white/[0.08] text-xs font-medium text-[#E2E4E9] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#1E1E24] hover:bg-white/10 border border-white/[0.08] text-xs font-medium text-[#E2E4E9] transition-colors shrink-0 cursor-pointer"
           >
-            <RefreshCw className="w-3.5 h-3.5 text-[#9CA3AF]" />
-            <span>{imageInfo ? "Replace" : "Browse"}</span>
+            <RefreshCw className="w-3 h-3 text-[#9CA3AF]" />
+            <span>Replace</span>
           </button>
+        </div>
+      )}
 
-          {imageInfo ? (
-            <button
-              type="button"
-              onClick={onClearImage}
-              className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-[#1E1E24] hover:bg-red-500/15 border border-white/[0.08] hover:border-red-500/30 text-xs font-medium text-[#9CA3AF] hover:text-red-300 transition-colors cursor-pointer"
+      {/* Smooth Collapsible Body */}
+      <div
+        className={`m3-collapse-grid ${isExpanded ? "mt-2.5" : "mt-0"}`}
+        data-expanded={isExpanded}
+      >
+        <div className="m3-collapse-inner">
+          <div className="flex flex-col sm:flex-row gap-2.5 items-stretch">
+            {/* Dropzone / Thumbnail */}
+            <div
+              onClick={() => inputRef.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              className={`relative flex-1 min-h-[148px] sm:min-h-[164px] rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center overflow-hidden bg-[#0E0E11] ${
+                isDragging
+                  ? "border-[#E2E4E9]/50 bg-[#1E1E24]/60"
+                  : imageInfo
+                  ? "border-white/[0.08] hover:border-white/20"
+                  : "border-dashed border-white/[0.12] hover:border-white/25 hover:bg-[#1E1E24]/30"
+              }`}
             >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Remove</span>
-            </button>
-          ) : (
-            onTrySample && (
+              {imageInfo ? (
+                <img
+                  src={imageInfo.dataUrl}
+                  alt={title}
+                  className="w-full h-[164px] object-contain p-1.5 select-none"
+                />
+              ) : (
+                <div className="flex flex-col items-center text-center p-3">
+                  <div className="w-9 h-9 rounded-lg bg-[#1E1E24] border border-white/[0.08] flex items-center justify-center mb-2 text-[#E2E4E9]">
+                    <Upload className="w-4 h-4" />
+                  </div>
+                  <p className="text-xs font-medium text-[#E2E4E9]">
+                    Drop image, click to browse, or press{" "}
+                    <span className="font-mono text-[11px] bg-[#1E1E24] px-1.5 py-0.5 rounded border border-white/[0.08]">
+                      Ctrl+V
+                    </span>
+                  </p>
+                  <div className="flex items-center gap-2 mt-2.5">
+                    <span className="text-[11px] text-[#9CA3AF]/70">
+                      JPG, PNG, WEBP
+                    </span>
+                    {onTrySample && (
+                      <>
+                        <span className="text-white/15">•</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onTrySample();
+                          }}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#1E1E24] hover:bg-white/15 text-[#E2E4E9] border border-white/[0.1] text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          <Sparkles className="w-3 h-3 text-[#9CA3AF]" />
+                          Try Sample
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex sm:flex-col gap-2 sm:w-24 shrink-0">
               <button
                 type="button"
-                onClick={onTrySample}
-                className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-[#1E1E24]/70 hover:bg-[#1E1E24] border border-white/[0.08] text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] transition-colors cursor-pointer"
+                onClick={() => inputRef.current?.click()}
+                className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-[#1E1E24] hover:bg-white/10 border border-white/[0.08] text-xs font-medium text-[#E2E4E9] transition-colors cursor-pointer"
               >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Sample</span>
+                <RefreshCw className="w-3.5 h-3.5 text-[#9CA3AF]" />
+                <span>{imageInfo ? "Replace" : "Browse"}</span>
               </button>
-            )
+
+              {imageInfo ? (
+                <button
+                  type="button"
+                  onClick={onClearImage}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-[#1E1E24] hover:bg-red-500/15 border border-white/[0.08] hover:border-red-500/30 text-xs font-medium text-[#9CA3AF] hover:text-red-300 transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Remove</span>
+                </button>
+              ) : (
+                onTrySample && (
+                  <button
+                    type="button"
+                    onClick={onTrySample}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-[#1E1E24]/70 hover:bg-[#1E1E24] border border-white/[0.08] text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] transition-colors cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Sample</span>
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+
+          {/* File Meta Footer */}
+          {imageInfo && (
+            <div className="mt-2 pt-2 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-[#9CA3AF] font-mono truncate">
+              <span className="truncate max-w-[180px] sm:max-w-[240px] text-[#E2E4E9]/80">
+                {imageInfo.name}
+              </span>
+              <span>
+                {imageInfo.width}×{imageInfo.height} px • {imageInfo.ext} •{" "}
+                {imageInfo.sizeMB} MB
+              </span>
+            </div>
           )}
         </div>
       </div>
-
-      {/* File Meta Footer */}
-      {imageInfo && (
-        <div className="mt-2 pt-2 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-[#9CA3AF] font-mono truncate">
-          <span className="truncate max-w-[180px] sm:max-w-[240px] text-[#E2E4E9]/80">
-            {imageInfo.name}
-          </span>
-          <span>
-            {imageInfo.width}×{imageInfo.height} px • {imageInfo.ext} • {imageInfo.sizeMB} MB
-          </span>
-        </div>
-      )}
     </div>
   );
 }

@@ -6,7 +6,7 @@ export default function SupportToast({ visible, filename, onClose }) {
 
   return (
     <div className="fixed bottom-4 right-4 left-4 sm:left-auto sm:w-96 z-50">
-      <div className="m3-panel rounded-2xl p-4 shadow-[0_16px_40px_rgba(0,0,0,0.75)] bg-[#151519]/95 backdrop-blur-xl">
+      <div className="m3-panel m3-toast-enter rounded-2xl p-4 shadow-[0_16px_40px_rgba(0,0,0,0.75)] bg-[#151519]/95 backdrop-blur-xl">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-[#1E1E24] border border-white/[0.08] flex items-center justify-center text-[#6EE7B7] shrink-0 mt-0.5">

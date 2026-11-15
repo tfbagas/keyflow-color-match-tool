@@ -15,6 +15,7 @@ import {
   RotateCcw,
   Heart,
   BarChart3,
+  ChevronDown,
 } from "lucide-react";
 
 import ImageDropCard from "./components/ImageDropCard";
@@ -26,6 +27,7 @@ import SupportTab from "./components/SupportTab";
 import SupportBanner from "./components/SupportBanner";
 import SupportToast from "./components/SupportToast";
 import KeyflowLogo from "./components/KeyflowLogo";
+import ChangelogModal, { ChangelogList } from "./components/ChangelogModal";
 import { DEFAULT_PARAMS, simulateGradePixels } from "./utils/colorGrading";
 import { generateKfplug, downloadBlob } from "./utils/kfplugPackager";
 
@@ -127,8 +129,15 @@ function drawHistogram(canvas, imageData) {
   ctx.globalCompositeOperation = "source-over";
 }
 
+function toRgbCss(r = 0.5, g = 0.5, b = 0.5) {
+  const cb = (v) => Math.max(0, Math.min(255, Math.round((v ?? 0.5) * 255)));
+  return `rgb(${cb(r)}, ${cb(g)}, ${cb(b)})`;
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState("home");
+  const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+  const [isWheelsExpanded, setIsWheelsExpanded] = useState(true);
 
   // Image states
   const [referenceImage, setReferenceImage] = useState(null);
@@ -481,29 +490,50 @@ export default function App() {
     { id: "support", label: "Support", icon: Heart },
   ];
 
+  const activeTabIndex = Math.max(
+    0,
+    navTabs.findIndex((t) => t.id === activeTab)
+  );
+
   return (
     <div className="min-h-screen flex flex-col bg-[#0E0E11] text-[#E2E4E9]">
       {/* Compact 48px Top App Bar (Material 3 Workstation Header) */}
       <header className="sticky top-0 z-40 min-h-12 px-3 sm:px-5 py-1.5 bg-[#151519]/95 backdrop-blur-md border-b border-white/[0.08] flex flex-wrap items-center justify-between gap-2">
-        {/* Left: Achromatic Keyflow Logo + Brand Title + Version Badge */}
+        {/* Left: Achromatic Keyflow Logo + Brand Title + Interactive v0.6 Beta Changelog Button */}
         <div className="flex items-center gap-2.5">
           <KeyflowLogo size={28} />
           <div className="flex items-center gap-2">
             <h1 className="text-sm sm:text-base font-bold font-display tracking-tight text-[#E2E4E9]">
               Color Match Tool
             </h1>
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#1E1E24] text-[#9CA3AF] border border-white/[0.08]">
-              v0.5 Beta
-            </span>
+            <button
+              type="button"
+              onClick={() => setIsChangelogOpen(true)}
+              title="View What's New in v0.6 Beta"
+              className="inline-flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded-md bg-[#1E1E24] hover:bg-white/10 text-[#E2E4E9] border border-white/[0.1] hover:border-white/25 transition-all cursor-pointer active:scale-95"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-[#6EE7B7]" />
+              <span>v0.6 Beta</span>
+            </button>
           </div>
         </div>
 
-        {/* Right: Material 3 Segmented Navigation Pill + Status Chip */}
+        {/* Right: Material 3 Sliding Segmented Navigation Pill + Status Chip */}
         <div className="flex items-center gap-2 ml-auto">
           <nav
             aria-label="Primary Navigation"
-            className="flex items-center bg-[#0E0E11] border border-white/[0.08] rounded-xl p-0.5"
+            className="relative grid grid-cols-4 items-center bg-[#0E0E11] border border-white/[0.08] rounded-xl p-0.5"
           >
+            {/* Smooth Sliding Active Pill Indicator */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute top-0.5 bottom-0.5 left-0.5 rounded-lg bg-[#E2E4E9] transition-transform duration-300"
+              style={{
+                width: "calc((100% - 4px) / 4)",
+                transform: `translateX(${activeTabIndex * 100}%)`,
+              }}
+            />
+
             {navTabs.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -512,14 +542,14 @@ export default function App() {
                   key={item.id}
                   type="button"
                   onClick={() => setActiveTab(item.id)}
-                  className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                  className={`relative z-10 flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-medium transition-colors duration-200 cursor-pointer ${
                     isActive
-                      ? "bg-[#E2E4E9] text-[#0E0E11] font-semibold"
+                      ? "text-[#0E0E11] font-semibold"
                       : "text-[#9CA3AF] hover:text-[#E2E4E9]"
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5 shrink-0" />
-                  <span className="hidden xs:inline sm:inline">{item.label}</span>
+                  <span className="hidden sm:inline">{item.label}</span>
                 </button>
               );
             })}
@@ -544,7 +574,11 @@ export default function App() {
       {/* Main Content Container */}
       <main className="flex-1 max-w-[1440px] w-full mx-auto px-3 sm:px-5 py-3.5">
         {/* WORKSPACE TAB (Kept mounted so canvas & state never reset when switching tabs) */}
-        <div className={activeTab === "home" ? "space-y-3" : "hidden"}>
+        <div
+          className={
+            activeTab === "home" ? "space-y-3 m3-tab-enter" : "hidden"
+          }
+        >
           {/* Subtle Support Banner */}
           <SupportBanner onOpenSupport={() => setActiveTab("support")} />
 
@@ -599,7 +633,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={handleResetParams}
-                    className="flex items-center gap-1 text-[11px] font-medium text-[#9CA3AF] hover:text-[#E2E4E9] px-2 py-1 rounded-md bg-[#1E1E24] hover:bg-white/10 border border-white/[0.08] transition-colors cursor-pointer"
+                    className="flex items-center gap-1 text-[11px] font-medium text-[#9CA3AF] hover:text-[#E2E4E9] px-2 py-1 rounded-md bg-[#1E1E24] hover:bg-white/10 border border-white/[0.08] transition-colors cursor-pointer active:scale-95"
                     title="Reset all sliders to neutral defaults"
                   >
                     <RotateCcw className="w-3 h-3" />
@@ -655,45 +689,117 @@ export default function App() {
                   ))}
                 </div>
 
-                {/* 3-Way Color Wheels Swatches */}
+                {/* Collapsible 3-Way Color Wheels Swatches */}
                 <div className="mt-3 pt-3 border-t border-white/[0.08]">
-                  <div className="flex items-center gap-2 mb-2.5">
-                    <Layers className="w-3.5 h-3.5 text-[#9CA3AF]" />
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF]">
-                      3-WAY COLOR WHEELS SWATCHES
-                    </span>
+                  <div
+                    onClick={() => setIsWheelsExpanded((prev) => !prev)}
+                    className="flex items-center justify-between cursor-pointer select-none group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-3.5 h-3.5 text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors" />
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors">
+                        3-WAY COLOR WHEELS
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {/* Mini inline swatch preview dots when collapsed */}
+                      {!isWheelsExpanded && (
+                        <div className="flex items-center gap-1.5 mr-1">
+                          <span
+                            className="w-3.5 h-3.5 rounded-full border border-white/20"
+                            style={{
+                              backgroundColor: toRgbCss(
+                                gradingParams.liftR,
+                                gradingParams.liftG,
+                                gradingParams.liftB
+                              ),
+                            }}
+                            title="Shadows (Lift)"
+                          />
+                          <span
+                            className="w-3.5 h-3.5 rounded-full border border-white/20"
+                            style={{
+                              backgroundColor: toRgbCss(
+                                gradingParams.gammaR,
+                                gradingParams.gammaG,
+                                gradingParams.gammaB
+                              ),
+                            }}
+                            title="Midtones (Gamma)"
+                          />
+                          <span
+                            className="w-3.5 h-3.5 rounded-full border border-white/20"
+                            style={{
+                              backgroundColor: toRgbCss(
+                                gradingParams.gainR,
+                                gradingParams.gainG,
+                                gradingParams.gainB
+                              ),
+                            }}
+                            title="Highs (Gain)"
+                          />
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsWheelsExpanded((prev) => !prev);
+                        }}
+                        aria-expanded={isWheelsExpanded}
+                        aria-label="Toggle 3-Way Color Wheels panel"
+                        className="p-1 rounded-lg bg-[#1E1E24]/70 hover:bg-[#1E1E24] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.06] transition-all cursor-pointer"
+                      >
+                        <ChevronDown
+                          className={`w-3.5 h-3.5 transition-transform duration-300 ${
+                            isWheelsExpanded ? "rotate-180" : "rotate-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
-                    <ColorSwatchCard
-                      title="Shadows (Lift)"
-                      rgb={[
-                        gradingParams.liftR,
-                        gradingParams.liftG,
-                        gradingParams.liftB,
-                      ]}
-                    />
-                    <ColorSwatchCard
-                      title="Midtones (Gamma)"
-                      rgb={[
-                        gradingParams.gammaR,
-                        gradingParams.gammaG,
-                        gradingParams.gammaB,
-                      ]}
-                    />
-                    <ColorSwatchCard
-                      title="Highs (Gain)"
-                      rgb={[
-                        gradingParams.gainR,
-                        gradingParams.gainG,
-                        gradingParams.gainB,
-                      ]}
-                    />
+                  <div
+                    className={`m3-collapse-grid ${
+                      isWheelsExpanded ? "mt-2.5" : "mt-0"
+                    }`}
+                    data-expanded={isWheelsExpanded}
+                  >
+                    <div className="m3-collapse-inner">
+                      <div className="grid grid-cols-3 gap-2">
+                        <ColorSwatchCard
+                          title="Shadows (Lift)"
+                          rgb={[
+                            gradingParams.liftR,
+                            gradingParams.liftG,
+                            gradingParams.liftB,
+                          ]}
+                        />
+                        <ColorSwatchCard
+                          title="Midtones (Gamma)"
+                          rgb={[
+                            gradingParams.gammaR,
+                            gradingParams.gammaG,
+                            gradingParams.gammaB,
+                          ]}
+                        />
+                        <ColorSwatchCard
+                          title="Highs (Gain)"
+                          rgb={[
+                            gradingParams.gainR,
+                            gradingParams.gainG,
+                            gradingParams.gainB,
+                          ]}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Export Card */}
+              {/* Collapsible Export Card */}
               <ExportCard
                 presetName={presetName}
                 setPresetName={setPresetName}
@@ -711,7 +817,7 @@ export default function App() {
 
         {/* SETTINGS TAB */}
         {activeTab === "settings" && (
-          <div className="max-w-xl mx-auto m3-panel rounded-2xl p-5 sm:p-6 space-y-5">
+          <div className="max-w-xl mx-auto m3-panel rounded-2xl p-5 sm:p-6 space-y-5 m3-tab-enter">
             <div className="flex items-center gap-2.5 border-b border-white/[0.08] pb-3.5">
               <Settings className="w-4 h-4 text-[#E2E4E9]" />
               <h2 className="text-base font-bold font-display text-[#E2E4E9]">
@@ -761,39 +867,73 @@ export default function App() {
 
         {/* ABOUT TAB */}
         {activeTab === "about" && (
-          <div className="max-w-xl mx-auto m3-panel rounded-2xl p-5 sm:p-6 space-y-4">
-            <div className="flex items-center gap-3.5 border-b border-white/[0.08] pb-4">
-              <KeyflowLogo size={48} />
-              <div>
-                <h2 className="text-lg font-bold font-display text-[#E2E4E9]">
-                  Color Match for Keyflow V.0.5 Beta
-                </h2>
-                <p className="text-xs text-[#9CA3AF]">
-                  100% Client-Side Web App • Zero Server Upload
+          <div className="max-w-2xl mx-auto space-y-4 m3-tab-enter">
+            <div className="m3-panel rounded-2xl p-5 sm:p-6 space-y-4">
+              <div className="flex items-center gap-3.5 border-b border-white/[0.08] pb-4">
+                <KeyflowLogo size={48} />
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-lg font-bold font-display text-[#E2E4E9]">
+                      Color Match for Keyflow V.0.6 Beta
+                    </h2>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#1E1E24] text-[#6EE7B7] border border-white/[0.08]">
+                      v0.6 Beta
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#9CA3AF] mt-0.5">
+                    100% Client-Side Web App • Zero Server Upload
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-xs sm:text-sm text-[#9CA3AF] leading-relaxed">
+                This tool analyzes the luminance distribution (Rec. 709), white balance neutrality, saturation, and 3-way split toning (Shadows, Midtones, Highlights) of any reference image directly inside your browser using Web Workers, then packages a native{" "}
+                <code className="text-[#E2E4E9] font-mono bg-[#1E1E24] px-1.5 py-0.5 rounded border border-white/[0.08]">
+                  .kfplug
+                </code>{" "}
+                GLSL shader plugin for Keyflow.
+              </p>
+
+              <div className="bg-[#1E1E24] border border-white/[0.08] rounded-xl p-4 text-xs text-[#9CA3AF] space-y-1.5">
+                <div className="font-semibold text-[#E2E4E9]">Privacy &amp; Architecture</div>
+                <p>
+                  All images are processed locally in your device&apos;s memory. No photos or presets are ever uploaded to an external server.
                 </p>
               </div>
             </div>
 
-            <p className="text-xs sm:text-sm text-[#9CA3AF] leading-relaxed">
-              This tool analyzes the luminance distribution (Rec. 709), white balance neutrality, saturation, and 3-way split toning (Shadows, Midtones, Highlights) of any reference image directly inside your browser using Web Workers, then packages a native{" "}
-              <code className="text-[#E2E4E9] font-mono bg-[#1E1E24] px-1.5 py-0.5 rounded border border-white/[0.08]">
-                .kfplug
-              </code>{" "}
-              GLSL shader plugin for Keyflow.
-            </p>
+            {/* What's New in v0.6 Beta Changelog Card inside About Tab */}
+            <div className="m3-panel rounded-2xl p-5 sm:p-6 space-y-3.5">
+              <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#6EE7B7]" />
+                  <h3 className="text-sm sm:text-base font-bold font-display text-[#E2E4E9]">
+                    What&apos;s New in v0.6 Beta
+                  </h3>
+                </div>
+                <span className="text-[11px] font-mono text-[#9CA3AF]">
+                  Changelog
+                </span>
+              </div>
 
-            <div className="bg-[#1E1E24] border border-white/[0.08] rounded-xl p-4 text-xs text-[#9CA3AF] space-y-1.5">
-              <div className="font-semibold text-[#E2E4E9]">Privacy &amp; Architecture</div>
-              <p>
-                All images are processed locally in your device&apos;s memory. No photos or presets are ever uploaded to an external server.
-              </p>
+              <ChangelogList />
             </div>
           </div>
         )}
 
         {/* SUPPORT TAB */}
-        {activeTab === "support" && <SupportTab />}
+        {activeTab === "support" && (
+          <div className="m3-tab-enter">
+            <SupportTab />
+          </div>
+        )}
       </main>
+
+      {/* Interactive "What's New in v0.6 Beta" Modal Dialog */}
+      <ChangelogModal
+        open={isChangelogOpen}
+        onClose={() => setIsChangelogOpen(false)}
+      />
 
       {/* Post-Export Support Toast */}
       <SupportToast

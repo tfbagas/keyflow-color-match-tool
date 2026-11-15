@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { ChevronUp, ChevronDown } from "lucide-react";
 
 export default function ParameterControl({
@@ -13,10 +13,21 @@ export default function ParameterControl({
   onChange,
   icon: Icon,
 }) {
+  const [isHovered, setIsHovered] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+
   const clamp = (val) => Math.max(min, Math.min(max, val));
+  const range = max - min || 1;
 
   const handleSliderChange = (e) => {
-    onChange(paramKey, parseFloat(e.target.value));
+    let nextVal = parseFloat(e.target.value);
+
+    // Soft magnetic snap toward center/default value on bipolar sliders
+    if (isBipolar && Math.abs(nextVal - defaultValue) <= range * 0.016) {
+      nextVal = defaultValue;
+    }
+
+    onChange(paramKey, nextVal);
   };
 
   const handleStep = (delta) => {
@@ -28,11 +39,11 @@ export default function ParameterControl({
     onChange(paramKey, defaultValue);
   };
 
-  const range = max - min || 1;
   const valPct = Math.max(0, Math.min(100, ((value - min) / range) * 100));
   const defaultPct = Math.max(0, Math.min(100, ((defaultValue - min) / range) * 100));
 
   const isModified = Math.abs(value - defaultValue) > 0.004;
+  const isActive = isHovered || isDragging;
 
   // Calculate active fill start and width
   const fillLeft = isBipolar ? Math.min(valPct, defaultPct) : 0;
@@ -43,18 +54,23 @@ export default function ParameterControl({
   if (paramKey === "temp") {
     trackBgStyle = {
       background:
-        "linear-gradient(90deg, rgba(56, 189, 248, 0.22) 0%, rgba(30, 30, 36, 0.95) 50%, rgba(251, 191, 36, 0.22) 100%)",
+        "linear-gradient(90deg, rgba(56, 189, 248, 0.24) 0%, rgba(30, 30, 36, 0.95) 50%, rgba(251, 191, 36, 0.24) 100%)",
     };
   } else if (paramKey === "tint") {
     trackBgStyle = {
       background:
-        "linear-gradient(90deg, rgba(52, 211, 153, 0.22) 0%, rgba(30, 30, 36, 0.95) 50%, rgba(232, 121, 249, 0.22) 100%)",
+        "linear-gradient(90deg, rgba(52, 211, 153, 0.24) 0%, rgba(30, 30, 36, 0.95) 50%, rgba(232, 121, 249, 0.24) 100%)",
     };
   }
 
   return (
     <div
       onDoubleClick={handleReset}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => {
+        setIsHovered(false);
+        setIsDragging(false);
+      }}
       title="Double-click to reset parameter to default"
       className="flex items-center gap-2.5 py-1.5 px-2 rounded-lg hover:bg-[#1E1E24]/50 transition-colors group select-none"
     >
@@ -66,10 +82,12 @@ export default function ParameterControl({
         {Icon && (
           <Icon className="w-3.5 h-3.5 text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors shrink-0" />
         )}
-        <span className="text-xs font-medium text-[#E2E4E9]/90 truncate">{label}</span>
+        <span className="text-xs font-medium text-[#E2E4E9]/90 truncate">
+          {label}
+        </span>
         {isModified && (
           <span
-            className="w-1.5 h-1.5 rounded-full bg-[#E2E4E9] shrink-0"
+            className="w-1.5 h-1.5 rounded-full bg-[#E2E4E9] shrink-0 transition-transform duration-200 scale-100"
             title={`Modified (Default: ${defaultValue.toFixed(2)})`}
           />
         )}
@@ -79,12 +97,16 @@ export default function ParameterControl({
       <div className="relative flex-1 flex items-center h-6">
         {/* Track Background */}
         <div
-          className="w-full h-1.5 rounded-full relative overflow-hidden border border-white/[0.06]"
+          className={`w-full rounded-full relative overflow-hidden border border-white/[0.06] transition-all duration-200 ${
+            isActive ? "h-2" : "h-1.5"
+          }`}
           style={trackBgStyle}
         >
           {/* Active Fill Bar */}
           <div
-            className="absolute top-0 bottom-0 bg-[#9CA3AF] group-hover:bg-[#E2E4E9] transition-colors"
+            className={`absolute top-0 bottom-0 transition-colors duration-200 ${
+              isActive ? "bg-[#E2E4E9]" : "bg-[#9CA3AF]"
+            }`}
             style={{
               left: `${fillLeft}%`,
               width: `${fillWidth}%`,
@@ -94,13 +116,19 @@ export default function ParameterControl({
 
         {/* Center / Default Tick Mark */}
         <div
-          className="absolute top-1/2 -translate-y-1/2 w-[1.5px] h-3 bg-white/25 pointer-events-none z-10"
+          className={`absolute top-1/2 -translate-y-1/2 w-[1.5px] pointer-events-none z-10 transition-all duration-200 ${
+            !isModified ? "h-3.5 bg-[#E2E4E9]/60" : "h-3 bg-white/25"
+          }`}
           style={{ left: `calc(${defaultPct}% - 0.75px)` }}
         />
 
-        {/* Slim Vertical Bar Thumb with M3 Separation Gap */}
+        {/* Tactile Vertical Bar Thumb with M3 Separation Gap & Hover/Drag Expansion */}
         <div
-          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-1 h-4 rounded-full bg-[#E2E4E9] ring-2 ring-[#151519] pointer-events-none z-20 transition-transform group-hover:scale-y-110"
+          className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full ring-2 ring-[#151519] pointer-events-none z-20 transition-all duration-150 ${
+            isActive
+              ? "w-1.5 h-5 bg-white shadow-[0_0_10px_rgba(226,228,233,0.45)]"
+              : "w-1 h-4 bg-[#E2E4E9]"
+          }`}
           style={{ left: `${valPct}%` }}
         />
 
@@ -112,6 +140,10 @@ export default function ParameterControl({
           step={step}
           value={value}
           onChange={handleSliderChange}
+          onMouseDown={() => setIsDragging(true)}
+          onMouseUp={() => setIsDragging(false)}
+          onTouchStart={() => setIsDragging(true)}
+          onTouchEnd={() => setIsDragging(false)}
           onDoubleClick={handleReset}
           aria-label={label}
           className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-30 m-0"
@@ -121,7 +153,9 @@ export default function ParameterControl({
       {/* Value Readout & Stepper */}
       <div
         onDoubleClick={(e) => e.stopPropagation()}
-        className="flex items-center bg-[#1E1E24] border border-white/[0.08] rounded-md overflow-hidden shrink-0"
+        className={`flex items-center bg-[#1E1E24] border rounded-md overflow-hidden shrink-0 transition-colors ${
+          isDragging ? "border-white/25" : "border-white/[0.08]"
+        }`}
       >
         <span className="w-12 text-right px-1.5 py-1 text-[11px] font-mono tabular-nums text-[#E2E4E9]">
           {value >= 0 && min < 0 ? `+${value.toFixed(2)}` : value.toFixed(2)}
