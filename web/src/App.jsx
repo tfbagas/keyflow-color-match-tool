@@ -6,7 +6,8 @@ import {
   RotateCcw,
   Sparkles,
   Layers,
-  Heart
+  Heart,
+  Coffee
 } from "lucide-react";
 
 import ImageDropCard from "./components/ImageDropCard";
@@ -14,6 +15,9 @@ import ComparisonSlider from "./components/ComparisonSlider";
 import ParameterControl from "./components/ParameterControl";
 import ColorSwatchCard from "./components/ColorSwatchCard";
 import ExportCard from "./components/ExportCard";
+import SupportTab from "./components/SupportTab";
+import SupportBanner from "./components/SupportBanner";
+import SupportToast from "./components/SupportToast";
 
 import {
   DEFAULT_PARAMS,
@@ -22,7 +26,7 @@ import {
 import { generateKfplug, downloadBlob } from "./utils/kfplugPackager";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("home"); // "home" | "settings" | "about"
+  const [activeTab, setActiveTab] = useState("home"); // "home" | "settings" | "about" | "support"
 
   // Images state
   const [refImage, setRefImage] = useState(null);
@@ -44,6 +48,9 @@ export default function App() {
   const [description, setDescription] = useState(
     "Grading preset matched from reference 'Custom Look'."
   );
+
+  // Post-Export Toast state
+  const [showSupportToast, setShowSupportToast] = useState(false);
 
   // Canvas refs
   const previewCanvasRef = useRef(null);
@@ -136,6 +143,13 @@ export default function App() {
     return () => clearTimeout(debounceTimerRef.current);
   }, [params, updatePreviewSimulation]);
 
+  // Re-run simulation when switching back to Home tab
+  useEffect(() => {
+    if (activeTab === "home") {
+      updatePreviewSimulation();
+    }
+  }, [activeTab, updatePreviewSimulation]);
+
   // Handle Reference Image Loaded -> Trigger Worker
   const handleRefImageSelected = (imgData) => {
     setRefImage(imgData);
@@ -224,6 +238,7 @@ export default function App() {
       description
     );
     downloadBlob(blob, fileName);
+    setShowSupportToast(true);
     return { fileName, displayName };
   };
 
@@ -295,6 +310,18 @@ export default function App() {
             <Info size={15} />
             <span>About</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab("support")}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === "support"
+                ? "bg-[#00E987] text-[#05120B] shadow-[0_0_12px_rgba(0,233,135,0.3)]"
+                : "text-[#91A69A] hover:text-[#E8F2ED] hover:bg-[#16231D]/60"
+            }`}
+          >
+            <Heart size={15} className={activeTab === "support" ? "fill-current" : ""} />
+            <span>Support</span>
+          </button>
         </nav>
 
         {/* Desktop Sidebar Watermark */}
@@ -328,7 +355,21 @@ export default function App() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+            {/* Quick-Access Support Button */}
+            <button
+              onClick={() => setActiveTab("support")}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold border transition-all cursor-pointer active:scale-95 ${
+                activeTab === "support"
+                  ? "bg-[#00E987] text-[#05120B] border-[#00E987] shadow-[0_0_12px_rgba(0,233,135,0.4)]"
+                  : "bg-[#00E987]/15 hover:bg-[#00E987]/25 text-[#00E987] border-[#00E987]/35 shadow-[0_0_10px_rgba(0,233,135,0.1)]"
+              }`}
+              title="Support Developer & Tool"
+            >
+              <Heart size={12} className={activeTab === "support" ? "fill-[#05120B]" : "fill-[#00E987]"} />
+              <span>Support</span>
+            </button>
+
             {/* Non-blocking Status Pill */}
             <div
               className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-all ${
@@ -350,7 +391,7 @@ export default function App() {
         {/* --------------------------------------------------------- */}
         {/* TAB 1: HOME PAGE                                          */}
         {/* --------------------------------------------------------- */}
-        {activeTab === "home" && (
+        <div className={activeTab === "home" ? "flex flex-col gap-4" : "hidden"}>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 items-start">
             {/* LEFT COLUMN: Input Images & Before/After Comparison */}
             <div className="flex flex-col gap-4">
@@ -475,7 +516,10 @@ export default function App() {
               />
             </div>
           </div>
-        )}
+
+          {/* Slim Dismissible Support Banner on Home */}
+          <SupportBanner />
+        </div>
 
         {/* --------------------------------------------------------- */}
         {/* TAB 2: SETTINGS PAGE                                      */}
@@ -564,6 +608,17 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* --------------------------------------------------------- */}
+        {/* TAB 4: SUPPORT PAGE                                       */}
+        {/* --------------------------------------------------------- */}
+        {activeTab === "support" && <SupportTab />}
+
+        {/* Post-Export Toast Notification */}
+        <SupportToast
+          show={showSupportToast}
+          onClose={() => setShowSupportToast(false)}
+        />
       </main>
     </div>
   );
