@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "api": 1,
+  "id": "studio.motion.copygrade",
+  "name": "Copy Grade Studio",
+  "version": "1.0.0",
+  "versionCode": 1,
+  "author": "Keyflow Creator",
+  "description": "Professional 3-way color grading engine with reference match capabilities.",
+  "license": "MIT",
+  "effects": [
+    "copy_grading"
+  ]
+}

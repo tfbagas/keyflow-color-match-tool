@@ -1,0 +1,345 @@
+{
+  "id": "copy_grading",
+  "name": "Copy Grade Pro",
+  "category": "Warna",
+  "thumbnailStyle": "split",
+  "thumbnailInset": 0.05,
+  "params": [
+    {
+      "id": "gradeMix",
+      "label": "Grade Mix / Blend",
+      "type": "scalar",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 1.0,
+      "displayScale": 100.0,
+      "decimals": 0,
+      "group": "Master"
+    },
+    {
+      "id": "exposure",
+      "label": "Exposure (EV)",
+      "type": "scalar",
+      "default": 0.0,
+      "min": -2.0,
+      "max": 2.0,
+      "displayScale": 1.0,
+      "decimals": 2,
+      "group": "Tone & Contrast"
+    },
+    {
+      "id": "contrast",
+      "label": "Contrast",
+      "type": "scalar",
+      "default": 1.0,
+      "min": 0.2,
+      "max": 2.0,
+      "displayScale": 1.0,
+      "decimals": 2,
+      "group": "Tone & Contrast"
+    },
+    {
+      "id": "pivot",
+      "label": "Contrast Pivot",
+      "type": "scalar",
+      "default": 0.435,
+      "min": 0.1,
+      "max": 0.9,
+      "displayScale": 1.0,
+      "decimals": 2,
+      "group": "Tone & Contrast"
+    },
+    {
+      "id": "shadows",
+      "label": "Shadows Lift/Crush",
+      "type": "scalar",
+      "default": 0.0,
+      "min": -1.0,
+      "max": 1.0,
+      "displayScale": 100.0,
+      "decimals": 0,
+      "group": "Tone & Contrast"
+    },
+    {
+      "id": "highlights",
+      "label": "Highlights Boost/Roll",
+      "type": "scalar",
+      "default": 0.0,
+      "min": -1.0,
+      "max": 1.0,
+      "displayScale": 100.0,
+      "decimals": 0,
+      "group": "Tone & Contrast"
+    },
+    {
+      "id": "temp",
+      "label": "Color Temperature",
+      "type": "scalar",
+      "default": 0.0,
+      "min": -1.0,
+      "max": 1.0,
+      "displayScale": 100.0,
+      "decimals": 0,
+      "group": "White Balance"
+    },
+    {
+      "id": "tint",
+      "label": "Color Tint",
+      "type": "scalar",
+      "default": 0.0,
+      "min": -1.0,
+      "max": 1.0,
+      "displayScale": 100.0,
+      "decimals": 0,
+      "group": "White Balance"
+    },
+    {
+      "id": "sat",
+      "label": "Saturation",
+      "type": "scalar",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 2.0,
+      "displayScale": 100.0,
+      "decimals": 0,
+      "group": "Color Balance"
+    },
+    {
+      "id": "vib",
+      "label": "Vibrance",
+      "type": "scalar",
+      "default": 0.0,
+      "min": -1.0,
+      "max": 1.0,
+      "displayScale": 100.0,
+      "decimals": 0,
+      "group": "Color Balance"
+    },
+    {
+      "id": "liftR",
+      "label": "Shadows Red",
+      "type": "scalar",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 1.0,
+      "displayScale": 1.0,
+      "decimals": 2,
+      "group": "3-Way Toning"
+    },
+    {
+      "id": "liftG",
+      "label": "Shadows Green",
+      "type": "scalar",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 1.0,
+      "displayScale": 1.0,
+      "decimals": 2,
+      "group": "3-Way Toning"
+    },
+    {
+      "id": "liftB",
+      "label": "Shadows Blue",
+      "type": "scalar",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 1.0,
+      "displayScale": 1.0,
+      "decimals": 2,
+      "group": "3-Way Toning"
+    },
+    {
+      "id": "gammaR",
+      "label": "Midtones Red",
+      "type": "scalar",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 1.0,
+      "displayScale": 1.0,
+      "decimals": 2,
+      "group": "3-Way Toning"
+    },
+    {
+      "id": "gammaG",
+      "label": "Midtones Green",
+      "type": "scalar",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 1.0,
+      "displayScale": 1.0,
+      "decimals": 2,
+      "group": "3-Way Toning"
+    },
+    {
+      "id": "gammaB",
+      "label": "Midtones Blue",
+      "type": "scalar",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 1.0,
+      "displayScale": 1.0,
+      "decimals": 2,
+      "group": "3-Way Toning"
+    },
+    {
+      "id": "gainR",
+      "label": "Highlights Red",
+      "type": "scalar",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 1.0,
+      "displayScale": 1.0,
+      "decimals": 2,
+      "group": "3-Way Toning"
+    },
+    {
+      "id": "gainG",
+      "label": "Highlights Green",
+      "type": "scalar",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 1.0,
+      "displayScale": 1.0,
+      "decimals": 2,
+      "group": "3-Way Toning"
+    },
+    {
+      "id": "gainB",
+      "label": "Highlights Blue",
+      "type": "scalar",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 1.0,
+      "displayScale": 1.0,
+      "decimals": 2,
+      "group": "3-Way Toning"
+    }
+  ],
+  "colors": [
+    {
+      "label": "Shadows Tint",
+      "r": "liftR",
+      "g": "liftG",
+      "b": "liftB"
+    },
+    {
+      "label": "Midtones Tint",
+      "r": "gammaR",
+      "g": "gammaG",
+      "b": "gammaB"
+    },
+    {
+      "label": "Highlights Tint",
+      "r": "gainR",
+      "g": "gainG",
+      "b": "gainB"
+    }
+  ],
+  "presets": [
+    {
+      "id": "tealOrange",
+      "label": "Teal & Orange Cinema",
+      "values": {
+        "contrast": 1.25,
+        "exposure": 0.1,
+        "sat": 1.15,
+        "vib": 0.2,
+        "liftR": 0.35,
+        "liftG": 0.52,
+        "liftB": 0.65,
+        "gammaR": 0.52,
+        "gammaG": 0.50,
+        "gammaB": 0.48,
+        "gainR": 0.65,
+        "gainG": 0.55,
+        "gainB": 0.40
+      }
+    },
+    {
+      "id": "moodyVintage",
+      "label": "Moody Vintage Film",
+      "values": {
+        "contrast": 0.85,
+        "exposure": -0.1,
+        "shadows": 0.15,
+        "highlights": -0.1,
+        "temp": 0.15,
+        "sat": 0.8,
+        "vib": -0.1,
+        "liftR": 0.52,
+        "liftG": 0.54,
+        "liftB": 0.48,
+        "gainR": 0.58,
+        "gainG": 0.52,
+        "gainB": 0.45
+      }
+    },
+    {
+      "id": "bleachBypass",
+      "label": "Bleach Bypass",
+      "values": {
+        "contrast": 1.45,
+        "exposure": 0.05,
+        "sat": 0.55,
+        "vib": -0.3,
+        "shadows": -0.15,
+        "highlights": 0.1,
+        "liftR": 0.48,
+        "liftG": 0.50,
+        "liftB": 0.52
+      }
+    },
+    {
+      "id": "cyberpunkNeon",
+      "label": "Cyberpunk Magenta/Cyan",
+      "values": {
+        "contrast": 1.3,
+        "exposure": 0.1,
+        "sat": 1.3,
+        "temp": -0.2,
+        "tint": 0.3,
+        "liftR": 0.38,
+        "liftG": 0.48,
+        "liftB": 0.68,
+        "gainR": 0.68,
+        "gainG": 0.38,
+        "gainB": 0.58
+      }
+    }
+  ],
+  "newInstanceValues": {
+    "gradeMix": 1.0,
+    "contrast": 1.0,
+    "exposure": 0.0,
+    "pivot": 0.435,
+    "sat": 1.0,
+    "temp": 0.0,
+    "tint": 0.0,
+    "liftR": 0.5,
+    "liftG": 0.5,
+    "liftB": 0.5,
+    "gammaR": 0.5,
+    "gammaG": 0.5,
+    "gammaB": 0.5,
+    "gainR": 0.5,
+    "gainG": 0.5,
+    "gainB": 0.5
+  },
+  "thumbnailValues": {
+    "contrast": 1.35,
+    "exposure": 0.1,
+    "sat": 1.25,
+    "liftR": 0.35,
+    "liftG": 0.52,
+    "liftB": 0.65,
+    "gainR": 0.65,
+    "gainG": 0.55,
+    "gainB": 0.40
+  },
+  "passes": [
+    {
+      "shader": "pass0.frag",
+      "scale": 1.0
+    }
+  ]
+}
