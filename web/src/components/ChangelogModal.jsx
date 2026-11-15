@@ -1,21 +1,32 @@
 import React, { useState, useEffect } from "react";
 import {
   X,
+  Sparkles,
   ShieldCheck,
   Cpu,
   Layers,
   Rocket,
-  Sparkles,
   ChevronDown,
   History,
+  Droplets,
 } from "lucide-react";
 import KeyflowLogo from "./KeyflowLogo";
 
 export const CHANGELOG_HISTORY = [
   {
-    version: "v0.6.2 Beta",
-    subtitle: "Latest — Security & Integrity Hardening",
+    version: "v0.6.3 Beta",
+    subtitle: "Latest — Monochrome Liquid Glass & Analysis Recovery",
     isLatest: true,
+    icon: Droplets,
+    items: [
+      "Added an achromatic black-and-white animated liquid glass background with translucent frosted workstation panels (zero color-cast).",
+      "Added the Reload Analysis button next to Reset All to instantly restore reference-matched parameters after resetting or manual tweaks.",
+    ],
+  },
+  {
+    version: "v0.6.2 Beta",
+    subtitle: "Security & Integrity Hardening",
+    isLatest: false,
     icon: ShieldCheck,
     items: [
       "Added Cloudflare HTTP security headers (CSP, X-Frame-Options, nosniff, Permissions-Policy) to protect against XSS and clickjacking.",
@@ -59,7 +70,7 @@ export const CHANGELOG_HISTORY = [
 
 export function ReleaseHistoryAccordion() {
   const [expandedMap, setExpandedMap] = useState({
-    "v0.6.2 Beta": true,
+    "v0.6.3 Beta": true,
   });
 
   const toggleVersion = (ver) => {
@@ -171,7 +182,7 @@ export default function ChangelogModal({ open, onClose, onViewFullHistory }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="changelog-modal-title"
-        className="m3-panel m3-modal-enter w-full max-w-lg rounded-2xl p-5 sm:p-6 shadow-[0_24px_60px_rgba(0,0,0,0.85)] bg-[#151519]"
+        className="m3-panel m3-modal-enter w-full max-w-lg rounded-2xl p-5 sm:p-6 shadow-[0_24px_60px_rgba(0,0,0,0.85)] bg-[#151519]/95"
       >
         <div className="flex items-start justify-between gap-3 pb-4 border-b border-white/[0.08]">
           <div className="flex items-center gap-3">
@@ -211,8 +222,8 @@ export default function ChangelogModal({ open, onClose, onViewFullHistory }) {
               key={idx}
               className="flex items-start gap-3 p-3 rounded-xl bg-[#1E1E24] border border-white/[0.08]"
             >
-              <div className="w-6 h-6 rounded-lg bg-[#151519] border border-white/[0.08] flex items-center justify-center text-[#6EE7B7] shrink-0 mt-0.5">
-                <ShieldCheck className="w-3.5 h-3.5" />
+              <div className="w-6 h-6 rounded-lg bg-[#151519] border border-white/[0.08] flex items-center justify-center text-[#E2E4E9] shrink-0 mt-0.5">
+                <Droplets className="w-3.5 h-3.5 text-[#9CA3AF]" />
               </div>
               <p className="text-xs text-[#E2E4E9]/90 leading-relaxed">
                 {point}
@@ -232,11 +243,11 @@ export default function ChangelogModal({ open, onClose, onViewFullHistory }) {
               className="inline-flex items-center gap-1.5 text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] transition-colors cursor-pointer"
             >
               <History className="w-3.5 h-3.5" />
-              <span>View Full Release History (v0.5 – v0.6.2)</span>
+              <span>View Full Release History (v0.5 – v0.6.3)</span>
             </button>
           ) : (
             <span className="text-[11px] font-mono text-[#9CA3AF]">
-              Build v0.6.2-beta • 100% Client-Side
+              Build v0.6.3-beta • 100% Client-Side
             </span>
           )}
 

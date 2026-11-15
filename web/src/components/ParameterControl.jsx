@@ -51,16 +51,16 @@ export default function ParameterControl({
   const fillWidth = isBipolar ? Math.abs(valPct - defaultPct) : valPct;
 
   // Track background style (micro-chroma gradient for temp and tint)
-  let trackBgStyle = { backgroundColor: "#1E1E24" };
+  let trackBgStyle = { backgroundColor: "rgba(10, 10, 13, 0.45)" };
   if (paramKey === "temp") {
     trackBgStyle = {
       background:
-        "linear-gradient(90deg, rgba(56, 189, 248, 0.24) 0%, rgba(30, 30, 36, 0.95) 50%, rgba(251, 191, 36, 0.24) 100%)",
+        "linear-gradient(90deg, rgba(56, 189, 248, 0.24) 0%, rgba(18, 18, 24, 0.65) 50%, rgba(251, 191, 36, 0.24) 100%)",
     };
   } else if (paramKey === "tint") {
     trackBgStyle = {
       background:
-        "linear-gradient(90deg, rgba(52, 211, 153, 0.24) 0%, rgba(30, 30, 36, 0.95) 50%, rgba(232, 121, 249, 0.24) 100%)",
+        "linear-gradient(90deg, rgba(52, 211, 153, 0.24) 0%, rgba(18, 18, 24, 0.65) 50%, rgba(232, 121, 249, 0.24) 100%)",
     };
   }
 
@@ -73,7 +73,7 @@ export default function ParameterControl({
         setIsDragging(false);
       }}
       title="Double-click to reset parameter to default"
-      className="flex items-center gap-2.5 py-1.5 px-2 rounded-lg hover:bg-[#1E1E24]/50 transition-colors group select-none"
+      className="flex items-center gap-2.5 py-1.5 px-2 rounded-lg hover:bg-white/[0.035] transition-colors group select-none"
     >
       {/* Label & Icon + Modified Indicator Dot */}
       <div
@@ -154,8 +154,8 @@ export default function ParameterControl({
       {/* Value Readout & Stepper */}
       <div
         onDoubleClick={(e) => e.stopPropagation()}
-        className={`flex items-center bg-[#1E1E24] border rounded-md overflow-hidden shrink-0 transition-colors ${
-          isDragging ? "border-white/25" : "border-white/[0.08]"
+        className={`flex items-center bg-[#0A0A0D]/38 border rounded-md overflow-hidden shrink-0 transition-colors ${
+          isDragging ? "border-white/25" : "border-white/[0.09]"
         }`}
       >
         <span className="w-13 text-right px-1.5 py-1 text-[11px] font-mono tabular-nums text-[#E2E4E9]">

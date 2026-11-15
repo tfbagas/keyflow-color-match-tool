@@ -30,7 +30,7 @@ export default function SupportBanner({ onOpenSupport }) {
   return (
     <div className="m3-panel rounded-2xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
       <div className="flex items-center gap-2.5 text-xs text-[#9CA3AF]">
-        <span className="w-6 h-6 rounded-lg bg-[#1E1E24] border border-white/[0.08] flex items-center justify-center text-[#E2E4E9] shrink-0">
+        <span className="w-6 h-6 rounded-lg bg-white/[0.04] border border-white/[0.09] flex items-center justify-center text-[#E2E4E9] shrink-0">
           <Heart className="w-3.5 h-3.5 text-[#6EE7B7]" />
         </span>
         <p className="leading-snug">
@@ -51,7 +51,7 @@ export default function SupportBanner({ onOpenSupport }) {
           href="https://sociabuzz.com/tfbagas/tribe"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#1E1E24] hover:bg-white/10 text-[#E2E4E9] border border-white/[0.1] text-xs font-medium transition-colors"
+          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-[#E2E4E9] border border-white/[0.09] text-xs font-medium transition-colors"
         >
           <span>Support on SociaBuzz</span>
           <ExternalLink className="w-3 h-3 text-[#9CA3AF]" />

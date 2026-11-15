@@ -91,7 +91,7 @@ export default function ComparisonSlider({
               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors cursor-pointer select-none ${
                 isHoldingBefore
                   ? "bg-[#E2E4E9] text-[#0E0E11] border-[#E2E4E9]"
-                  : "bg-[#1E1E24] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.08]"
+                  : "bg-white/[0.04] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.09]"
               }`}
             >
               <Eye className="w-3.5 h-3.5" />
@@ -100,7 +100,7 @@ export default function ComparisonSlider({
           )}
 
           {/* Mode Selector Segmented Pill */}
-          <div className="flex items-center bg-[#0E0E11] border border-white/[0.08] rounded-lg p-0.5 text-xs">
+          <div className="flex items-center bg-[#0A0A0D]/38 border border-white/[0.09] rounded-lg p-0.5 text-xs">
             {[
               { id: "split", label: "Split Slider" },
               { id: "side", label: "Side by Side" },
@@ -138,7 +138,7 @@ export default function ComparisonSlider({
             updatePosition(e.touches[0].clientX);
           }
         }}
-        className={`relative w-full flex-1 min-h-[240px] sm:min-h-[280px] rounded-lg bg-[#0E0E11] border border-white/[0.08] overflow-hidden flex items-center justify-center select-none ${
+        className={`relative w-full flex-1 min-h-[240px] sm:min-h-[280px] rounded-lg bg-[#0A0A0D]/38 border border-white/[0.09] overflow-hidden flex items-center justify-center select-none ${
           mode === "split" && hasImage ? "cursor-ew-resize" : ""
         }`}
       >

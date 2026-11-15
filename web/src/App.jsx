@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   RefreshCw,
   History,
+  Check,
 } from "lucide-react";
 
 import ImageDropCard, { ALLOWED_IMAGE_MIMES } from "./components/ImageDropCard";
@@ -59,7 +60,7 @@ const PARAM_CONTROLS = [
 ];
 
 const CALIBRATION_STORAGE_KEY = "kf_export_calibration_v1";
-const SEEN_UPDATE_STORAGE_KEY = "kf_seen_update_v062";
+const SEEN_UPDATE_STORAGE_KEY = "kf_seen_update_v063";
 const DEFAULT_CALIBRATION = {
   toneScale: 1.0,
   wbScale: 1.0,
@@ -210,7 +211,11 @@ export default function App() {
   const [hoveredSlot, setHoveredSlot] = useState(null);
   const [focusedSlot, setFocusedSlot] = useState(null);
 
+  // Grading parameters & last matched Reference snapshot (includes 9 sliders + 9 color wheel channels)
   const [gradingParams, setGradingParams] = useState({ ...DEFAULT_PARAMS });
+  const [lastMatchedParams, setLastMatchedParams] = useState(null);
+  const [reloadedFeedback, setReloadedFeedback] = useState(false);
+
   const [previewMode, setPreviewMode] = useState("split");
 
   const [presetName, setPresetName] = useState("");
@@ -289,7 +294,8 @@ export default function App() {
             pending.numPixels
           );
           setIsAnalyzing(false);
-          setGradingParams(fallbackParams);
+          setGradingParams({ ...fallbackParams });
+          setLastMatchedParams({ ...fallbackParams });
           setStatusText("Matched");
           return;
         } catch (err) {
@@ -335,7 +341,8 @@ export default function App() {
         clearAnalysisTimeout();
         pendingAnalysisRef.current = null;
         setIsAnalyzing(false);
-        setGradingParams(params);
+        setGradingParams({ ...params });
+        setLastMatchedParams({ ...params });
         setStatusText("Matched");
       } else if (type === "error") {
         clearAnalysisTimeout();
@@ -380,6 +387,54 @@ export default function App() {
       setTargetError(msg);
     }
   }, []);
+
+  // Triggers background worker analysis for a given HTMLImageElement
+  const triggerReferenceAnalysis = useCallback(
+    (img) => {
+      if (!img) return;
+      setIsAnalyzing(true);
+      setStatusText("Analyzing...");
+
+      const scale = Math.min(
+        1,
+        analysisMaxDim / Math.max(img.naturalWidth, img.naturalHeight)
+      );
+      const w = Math.max(1, Math.round(img.naturalWidth * scale));
+      const h = Math.max(1, Math.round(img.naturalHeight * scale));
+
+      const offCanvas = document.createElement("canvas");
+      offCanvas.width = w;
+      offCanvas.height = h;
+      const ctx = offCanvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      const imgData = ctx.getImageData(0, 0, w, h);
+
+      pendingAnalysisRef.current = {
+        rgbaData: imgData.data,
+        numPixels: w * h,
+      };
+
+      clearAnalysisTimeout();
+      analysisTimeoutRef.current = setTimeout(() => {
+        runFallbackAnalysisOrReset(
+          "Worker analysis timed out; recovered on main thread."
+        );
+      }, 3500);
+
+      try {
+        workerRef.current?.postMessage({
+          type: "analyze",
+          rgbaData: imgData.data,
+          numPixels: w * h,
+        });
+      } catch {
+        runFallbackAnalysisOrReset(
+          "Worker unavailable; analyzed on main thread."
+        );
+      }
+    },
+    [analysisMaxDim, clearAnalysisTimeout, runFallbackAnalysisOrReset]
+  );
 
   // Strict MIME validation + image decode integrity check
   const loadImageFile = useCallback(
@@ -441,47 +496,7 @@ export default function App() {
             setDescription(
               `Grading preset matched from reference '${baseName}'.`
             );
-
-            setIsAnalyzing(true);
-            setStatusText("Analyzing...");
-
-            const scale = Math.min(
-              1,
-              analysisMaxDim / Math.max(img.naturalWidth, img.naturalHeight)
-            );
-            const w = Math.max(1, Math.round(img.naturalWidth * scale));
-            const h = Math.max(1, Math.round(img.naturalHeight * scale));
-
-            const offCanvas = document.createElement("canvas");
-            offCanvas.width = w;
-            offCanvas.height = h;
-            const ctx = offCanvas.getContext("2d");
-            ctx.drawImage(img, 0, 0, w, h);
-            const imgData = ctx.getImageData(0, 0, w, h);
-
-            pendingAnalysisRef.current = {
-              rgbaData: imgData.data,
-              numPixels: w * h,
-            };
-
-            clearAnalysisTimeout();
-            analysisTimeoutRef.current = setTimeout(() => {
-              runFallbackAnalysisOrReset(
-                "Worker analysis timed out; recovered on main thread."
-              );
-            }, 3500);
-
-            try {
-              workerRef.current?.postMessage({
-                type: "analyze",
-                rgbaData: imgData.data,
-                numPixels: w * h,
-              });
-            } catch {
-              runFallbackAnalysisOrReset(
-                "Worker unavailable; analyzed on main thread."
-              );
-            }
+            triggerReferenceAnalysis(img);
           } else {
             setTargetImage(info);
           }
@@ -490,7 +505,7 @@ export default function App() {
       };
       reader.readAsDataURL(file);
     },
-    [analysisMaxDim, setSlotError, clearAnalysisTimeout, runFallbackAnalysisOrReset]
+    [setSlotError, triggerReferenceAnalysis]
   );
 
   const handleTrySample = useCallback(
@@ -762,6 +777,21 @@ export default function App() {
 
   const handleResetParams = () => {
     setGradingParams({ ...DEFAULT_PARAMS });
+    setStatusText("Reset");
+  };
+
+  // Reload Analysis: instantly restores all 9 grading parameters + 3-Way Color Wheels from lastMatchedParams (or re-runs analysis)
+  const handleReloadAnalysis = () => {
+    if (!referenceImage) return;
+
+    if (lastMatchedParams) {
+      setGradingParams({ ...lastMatchedParams });
+      setStatusText("Matched");
+      setReloadedFeedback(true);
+      setTimeout(() => setReloadedFeedback(false), 1200);
+    } else if (referenceImage.imgElement) {
+      triggerReferenceAnalysis(referenceImage.imgElement);
+    }
   };
 
   const handleResetCalibration = () => {
@@ -817,10 +847,22 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0E0E11] text-[#E2E4E9]">
+    <div className="min-h-screen flex flex-col relative bg-transparent text-[#E2E4E9]">
+      {/* High-Contrast Organic Monochrome Liquid Glass Background Layer (z-0, above #070709 base, behind z-10 content) */}
+      <div
+        aria-hidden="true"
+        className="fixed inset-0 z-0 pointer-events-none overflow-hidden bg-[#070709]"
+      >
+        <div className="m3-liquid-orb-1 absolute -top-20 -left-16" />
+        <div className="m3-liquid-orb-2 absolute -bottom-24 left-8" />
+        <div className="m3-liquid-orb-3 absolute top-1/3 left-1/3" />
+      </div>
+
+      {/* Foreground Application Content Wrapper (relative z-10 bg-transparent) */}
+      <div className="relative z-10 min-h-screen flex flex-col bg-transparent">
       {/* Compact 48px Top App Bar (Material 3 Workstation Header) */}
-      <header className="sticky top-0 z-40 min-h-12 px-3 sm:px-5 py-1.5 bg-[#151519]/95 backdrop-blur-md border-b border-white/[0.08] flex flex-wrap items-center justify-between gap-2">
-        {/* Left: Achromatic Keyflow Logo + Brand Title + Interactive v0.6.2 Beta Changelog Button */}
+      <header className="sticky top-0 z-40 min-h-12 px-3 sm:px-5 py-1.5 bg-[#0E0E12]/65 backdrop-blur-2xl border-b border-white/[0.12] flex flex-wrap items-center justify-between gap-2">
+        {/* Left: Achromatic Keyflow Logo + Brand Title + Interactive v0.6.3 Beta Changelog Button */}
         <div className="flex items-center gap-2.5">
           <KeyflowLogo size={28} />
           <div className="flex items-center gap-2">
@@ -830,13 +872,13 @@ export default function App() {
             <button
               type="button"
               onClick={handleOpenChangelog}
-              title="View What's New in v0.6.2 Beta"
-              className="inline-flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded-md bg-[#1E1E24] hover:bg-white/10 text-[#E2E4E9] border border-white/[0.1] hover:border-white/25 transition-all cursor-pointer active:scale-95"
+              title="View What's New in v0.6.3 Beta"
+              className="inline-flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.04] hover:bg-white/[0.09] text-[#E2E4E9] border border-white/[0.09] hover:border-white/25 transition-all cursor-pointer active:scale-95"
             >
               {hasUnreadUpdate && (
                 <span className="w-1.5 h-1.5 rounded-full bg-[#6EE7B7] animate-pulse" />
               )}
-              <span>v0.6.2 Beta</span>
+              <span>v0.6.3 Beta</span>
             </button>
           </div>
         </div>
@@ -845,7 +887,7 @@ export default function App() {
         <div className="flex items-center gap-2 ml-auto">
           <nav
             aria-label="Primary Navigation"
-            className="relative grid grid-cols-4 items-center bg-[#0E0E11] border border-white/[0.08] rounded-xl p-0.5"
+            className="relative grid grid-cols-4 items-center bg-[#0A0A0D]/38 border border-white/[0.09] rounded-xl p-0.5"
           >
             <div
               aria-hidden="true"
@@ -877,7 +919,7 @@ export default function App() {
             })}
           </nav>
 
-          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1E1E24] border border-white/[0.08] text-[11px] font-mono text-[#E2E4E9]">
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.09] text-[11px] font-mono text-[#E2E4E9]">
             <span
               className={`w-1.5 h-1.5 rounded-full ${
                 isAnalyzing
@@ -915,6 +957,7 @@ export default function App() {
                   onSelectImage={(file) => loadImageFile(file, "reference")}
                   onClearImage={() => {
                     setReferenceImage(null);
+                    setLastMatchedParams(null);
                     setReferenceError("");
                     setStatusText("Ready");
                   }}
@@ -966,7 +1009,7 @@ export default function App() {
             {/* RIGHT COLUMN */}
             <div className="lg:col-span-5 flex flex-col gap-3">
               <div className="m3-panel rounded-2xl p-3.5">
-                <div className="flex items-center justify-between mb-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
                   <div className="flex items-center gap-2">
                     <Sliders className="w-3.5 h-3.5 text-[#9CA3AF]" />
                     <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF]">
@@ -974,19 +1017,48 @@ export default function App() {
                     </h3>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleResetParams}
-                    className="flex items-center gap-1 text-[11px] font-medium text-[#9CA3AF] hover:text-[#E2E4E9] px-2 py-1 rounded-md bg-[#1E1E24] hover:bg-white/10 border border-white/[0.08] transition-colors cursor-pointer active:scale-95"
-                    title="Reset all sliders to neutral defaults"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    <span>Reset All</span>
-                  </button>
+                  {/* Action Buttons: Reload Analysis + Reset All */}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleReloadAnalysis}
+                      disabled={!referenceImage || isAnalyzing}
+                      className={`flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md border transition-all ${
+                        !referenceImage || isAnalyzing
+                          ? "bg-white/[0.025] text-[#9CA3AF]/35 border-white/[0.05] cursor-not-allowed"
+                          : reloadedFeedback
+                          ? "bg-[#E2E4E9] text-[#0E0E11] border-[#E2E4E9] font-semibold cursor-pointer"
+                          : "bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.09] cursor-pointer active:scale-95"
+                      }`}
+                      title="Restore all sliders and 3-Way Color Wheels to the Reference analysis result"
+                    >
+                      {reloadedFeedback ? (
+                        <>
+                          <Check className="w-3 h-3" />
+                          <span>Restored</span>
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-3 h-3" />
+                          <span>Reload Analysis</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleResetParams}
+                      className="flex items-center gap-1 text-[11px] font-medium text-[#9CA3AF] hover:text-[#E2E4E9] px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] transition-colors cursor-pointer active:scale-95"
+                      title="Reset all sliders to neutral defaults"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Reset All</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Real-Time Mini RGB / Rec.709 Luma Histogram Telemetry */}
-                <div className="mb-3 rounded-lg bg-[#0E0E11] border border-white/[0.08] p-2">
+                <div className="mb-3 rounded-lg bg-[#0A0A0D]/38 border border-white/[0.09] p-2">
                   <div className="flex items-center justify-between text-[10px] font-mono text-[#9CA3AF] mb-1">
                     <span className="inline-flex items-center gap-1 uppercase tracking-wider">
                       <BarChart3 className="w-3 h-3 text-[#9CA3AF]" />
@@ -1093,7 +1165,7 @@ export default function App() {
                         }}
                         aria-expanded={isWheelsExpanded}
                         aria-label="Toggle 3-Way Color Wheels panel"
-                        className="p-1 rounded-lg bg-[#1E1E24]/70 hover:bg-[#1E1E24] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.06] transition-all cursor-pointer"
+                        className="p-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] transition-all cursor-pointer"
                       >
                         <ChevronDown
                           className={`w-3.5 h-3.5 transition-transform duration-300 ${
@@ -1228,7 +1300,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleResetCalibration}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1E1E24] hover:bg-white/10 text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.08] transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] transition-colors cursor-pointer"
                   title="Reset all output calibration multipliers to 1.00x"
                 >
                   <RotateCcw className="w-3 h-3" />
@@ -1236,7 +1308,7 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="bg-[#1E1E24] border border-white/[0.08] rounded-xl p-4 space-y-3">
+              <div className="bg-white/[0.035] border border-white/[0.09] rounded-xl p-4 space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="space-y-1">
                     <div className="text-xs font-semibold text-[#E2E4E9]">
@@ -1292,7 +1364,7 @@ export default function App() {
                   Compensates for rendering intensity differences between browser 2D canvas and Keyflow Mobile&apos;s OpenGL ES shader pipeline during <code className="font-mono text-[#E2E4E9]">.kfplug</code> packaging.
                 </p>
 
-                <div className="bg-[#0E0E11] border border-white/[0.08] rounded-xl p-2 divide-y divide-white/[0.04]">
+                <div className="bg-[#0A0A0D]/38 border border-white/[0.09] rounded-xl p-2 divide-y divide-white/[0.04]">
                   <ParameterControl
                     paramKey="toneScale"
                     label="Tone & Contrast Scale"
@@ -1348,10 +1420,10 @@ export default function App() {
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-lg font-bold font-display text-[#E2E4E9]">
-                        Color Match for Keyflow V.0.6.2 Beta
+                        Color Match for Keyflow V.0.6.3 Beta
                       </h2>
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#1E1E24] text-[#6EE7B7] border border-white/[0.08]">
-                        v0.6.2 Beta
+                        v0.6.3 Beta
                       </span>
                     </div>
                     <p className="text-xs text-[#9CA3AF] mt-0.5">
@@ -1386,7 +1458,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Permanent Release History / Changelog Accordion (v0.5.0 Beta -> v0.6.2 Beta) */}
+            {/* Permanent Release History / Changelog Accordion (v0.5.0 Beta -> v0.6.3 Beta) */}
             <div className="m3-panel rounded-2xl p-5 sm:p-6 space-y-3.5">
               <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
                 <div className="flex items-center gap-2">
@@ -1396,7 +1468,7 @@ export default function App() {
                   </h3>
                 </div>
                 <span className="text-[11px] font-mono text-[#9CA3AF]">
-                  v0.5.0 – v0.6.2 Beta
+                  v0.5.0 – v0.6.3 Beta
                 </span>
               </div>
 
@@ -1413,7 +1485,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Interactive "What's New in v0.6.2 Beta" Modal Dialog */}
+      {/* Interactive "What's New in v0.6.3 Beta" Modal Dialog */}
       <ChangelogModal
         open={isChangelogOpen}
         onClose={() => setIsChangelogOpen(false)}
@@ -1426,6 +1498,7 @@ export default function App() {
         filename={exportToast.filename}
         onClose={() => setExportToast({ visible: false, filename: "" })}
       />
+      </div>
     </div>
   );
 }

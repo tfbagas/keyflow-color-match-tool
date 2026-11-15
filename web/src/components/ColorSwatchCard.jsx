@@ -33,10 +33,10 @@ export default function ColorSwatchCard({ title, rgb = [0.5, 0.5, 0.5] }) {
         }
       }}
       title={`Click to copy ${hex}`}
-      className={`relative flex flex-col items-center bg-[#1E1E24]/70 border rounded-lg p-2.5 transition-all cursor-pointer select-none active:scale-[0.98] ${
+      className={`relative flex flex-col items-center bg-white/[0.035] border rounded-lg p-2.5 transition-all cursor-pointer select-none active:scale-[0.98] ${
         copied
-          ? "border-[#6EE7B7]/40 bg-[#1E1E24]"
-          : "border-white/[0.08] hover:border-white/20"
+          ? "border-[#6EE7B7]/40 bg-white/[0.08]"
+          : "border-white/[0.09] hover:border-white/20 hover:bg-white/[0.06]"
       }`}
     >
       <span className="text-[11px] font-medium text-[#9CA3AF] mb-1.5">

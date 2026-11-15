@@ -78,7 +78,7 @@ export default function SupportTab() {
               <h2 className="text-lg sm:text-xl font-bold font-display text-[#E2E4E9] tracking-tight">
                 TFBAGAS
               </h2>
-              <span className="text-xs font-mono px-2 py-0.5 rounded-md bg-[#1E1E24] text-[#9CA3AF] border border-white/[0.08]">
+              <span className="text-xs font-mono px-2 py-0.5 rounded-md bg-white/[0.04] text-[#9CA3AF] border border-white/[0.09]">
                 @tfbagas
               </span>
             </div>
@@ -102,7 +102,7 @@ export default function SupportTab() {
                 href={item.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center justify-between p-3 rounded-xl bg-[#1E1E24] border border-white/[0.08] hover:border-white/20 hover:bg-[#1E1E24]/80 transition-all group"
+                className="flex items-center justify-between p-3 rounded-xl bg-white/[0.035] border border-white/[0.09] hover:border-white/20 hover:bg-white/[0.07] transition-all group"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <Icon className="w-4 h-4 text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors shrink-0" />
