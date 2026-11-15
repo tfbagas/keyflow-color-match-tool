@@ -65,7 +65,7 @@ export default function ParameterControl({
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(paramKey, parseFloat(e.target.value) || 0)}
-        className="w-14 px-1.5 py-0.5 rounded-md bg-[#09100D]/90 border border-[#20352B] focus:border-[#00E987] text-[#00E987] text-[11px] font-bold font-mono text-right outline-none disabled:opacity-50"
+        className="w-16 px-1.5 py-0.5 rounded-md bg-[#09100D]/90 border border-[#20352B] focus:border-[#00E987] text-[#00E987] text-[11px] font-semibold font-mono text-right outline-none disabled:opacity-50"
       />
     </div>
   );

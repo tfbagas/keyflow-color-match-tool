@@ -35,7 +35,9 @@ export default function ImageDropCard({
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
-      handleFile(e.target.files[0]);
+      const file = e.target.files[0];
+      e.target.value = "";
+      handleFile(file);
     }
   };
 
@@ -48,7 +50,12 @@ export default function ImageDropCard({
     reader.onload = (event) => {
       const dataUrl = event.target.result;
       const img = new Image();
-      img.onload = () => {
+      img.onload = async () => {
+        try {
+          if (img.decode) await img.decode();
+        } catch {
+          // Proceed even if decode() rejects cleanly on already loaded image
+        }
         onImageSelected({
           file,
           dataUrl,

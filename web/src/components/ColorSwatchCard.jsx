@@ -35,7 +35,7 @@ export default function ColorSwatchCard({
 
   return (
     <div className="flex-1 bg-[#0E1914]/85 border border-[#20352B] rounded-xl p-2.5 flex flex-col items-center gap-1.5">
-      <span className="text-[10px] font-bold text-[#91A69A]">{title}</span>
+      <span className="text-[10px] font-semibold text-[#91A69A]">{title}</span>
 
       {/* Clickable Color Block */}
       <button
@@ -57,7 +57,7 @@ export default function ColorSwatchCard({
 
       {/* HEX + Copy Button */}
       <div className="flex items-center gap-1.5 mt-0.5">
-        <span className="text-[11px] font-bold text-white tracking-wider font-mono">
+        <span className="text-[11px] font-semibold text-white tracking-wider font-mono">
           {hexCode}
         </span>
         <button

@@ -4,10 +4,8 @@ import {
   Settings,
   Info,
   RotateCcw,
-  Sparkles,
   Layers,
-  Heart,
-  Coffee
+  Heart
 } from "lucide-react";
 
 import ImageDropCard from "./components/ImageDropCard";
@@ -32,6 +30,9 @@ export default function App() {
   const [refImage, setRefImage] = useState(null);
   const [targetImage, setTargetImage] = useState(null);
 
+  // Preview mode state ("split" | "side" | "result")
+  const [previewMode, setPreviewMode] = useState("split");
+
   // Status & Worker state
   const [statusText, setStatusText] = useState("Ready");
   const [isBusy, setIsBusy] = useState(false);
@@ -52,10 +53,11 @@ export default function App() {
   // Post-Export Toast state
   const [showSupportToast, setShowSupportToast] = useState(false);
 
-  // Canvas refs
+  // Canvas & Worker refs
   const previewCanvasRef = useRef(null);
   const workerRef = useRef(null);
-  const debounceTimerRef = useRef(null);
+  const rafRef = useRef(null);
+  const lastRenderedImgRef = useRef(null);
 
   // Initialize Web Worker
   useEffect(() => {
@@ -108,15 +110,18 @@ export default function App() {
     const activeImg = targetImage?.imgElement || refImage?.imgElement;
     const canvas = previewCanvasRef.current;
     if (!activeImg || !canvas) return;
+    if (!activeImg.complete || activeImg.naturalWidth === 0 || activeImg.naturalHeight === 0) {
+      return;
+    }
 
-    // Use optimal resolution for preview (max 1024px)
+    // Use optimal resolution for preview (max 1024px) while preserving exact aspect ratio
     const maxDim = 1024;
     let w = activeImg.naturalWidth;
     let h = activeImg.naturalHeight;
     if (Math.max(w, h) > maxDim) {
       const scale = maxDim / Math.max(w, h);
-      w = Math.round(w * scale);
-      h = Math.round(h * scale);
+      w = Math.max(1, Math.round(w * scale));
+      h = Math.max(1, Math.round(h * scale));
     }
 
     if (canvas.width !== w || canvas.height !== h) {
@@ -125,6 +130,9 @@ export default function App() {
     }
 
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, w, h);
     ctx.drawImage(activeImg, 0, 0, w, h);
 
     const imgData = ctx.getImageData(0, 0, w, h);
@@ -132,23 +140,44 @@ export default function App() {
 
     simulateGradePixels(imgData.data, targetData.data, params);
     ctx.putImageData(targetData, 0, 0);
+
+    canvas.dataset.rendered = "true";
+    lastRenderedImgRef.current = activeImg;
   }, [refImage, targetImage, params]);
 
-  // Debounce live simulation on parameter changes
+  // Re-render graded preview whenever images, grading parameters, preview mode, or active tab change
   useEffect(() => {
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    debounceTimerRef.current = setTimeout(() => {
-      updatePreviewSimulation();
-    }, 25);
-    return () => clearTimeout(debounceTimerRef.current);
-  }, [params, updatePreviewSimulation]);
+    if (activeTab !== "home") return;
 
-  // Re-run simulation when switching back to Home tab
-  useEffect(() => {
-    if (activeTab === "home") {
-      updatePreviewSimulation();
+    const activeImg = targetImage?.imgElement || refImage?.imgElement;
+    const canvas = previewCanvasRef.current;
+    if (!activeImg || !canvas) return;
+
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     }
-  }, [activeTab, updatePreviewSimulation]);
+
+    const needsImmediateDraw =
+      canvas.dataset.rendered !== "true" ||
+      lastRenderedImgRef.current !== activeImg;
+
+    if (needsImmediateDraw) {
+      updatePreviewSimulation();
+    } else {
+      rafRef.current = requestAnimationFrame(() => {
+        updatePreviewSimulation();
+        rafRef.current = null;
+      });
+    }
+
+    return () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
+  }, [refImage, targetImage, params, previewMode, activeTab, updatePreviewSimulation]);
 
   // Handle Reference Image Loaded -> Trigger Worker
   const handleRefImageSelected = (imgData) => {
@@ -197,6 +226,9 @@ export default function App() {
 
   const handleRefImageRemoved = () => {
     setRefImage(null);
+    if (!targetImage) {
+      lastRenderedImgRef.current = null;
+    }
     setParams({ ...DEFAULT_PARAMS });
     setAutoParams({ ...DEFAULT_PARAMS });
   };
@@ -207,6 +239,9 @@ export default function App() {
 
   const handleTargetImageRemoved = () => {
     setTargetImage(null);
+    if (!refImage) {
+      lastRenderedImgRef.current = null;
+    }
   };
 
   const handleParamChange = (key, val) => {
@@ -343,15 +378,15 @@ export default function App() {
         <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight font-display">
+              <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight font-display">
                 Color Match Tool
               </h1>
-              <span className="text-xl sm:text-2xl font-bold text-[#00E987] tracking-tight font-display">
+              <span className="text-xl sm:text-2xl font-extrabold text-[#00E987] tracking-tight font-display">
                 for Keyflow
               </span>
             </div>
             <p className="text-xs text-[#91A69A]">
-              Extract Look & Grading from Reference Image and Export as Keyflow Mobile Plugin (.kfplug)
+              Extract Look &amp; Grading from Reference Image and Export as Keyflow Mobile Plugin (.kfplug)
             </p>
           </div>
 
@@ -359,7 +394,7 @@ export default function App() {
             {/* Quick-Access Support Button */}
             <button
               onClick={() => setActiveTab("support")}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold border transition-all cursor-pointer active:scale-95 ${
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold border transition-all cursor-pointer active:scale-95 ${
                 activeTab === "support"
                   ? "bg-[#00E987] text-[#05120B] border-[#00E987] shadow-[0_0_12px_rgba(0,233,135,0.4)]"
                   : "bg-[#00E987]/15 hover:bg-[#00E987]/25 text-[#00E987] border-[#00E987]/35 shadow-[0_0_10px_rgba(0,233,135,0.1)]"
@@ -372,7 +407,7 @@ export default function App() {
 
             {/* Non-blocking Status Pill */}
             <div
-              className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-all ${
+              className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition-all ${
                 isBusy
                   ? "bg-[#162D22] text-[#16FFA0] border-[#00E987] shadow-[0_0_12px_rgba(0,233,135,0.3)] animate-pulse"
                   : "bg-[#0E1C16]/85 text-[#00E987] border-[#00E987]/35"
@@ -382,7 +417,7 @@ export default function App() {
             </div>
 
             {/* Version Badge */}
-            <div className="px-2.5 py-1 rounded-full text-[11px] font-bold font-mono bg-[#0E1C16]/80 text-[#91A69A] border border-[#00E987]/20">
+            <div className="px-2.5 py-1 rounded-full text-[11px] font-semibold font-mono bg-[#0E1C16]/80 text-[#91A69A] border border-[#00E987]/20">
               v0.5 Beta
             </div>
           </div>
@@ -420,6 +455,8 @@ export default function App() {
               <ComparisonSlider
                 originalImage={targetImage?.dataUrl || refImage?.dataUrl}
                 gradedCanvasRef={previewCanvasRef}
+                previewMode={previewMode}
+                onPreviewModeChange={setPreviewMode}
               />
             </div>
 
