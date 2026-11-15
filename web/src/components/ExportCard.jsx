@@ -62,10 +62,10 @@ export default function ExportCard({
                 onExport();
               }}
               disabled={disabled || isExporting}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 ${
                 disabled
                   ? "bg-white/[0.035] text-[#9CA3AF]/40 border border-white/[0.09] cursor-not-allowed"
-                  : "bg-[#6EE7B7] hover:bg-[#86EFAC] text-[#042F1E]"
+                  : "m3-btn-primary-morph bg-[#6EE7B7] hover:bg-[#86EFAC] text-[#042F1E] cursor-pointer"
               }`}
             >
               <Download className="w-3 h-3" />
@@ -81,12 +81,13 @@ export default function ExportCard({
             }}
             aria-expanded={isExpanded}
             aria-label="Toggle Export Plugin panel"
-            className="p-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] transition-all cursor-pointer"
+            className="m3-btn-morph p-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] cursor-pointer"
           >
             <ChevronDown
               className={`w-3.5 h-3.5 transition-transform duration-300 ${
                 isExpanded ? "rotate-180" : "rotate-0"
               }`}
+              style={{ transitionTimingFunction: "var(--ease-m3-spring)" }}
             />
           </button>
         </div>
@@ -149,15 +150,15 @@ export default function ExportCard({
               </div>
             </div>
 
-            {/* Material 3 Filled Primary Action Button (Calm Mint #6EE7B7 + #042F1E Text) */}
+            {/* Material 3 Filled Primary Action Button with Shape-Morphing Spring */}
             <button
               type="button"
               onClick={onExport}
               disabled={disabled || isExporting}
-              className={`w-full mt-1 py-2.5 px-4 rounded-xl font-semibold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              className={`w-full mt-1 py-2.5 px-4 rounded-xl font-semibold text-xs flex items-center justify-center gap-2 ${
                 disabled
                   ? "bg-white/[0.035] text-[#9CA3AF]/40 border border-white/[0.09] cursor-not-allowed"
-                  : "bg-[#6EE7B7] hover:bg-[#86EFAC] active:scale-[0.99] text-[#042F1E]"
+                  : "m3-btn-primary-morph bg-[#6EE7B7] hover:bg-[#86EFAC] text-[#042F1E] cursor-pointer"
               }`}
             >
               <Download className="w-4 h-4 stroke-[2.25]" />

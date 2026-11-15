@@ -97,12 +97,12 @@ export default function SupportTab() {
           {socialLinks.map((item) => {
             const Icon = item.icon;
             return (
-              <a
+                <a
                 key={item.label}
                 href={item.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center justify-between p-3 rounded-xl bg-white/[0.035] border border-white/[0.09] hover:border-white/20 hover:bg-white/[0.07] transition-all group"
+                className="m3-btn-morph flex items-center justify-between p-3 rounded-xl bg-white/[0.035] border border-white/[0.09] hover:border-white/20 hover:bg-white/[0.07] group"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <Icon className="w-4 h-4 text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors shrink-0" />
@@ -154,7 +154,7 @@ export default function SupportTab() {
             href="https://sociabuzz.com/tfbagas/tribe"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-xs bg-[#6EE7B7] hover:bg-[#86EFAC] active:scale-[0.99] text-[#042F1E] transition-all shrink-0"
+            className="m3-btn-primary-morph inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-xs bg-[#6EE7B7] hover:bg-[#86EFAC] text-[#042F1E] shrink-0"
           >
             <span>Support on SociaBuzz</span>
             <ExternalLink className="w-3.5 h-3.5" />

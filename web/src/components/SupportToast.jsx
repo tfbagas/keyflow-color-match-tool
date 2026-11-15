@@ -51,7 +51,7 @@ export default function SupportToast({ visible, filename, onClose }) {
             href="https://sociabuzz.com/tfbagas/tribe"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[#6EE7B7] hover:bg-[#86EFAC] text-[#042F1E] transition-all"
+            className="m3-btn-primary-morph inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[#6EE7B7] hover:bg-[#86EFAC] text-[#042F1E]"
           >
             <Heart className="w-3.5 h-3.5" />
             <span>Support on SociaBuzz</span>

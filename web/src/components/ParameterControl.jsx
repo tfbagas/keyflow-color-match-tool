@@ -94,19 +94,26 @@ export default function ParameterControl({
         )}
       </div>
 
-      {/* Material 3 Bipolar Center-Zero Slider */}
+      {/* Material 3 Bipolar Center-Zero Slider with Tactile Handle Morph */}
       <div className="relative flex-1 flex items-center h-6">
         {/* Track Background */}
         <div
-          className={`w-full rounded-full relative overflow-hidden border border-white/[0.06] transition-all duration-200 ${
-            isActive ? "h-2" : "h-1.5"
+          className={`w-full rounded-full relative overflow-hidden border border-white/[0.08] transition-[height,border-color] duration-200 ${
+            isDragging ? "h-2 border-white/20" : isActive ? "h-2" : "h-1.5"
           }`}
-          style={trackBgStyle}
+          style={{
+            ...trackBgStyle,
+            transitionTimingFunction: "var(--ease-m3-spring)",
+          }}
         >
-          {/* Active Fill Bar */}
+          {/* Active Fill Bar (no transition on left/width for 0-lag 60fps drag) */}
           <div
-            className={`absolute top-0 bottom-0 transition-colors duration-200 ${
-              isActive ? "bg-[#E2E4E9]" : "bg-[#9CA3AF]"
+            className={`absolute top-0 bottom-0 transition-colors duration-150 ${
+              isDragging
+                ? "bg-white"
+                : isActive
+                ? "bg-[#E2E4E9]"
+                : "bg-[#9CA3AF]"
             }`}
             style={{
               left: `${fillLeft}%`,
@@ -117,20 +124,25 @@ export default function ParameterControl({
 
         {/* Center / Default Tick Mark */}
         <div
-          className={`absolute top-1/2 -translate-y-1/2 w-[1.5px] pointer-events-none z-10 transition-all duration-200 ${
+          className={`absolute top-1/2 -translate-y-1/2 w-[1.5px] pointer-events-none z-10 transition-[height,background-color] duration-200 ${
             !isModified ? "h-3.5 bg-[#E2E4E9]/60" : "h-3 bg-white/25"
           }`}
           style={{ left: `calc(${defaultPct}% - 0.75px)` }}
         />
 
-        {/* Tactile Vertical Bar Thumb with M3 Separation Gap & Hover/Drag Expansion */}
+        {/* Tactile Vertical Bar Thumb: morphs thicker + monochrome glass glow on drag, springs back cleanly; left stays instant for 0 lag */}
         <div
-          className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full ring-2 ring-[#151519] pointer-events-none z-20 transition-all duration-150 ${
-            isActive
+          className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full ring-2 ring-[#0E0E12]/90 pointer-events-none z-20 transition-[width,height,box-shadow,background-color] duration-200 ${
+            isDragging
+              ? "w-2 h-5 bg-white shadow-[0_0_14px_rgba(255,255,255,0.58),0_0_0_3px_rgba(255,255,255,0.16)]"
+              : isHovered
               ? "w-1.5 h-5 bg-white shadow-[0_0_10px_rgba(226,228,233,0.45)]"
               : "w-1 h-4 bg-[#E2E4E9]"
           }`}
-          style={{ left: `${valPct}%` }}
+          style={{
+            left: `${valPct}%`,
+            transitionTimingFunction: "var(--ease-m3-spring)",
+          }}
         />
 
         {/* Native Range Input Overlay for Full Mouse/Touch Accessibility */}
@@ -167,7 +179,7 @@ export default function ParameterControl({
           <button
             type="button"
             onClick={() => handleStep(step * 2)}
-            className="px-1 py-0.5 hover:bg-white/10 text-[#9CA3AF] hover:text-[#E2E4E9] transition-colors cursor-pointer"
+            className="px-1 py-0.5 hover:bg-white/10 active:scale-90 text-[#9CA3AF] hover:text-[#E2E4E9] transition-all cursor-pointer"
             title="Increase"
           >
             <ChevronUp className="w-2.5 h-2.5" />
@@ -175,7 +187,7 @@ export default function ParameterControl({
           <button
             type="button"
             onClick={() => handleStep(-step * 2)}
-            className="px-1 py-0.5 hover:bg-white/10 text-[#9CA3AF] hover:text-[#E2E4E9] transition-colors border-t border-white/[0.06] cursor-pointer"
+            className="px-1 py-0.5 hover:bg-white/10 active:scale-90 text-[#9CA3AF] hover:text-[#E2E4E9] transition-all border-t border-white/[0.06] cursor-pointer"
             title="Decrease"
           >
             <ChevronDown className="w-2.5 h-2.5" />

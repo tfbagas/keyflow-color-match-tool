@@ -1,5 +1,12 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Columns, MoveHorizontal, Eye } from "lucide-react";
+import { usePillIndicator } from "../hooks/usePillIndicator";
+
+const PREVIEW_MODES = [
+  { id: "split", label: "Split Slider" },
+  { id: "side", label: "Side by Side" },
+  { id: "result", label: "Split Result" },
+];
 
 export default function ComparisonSlider({
   originalImage,
@@ -12,6 +19,12 @@ export default function ComparisonSlider({
   const [isDragging, setIsDragging] = useState(false);
   const [isHoldingBefore, setIsHoldingBefore] = useState(false);
   const containerRef = useRef(null);
+
+  const {
+    containerRef: modeContainerRef,
+    registerTabRef: registerModeTabRef,
+    pillStyle: modePillStyle,
+  } = usePillIndicator(mode);
 
   const updatePosition = (clientX) => {
     if (!containerRef.current) return;
@@ -88,7 +101,7 @@ export default function ComparisonSlider({
               onTouchStart={() => setIsHoldingBefore(true)}
               onTouchEnd={() => setIsHoldingBefore(false)}
               title="Hold to peek at original ungraded image (Shortcut: Hold \)"
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors cursor-pointer select-none ${
+              className={`m3-btn-morph inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border cursor-pointer select-none ${
                 isHoldingBefore
                   ? "bg-[#E2E4E9] text-[#0E0E11] border-[#E2E4E9]"
                   : "bg-white/[0.04] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.09]"
@@ -99,20 +112,29 @@ export default function ComparisonSlider({
             </button>
           )}
 
-          {/* Mode Selector Segmented Pill */}
-          <div className="flex items-center bg-[#0A0A0D]/38 border border-white/[0.09] rounded-lg p-0.5 text-xs">
-            {[
-              { id: "split", label: "Split Slider" },
-              { id: "side", label: "Side by Side" },
-              { id: "result", label: "Split Result" },
-            ].map((m) => (
+          {/* Mode Selector Segmented Pill with Shared-Element Liquid Stretch */}
+          <div
+            ref={modeContainerRef}
+            className="relative flex items-center gap-0.5 bg-[#0A0A0D]/45 border border-white/[0.09] rounded-xl p-0.5 text-xs backdrop-blur-md"
+          >
+            <div
+              aria-hidden="true"
+              className="m3-pill-indicator pointer-events-none absolute top-0.5 bottom-0.5 rounded-lg bg-[#E2E4E9] shadow-[0_2px_10px_rgba(255,255,255,0.22),inset_0_1px_0_rgba(255,255,255,0.7)]"
+              style={{
+                left: `${modePillStyle.left}px`,
+                width: `${modePillStyle.width}px`,
+                opacity: modePillStyle.opacity,
+              }}
+            />
+            {PREVIEW_MODES.map((m) => (
               <button
                 key={m.id}
+                ref={registerModeTabRef(m.id)}
                 type="button"
                 onClick={() => onModeChange && onModeChange(m.id)}
-                className={`px-2.5 py-1 rounded-md font-medium transition-all cursor-pointer ${
+                className={`relative z-10 px-2.5 py-1 rounded-lg font-medium transition-colors duration-200 active:scale-[0.96] cursor-pointer whitespace-nowrap ${
                   mode === m.id
-                    ? "bg-[#E2E4E9] text-[#0E0E11] font-semibold"
+                    ? "text-[#0E0E11] font-semibold"
                     : "text-[#9CA3AF] hover:text-[#E2E4E9]"
                 }`}
               >

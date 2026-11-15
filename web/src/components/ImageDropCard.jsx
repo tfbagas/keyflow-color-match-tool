@@ -112,12 +112,13 @@ export default function ImageDropCard({
             }}
             aria-expanded={isExpanded}
             aria-label={`Toggle ${title} panel`}
-            className="p-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] transition-all cursor-pointer"
+            className="m3-btn-morph p-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] cursor-pointer"
           >
             <ChevronDown
               className={`w-3.5 h-3.5 transition-transform duration-300 ${
                 isExpanded ? "rotate-180" : "rotate-0"
               }`}
+              style={{ transitionTimingFunction: "var(--ease-m3-spring)" }}
             />
           </button>
         </div>
@@ -155,7 +156,7 @@ export default function ImageDropCard({
               e.stopPropagation();
               inputRef.current?.click();
             }}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] text-xs font-medium text-[#E2E4E9] transition-colors shrink-0 cursor-pointer"
+            className="m3-btn-morph inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] text-xs font-medium text-[#E2E4E9] shrink-0 cursor-pointer"
           >
             <RefreshCw className="w-3 h-3 text-[#9CA3AF]" />
             <span>Replace</span>
@@ -210,7 +211,7 @@ export default function ImageDropCard({
               <button
                 type="button"
                 onClick={() => inputRef.current?.click()}
-                className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] text-xs font-medium text-[#E2E4E9] transition-colors cursor-pointer"
+                className="m3-btn-morph flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] text-xs font-medium text-[#E2E4E9] cursor-pointer"
               >
                 <RefreshCw className="w-3.5 h-3.5 text-[#9CA3AF]" />
                 <span>{imageInfo ? "Replace" : "Browse"}</span>
@@ -220,7 +221,7 @@ export default function ImageDropCard({
                 <button
                   type="button"
                   onClick={onClearImage}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-white/[0.04] hover:bg-red-500/15 border border-white/[0.09] hover:border-red-500/30 text-xs font-medium text-[#9CA3AF] hover:text-red-300 transition-colors cursor-pointer"
+                  className="m3-btn-morph flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-white/[0.04] hover:bg-red-500/15 border border-white/[0.09] hover:border-red-500/30 text-xs font-medium text-[#9CA3AF] hover:text-red-300 cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Remove</span>
@@ -230,7 +231,7 @@ export default function ImageDropCard({
                   <button
                     type="button"
                     onClick={onTrySample}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.09] text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] transition-colors cursor-pointer"
+                    className="m3-btn-morph flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.09] text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] cursor-pointer"
                   >
                     <Sparkles className="w-3.5 h-3.5" />
                     <span>Sample</span>

@@ -14,9 +14,19 @@ import KeyflowLogo from "./KeyflowLogo";
 
 export const CHANGELOG_HISTORY = [
   {
-    version: "v0.6.3 Beta",
-    subtitle: "Latest — Monochrome Liquid Glass & Analysis Recovery",
+    version: "v0.6.4 Beta",
+    subtitle: "Latest: Bouncy Spring & Liquid Morph Motion",
     isLatest: true,
+    icon: Sparkles,
+    items: [
+      "Added an interactive cursor-reactive monochrome liquid glass entrance intro with bouncy capsule morphing and a Replay Intro trigger in About.",
+      "Upgraded navigation pills, preview switchers, collapsible panels, buttons, and view transitions with hybrid Material You bouncy spring and liquid morph physics.",
+    ],
+  },
+  {
+    version: "v0.6.3 Beta",
+    subtitle: "Monochrome Liquid Glass & Analysis Recovery",
+    isLatest: false,
     icon: Droplets,
     items: [
       "Added an achromatic black-and-white animated liquid glass background with translucent frosted workstation panels (zero color-cast).",
@@ -70,7 +80,7 @@ export const CHANGELOG_HISTORY = [
 
 export function ReleaseHistoryAccordion() {
   const [expandedMap, setExpandedMap] = useState({
-    "v0.6.3 Beta": true,
+    "v0.6.4 Beta": true,
   });
 
   const toggleVersion = (ver) => {
@@ -131,6 +141,7 @@ export function ReleaseHistoryAccordion() {
                 className={`w-4 h-4 text-[#9CA3AF] shrink-0 transition-transform duration-300 ${
                   isExpanded ? "rotate-180 text-[#E2E4E9]" : "rotate-0"
                 }`}
+                style={{ transitionTimingFunction: "var(--ease-m3-spring)" }}
               />
             </button>
 
@@ -243,18 +254,18 @@ export default function ChangelogModal({ open, onClose, onViewFullHistory }) {
               className="inline-flex items-center gap-1.5 text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] transition-colors cursor-pointer"
             >
               <History className="w-3.5 h-3.5" />
-              <span>View Full Release History (v0.5 – v0.6.3)</span>
+              <span>View Full Release History (v0.5 - v0.6.4)</span>
             </button>
           ) : (
             <span className="text-[11px] font-mono text-[#9CA3AF]">
-              Build v0.6.3-beta • 100% Client-Side
+              Build v0.6.4-beta • 100% Client-Side
             </span>
           )}
 
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-semibold bg-[#E2E4E9] hover:bg-white text-[#0E0E11] transition-all cursor-pointer ml-auto"
+            className="m3-btn-morph px-4 py-2 rounded-xl text-xs font-semibold bg-[#E2E4E9] hover:bg-white text-[#0E0E11] cursor-pointer ml-auto"
           >
             Got It
           </button>

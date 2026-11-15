@@ -21,6 +21,7 @@ import {
   RefreshCw,
   History,
   Check,
+  Play,
 } from "lucide-react";
 
 import ImageDropCard, { ALLOWED_IMAGE_MIMES } from "./components/ImageDropCard";
@@ -36,6 +37,8 @@ import ChangelogModal, {
   ReleaseHistoryAccordion,
 } from "./components/ChangelogModal";
 import M3Select from "./components/M3Select";
+import SplashIntro from "./components/SplashIntro";
+import { usePillIndicator } from "./hooks/usePillIndicator";
 import {
   DEFAULT_PARAMS,
   analyzeImagePixels,
@@ -60,7 +63,8 @@ const PARAM_CONTROLS = [
 ];
 
 const CALIBRATION_STORAGE_KEY = "kf_export_calibration_v1";
-const SEEN_UPDATE_STORAGE_KEY = "kf_seen_update_v063";
+const SEEN_UPDATE_STORAGE_KEY = "kf_seen_update_v064";
+const SPLASH_SESSION_KEY = "kf_splash_seen_v064";
 const DEFAULT_CALIBRATION = {
   toneScale: 1.0,
   wbScale: 1.0,
@@ -191,6 +195,24 @@ function toRgbCss(r = 0.5, g = 0.5, b = 0.5) {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("home");
+  const [showSplash, setShowSplash] = useState(() => {
+    try {
+      return sessionStorage.getItem(SPLASH_SESSION_KEY) !== "true";
+    } catch {
+      return true;
+    }
+  });
+  const [workspacePhase, setWorkspacePhase] = useState(() => {
+    try {
+      return sessionStorage.getItem(SPLASH_SESSION_KEY) !== "true"
+        ? "hidden"
+        : "settled";
+    } catch {
+      return "hidden";
+    }
+  });
+  const [cascadeKey, setCascadeKey] = useState(0);
+  const settleTimerRef = useRef(null);
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
   const [hasUnreadUpdate, setHasUnreadUpdate] = useState(() => {
     try {
@@ -321,6 +343,35 @@ export default function App() {
     } catch {
       // ignore storage errors
     }
+  };
+
+  const handleStartExit = useCallback(() => {
+    if (settleTimerRef.current) {
+      clearTimeout(settleTimerRef.current);
+    }
+    setCascadeKey((k) => k + 1);
+    setWorkspacePhase("morphing-in");
+    settleTimerRef.current = setTimeout(() => {
+      setWorkspacePhase("settled");
+    }, 1020);
+  }, []);
+
+  const handleSplashComplete = useCallback(() => {
+    try {
+      sessionStorage.setItem(SPLASH_SESSION_KEY, "true");
+    } catch {
+      // ignore storage errors
+    }
+    setShowSplash(false);
+  }, []);
+
+  const handleReplayIntro = () => {
+    if (settleTimerRef.current) {
+      clearTimeout(settleTimerRef.current);
+    }
+    setActiveTab("home");
+    setWorkspacePhase("hidden");
+    setShowSplash(true);
   };
 
   const initWorker = useCallback(() => {
@@ -841,13 +892,22 @@ export default function App() {
     { id: "support", label: "Support", icon: Heart },
   ];
 
-  const activeTabIndex = Math.max(
-    0,
-    navTabs.findIndex((t) => t.id === activeTab)
-  );
+  const {
+    containerRef: navContainerRef,
+    registerTabRef: registerNavTabRef,
+    pillStyle: navPillStyle,
+  } = usePillIndicator(activeTab);
 
   return (
     <div className="min-h-screen flex flex-col relative bg-transparent text-[#E2E4E9]">
+      {/* v0.6.4 Beta: Interactive Bouncy & Liquid Morph Entrance Intro */}
+      {showSplash && (
+        <SplashIntro
+          onStartExit={handleStartExit}
+          onComplete={handleSplashComplete}
+        />
+      )}
+
       {/* High-Contrast Organic Monochrome Liquid Glass Background Layer (z-0, above #070709 base, behind z-10 content) */}
       <div
         aria-hidden="true"
@@ -858,11 +918,21 @@ export default function App() {
         <div className="m3-liquid-orb-3 absolute top-1/3 left-1/3" />
       </div>
 
-      {/* Foreground Application Content Wrapper (relative z-10 bg-transparent) */}
-      <div className="relative z-10 min-h-screen flex flex-col bg-transparent">
-      {/* Compact 48px Top App Bar (Material 3 Workstation Header) */}
-      <header className="sticky top-0 z-40 min-h-12 px-3 sm:px-5 py-1.5 bg-[#0E0E12]/65 backdrop-blur-2xl border-b border-white/[0.12] flex flex-wrap items-center justify-between gap-2">
-        {/* Left: Achromatic Keyflow Logo + Brand Title + Interactive v0.6.3 Beta Changelog Button */}
+      {/* Foreground Application Content Wrapper (relative z-10 bg-transparent, synchronized with SplashIntro exit) */}
+      <div
+        className={`relative z-10 min-h-screen flex flex-col bg-transparent ${
+          workspacePhase === "hidden"
+            ? "opacity-0 pointer-events-none scale-[0.94]"
+            : "opacity-100 scale-100"
+        }`}
+      >
+      {/* 1. Compact 48px Top App Bar (delay: 0ms liquid morph down) */}
+      <header
+        className={`sticky top-0 z-40 min-h-12 px-3 sm:px-5 py-1.5 bg-[#0E0E12]/65 backdrop-blur-2xl border-b border-white/[0.12] flex flex-wrap items-center justify-between gap-2 ${
+          workspacePhase === "morphing-in" ? "m3-morph-topbar" : ""
+        }`}
+      >
+        {/* Left: Achromatic Keyflow Logo + Brand Title + Interactive v0.6.4 Beta Changelog Button */}
         <div className="flex items-center gap-2.5">
           <KeyflowLogo size={28} />
           <div className="flex items-center gap-2">
@@ -872,29 +942,31 @@ export default function App() {
             <button
               type="button"
               onClick={handleOpenChangelog}
-              title="View What's New in v0.6.3 Beta"
-              className="inline-flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.04] hover:bg-white/[0.09] text-[#E2E4E9] border border-white/[0.09] hover:border-white/25 transition-all cursor-pointer active:scale-95"
+              title="View What's New in v0.6.4 Beta"
+              className="m3-btn-morph inline-flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.04] hover:bg-white/[0.09] text-[#E2E4E9] border border-white/[0.09] hover:border-white/25 cursor-pointer"
             >
               {hasUnreadUpdate && (
                 <span className="w-1.5 h-1.5 rounded-full bg-[#6EE7B7] animate-pulse" />
               )}
-              <span>v0.6.3 Beta</span>
+              <span>v0.6.4 Beta</span>
             </button>
           </div>
         </div>
 
-        {/* Right: Material 3 Sliding Segmented Navigation Pill + Status Chip */}
+        {/* Right: Material You Expressive Sliding & Stretching Pill Nav + Status Chip */}
         <div className="flex items-center gap-2 ml-auto">
           <nav
+            ref={navContainerRef}
             aria-label="Primary Navigation"
-            className="relative grid grid-cols-4 items-center bg-[#0A0A0D]/38 border border-white/[0.09] rounded-xl p-0.5"
+            className="relative flex items-center gap-0.5 bg-[#0A0A0D]/45 border border-white/[0.09] rounded-xl p-0.5 backdrop-blur-md"
           >
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute top-0.5 bottom-0.5 left-0.5 rounded-lg bg-[#E2E4E9] transition-transform duration-300"
+              className="m3-pill-indicator pointer-events-none absolute top-0.5 bottom-0.5 rounded-lg bg-[#E2E4E9] shadow-[0_2px_10px_rgba(255,255,255,0.22),inset_0_1px_0_rgba(255,255,255,0.7)]"
               style={{
-                width: "calc((100% - 4px) / 4)",
-                transform: `translateX(${activeTabIndex * 100}%)`,
+                left: `${navPillStyle.left}px`,
+                width: `${navPillStyle.width}px`,
+                opacity: navPillStyle.opacity,
               }}
             />
 
@@ -904,9 +976,10 @@ export default function App() {
               return (
                 <button
                   key={item.id}
+                  ref={registerNavTabRef(item.id)}
                   type="button"
                   onClick={() => setActiveTab(item.id)}
-                  className={`relative z-10 flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-medium transition-colors duration-200 cursor-pointer ${
+                  className={`relative z-10 flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1 rounded-lg text-xs font-medium transition-colors duration-200 active:scale-[0.96] cursor-pointer ${
                     isActive
                       ? "text-[#0E0E11] font-semibold"
                       : "text-[#9CA3AF] hover:text-[#E2E4E9]"
@@ -940,75 +1013,132 @@ export default function App() {
       <main className="flex-1 max-w-[1440px] w-full mx-auto px-3 sm:px-5 py-3.5">
         {/* WORKSPACE TAB */}
         <div
+          key={cascadeKey}
           className={
-            activeTab === "home" ? "space-y-3 m3-tab-enter" : "hidden"
+            activeTab === "home" ? "space-y-3" : "hidden"
           }
         >
-          <SupportBanner onOpenSupport={() => setActiveTab("support")} />
+          {/* 2. Support Banner (delay: 60ms) */}
+          <div
+            className={workspacePhase === "morphing-in" ? "m3-morph-panel" : ""}
+            style={
+              workspacePhase === "morphing-in"
+                ? { "--morph-delay": "60ms" }
+                : undefined
+            }
+          >
+            <SupportBanner onOpenSupport={() => setActiveTab("support")} />
+          </div>
 
-          {/* 2-Column Workstation Grid (items-stretch aligns bottom edges of both columns) */}
+          {/* 2-Column Workstation Grid (items-stretch aligns bottom edges of both columns, liquid shape-morph & bouncy cascade) */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
             {/* LEFT COLUMN */}
             <div className="lg:col-span-7 flex flex-col gap-3">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3">
-                <ImageDropCard
-                  title="REFERENCE"
-                  imageInfo={referenceImage}
-                  onSelectImage={(file) => loadImageFile(file, "reference")}
-                  onClearImage={() => {
-                    setReferenceImage(null);
-                    setLastMatchedParams(null);
-                    setReferenceError("");
-                    setStatusText("Ready");
-                  }}
-                  onTrySample={() => handleTrySample("reference")}
-                  isAnalyzing={isAnalyzing}
-                  isPasteTarget={
-                    hoveredSlot === "reference" ||
-                    (!hoveredSlot && focusedSlot === "reference")
+                {/* 3. Panel REFERENCE (delay: 110ms) */}
+                <div
+                  className={
+                    workspacePhase === "morphing-in" ? "m3-morph-panel" : ""
                   }
-                  onHoverChange={(hovered) =>
-                    setHoveredSlot(hovered ? "reference" : null)
+                  style={
+                    workspacePhase === "morphing-in"
+                      ? { "--morph-delay": "110ms" }
+                      : undefined
                   }
-                  onFocusSlot={() => setFocusedSlot("reference")}
-                  errorMessage={referenceError}
-                  onFileRejected={(msg) => setReferenceError(msg)}
-                />
+                >
+                  <ImageDropCard
+                    title="REFERENCE"
+                    imageInfo={referenceImage}
+                    onSelectImage={(file) => loadImageFile(file, "reference")}
+                    onClearImage={() => {
+                      setReferenceImage(null);
+                      setLastMatchedParams(null);
+                      setReferenceError("");
+                      setStatusText("Ready");
+                    }}
+                    onTrySample={() => handleTrySample("reference")}
+                    isAnalyzing={isAnalyzing}
+                    isPasteTarget={
+                      hoveredSlot === "reference" ||
+                      (!hoveredSlot && focusedSlot === "reference")
+                    }
+                    onHoverChange={(hovered) =>
+                      setHoveredSlot(hovered ? "reference" : null)
+                    }
+                    onFocusSlot={() => setFocusedSlot("reference")}
+                    errorMessage={referenceError}
+                    onFileRejected={(msg) => setReferenceError(msg)}
+                  />
+                </div>
 
-                <ImageDropCard
-                  title="TARGET IMAGE"
-                  imageInfo={targetImage}
-                  onSelectImage={(file) => loadImageFile(file, "target")}
-                  onClearImage={() => {
-                    setTargetImage(null);
-                    setTargetError("");
-                  }}
-                  onTrySample={() => handleTrySample("target")}
-                  isPasteTarget={
-                    hoveredSlot === "target" ||
-                    (!hoveredSlot && focusedSlot === "target")
+                {/* 5. Panel TARGET IMAGE (delay: 190ms) */}
+                <div
+                  className={
+                    workspacePhase === "morphing-in" ? "m3-morph-panel" : ""
                   }
-                  onHoverChange={(hovered) =>
-                    setHoveredSlot(hovered ? "target" : null)
+                  style={
+                    workspacePhase === "morphing-in"
+                      ? { "--morph-delay": "190ms" }
+                      : undefined
                   }
-                  onFocusSlot={() => setFocusedSlot("target")}
-                  errorMessage={targetError}
-                  onFileRejected={(msg) => setTargetError(msg)}
-                />
+                >
+                  <ImageDropCard
+                    title="TARGET IMAGE"
+                    imageInfo={targetImage}
+                    onSelectImage={(file) => loadImageFile(file, "target")}
+                    onClearImage={() => {
+                      setTargetImage(null);
+                      setTargetError("");
+                    }}
+                    onTrySample={() => handleTrySample("target")}
+                    isPasteTarget={
+                      hoveredSlot === "target" ||
+                      (!hoveredSlot && focusedSlot === "target")
+                    }
+                    onHoverChange={(hovered) =>
+                      setHoveredSlot(hovered ? "target" : null)
+                    }
+                    onFocusSlot={() => setFocusedSlot("target")}
+                    errorMessage={targetError}
+                    onFileRejected={(msg) => setTargetError(msg)}
+                  />
+                </div>
               </div>
 
-              <ComparisonSlider
-                originalImage={activePreviewImageUrl}
-                gradedCanvasRef={gradedCanvasRef}
-                hasImage={Boolean(activePreviewImageUrl)}
-                mode={previewMode}
-                onModeChange={setPreviewMode}
-              />
+              {/* 7. Panel VISUAL PREVIEW (delay: 270ms) */}
+              <div
+                className={`flex-1 flex flex-col ${
+                  workspacePhase === "morphing-in" ? "m3-morph-panel" : ""
+                }`}
+                style={
+                  workspacePhase === "morphing-in"
+                    ? { "--morph-delay": "270ms" }
+                    : undefined
+                }
+              >
+                <ComparisonSlider
+                  originalImage={activePreviewImageUrl}
+                  gradedCanvasRef={gradedCanvasRef}
+                  hasImage={Boolean(activePreviewImageUrl)}
+                  mode={previewMode}
+                  onModeChange={setPreviewMode}
+                />
+              </div>
             </div>
 
             {/* RIGHT COLUMN */}
             <div className="lg:col-span-5 flex flex-col gap-3">
-              <div className="m3-panel rounded-2xl p-3.5">
+              {/* 4. Panel DETECTED PARAMETERS (delay: 150ms) */}
+              <div
+                className={`m3-panel rounded-2xl p-3.5 ${
+                  workspacePhase === "morphing-in" ? "m3-morph-panel" : ""
+                }`}
+                style={
+                  workspacePhase === "morphing-in"
+                    ? { "--morph-delay": "150ms" }
+                    : undefined
+                }
+              >
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
                   <div className="flex items-center gap-2">
                     <Sliders className="w-3.5 h-3.5 text-[#9CA3AF]" />
@@ -1023,12 +1153,12 @@ export default function App() {
                       type="button"
                       onClick={handleReloadAnalysis}
                       disabled={!referenceImage || isAnalyzing}
-                      className={`flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md border transition-all ${
+                      className={`m3-btn-morph flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md border ${
                         !referenceImage || isAnalyzing
                           ? "bg-white/[0.025] text-[#9CA3AF]/35 border-white/[0.05] cursor-not-allowed"
                           : reloadedFeedback
                           ? "bg-[#E2E4E9] text-[#0E0E11] border-[#E2E4E9] font-semibold cursor-pointer"
-                          : "bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.09] cursor-pointer active:scale-95"
+                          : "bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.09] cursor-pointer"
                       }`}
                       title="Restore all sliders and 3-Way Color Wheels to the Reference analysis result"
                     >
@@ -1048,7 +1178,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleResetParams}
-                      className="flex items-center gap-1 text-[11px] font-medium text-[#9CA3AF] hover:text-[#E2E4E9] px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] transition-colors cursor-pointer active:scale-95"
+                      className="m3-btn-morph flex items-center gap-1 text-[11px] font-medium text-[#9CA3AF] hover:text-[#E2E4E9] px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] cursor-pointer"
                       title="Reset all sliders to neutral defaults"
                     >
                       <RotateCcw className="w-3 h-3" />
@@ -1086,27 +1216,51 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Bipolar Sliders List */}
+                {/* Bipolar Sliders List (staggered row cascade during morphing-in) */}
                 <div className="space-y-0.5 divide-y divide-white/[0.04]">
-                  {PARAM_CONTROLS.map((ctrl) => (
-                    <ParameterControl
+                  {PARAM_CONTROLS.map((ctrl, idx) => (
+                    <div
                       key={ctrl.key}
-                      paramKey={ctrl.key}
-                      label={ctrl.label}
-                      min={ctrl.min}
-                      max={ctrl.max}
-                      step={ctrl.step}
-                      value={gradingParams[ctrl.key] ?? DEFAULT_PARAMS[ctrl.key]}
-                      defaultValue={DEFAULT_PARAMS[ctrl.key]}
-                      isBipolar={ctrl.isBipolar}
-                      onChange={handleParamChange}
-                      icon={ctrl.icon}
-                    />
+                      className={
+                        workspacePhase === "morphing-in"
+                          ? "m3-morph-slider-row"
+                          : ""
+                      }
+                      style={
+                        workspacePhase === "morphing-in"
+                          ? { "--row-delay": `${175 + idx * 18}ms` }
+                          : undefined
+                      }
+                    >
+                      <ParameterControl
+                        paramKey={ctrl.key}
+                        label={ctrl.label}
+                        min={ctrl.min}
+                        max={ctrl.max}
+                        step={ctrl.step}
+                        value={
+                          gradingParams[ctrl.key] ?? DEFAULT_PARAMS[ctrl.key]
+                        }
+                        defaultValue={DEFAULT_PARAMS[ctrl.key]}
+                        isBipolar={ctrl.isBipolar}
+                        onChange={handleParamChange}
+                        icon={ctrl.icon}
+                      />
+                    </div>
                   ))}
                 </div>
 
-                {/* Collapsible 3-Way Color Wheels Swatches */}
-                <div className="mt-3 pt-3 border-t border-white/[0.08]">
+                {/* 6. Collapsible 3-Way Color Wheels Swatches (delay: 230ms) */}
+                <div
+                  className={`mt-3 pt-3 border-t border-white/[0.08] ${
+                    workspacePhase === "morphing-in" ? "m3-morph-panel" : ""
+                  }`}
+                  style={
+                    workspacePhase === "morphing-in"
+                      ? { "--morph-delay": "230ms" }
+                      : undefined
+                  }
+                >
                   <div
                     onClick={() => setIsWheelsExpanded((prev) => !prev)}
                     className="flex items-center justify-between cursor-pointer select-none group"
@@ -1165,12 +1319,13 @@ export default function App() {
                         }}
                         aria-expanded={isWheelsExpanded}
                         aria-label="Toggle 3-Way Color Wheels panel"
-                        className="p-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] transition-all cursor-pointer"
+                        className="m3-btn-morph p-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] cursor-pointer"
                       >
                         <ChevronDown
                           className={`w-3.5 h-3.5 transition-transform duration-300 ${
                             isWheelsExpanded ? "rotate-180" : "rotate-0"
                           }`}
+                          style={{ transitionTimingFunction: "var(--ease-m3-spring)" }}
                         />
                       </button>
                     </div>
@@ -1214,19 +1369,31 @@ export default function App() {
                 </div>
               </div>
 
-              <ExportCard
-                presetName={presetName}
-                setPresetName={setPresetName}
-                authorName={authorName}
-                setAuthorName={setAuthorName}
-                description={description}
-                setDescription={setDescription}
-                onExport={handleExport}
-                isExporting={isExporting}
-                disabled={!referenceImage}
-                isCalibrationActive={isCalibrationActive}
-                onOpenCalibration={() => setActiveTab("settings")}
-              />
+              {/* 8. Panel EXPORT PLUGIN (delay: 310ms) */}
+              <div
+                className={
+                  workspacePhase === "morphing-in" ? "m3-morph-panel" : ""
+                }
+                style={
+                  workspacePhase === "morphing-in"
+                    ? { "--morph-delay": "310ms" }
+                    : undefined
+                }
+              >
+                <ExportCard
+                  presetName={presetName}
+                  setPresetName={setPresetName}
+                  authorName={authorName}
+                  setAuthorName={setAuthorName}
+                  description={description}
+                  setDescription={setDescription}
+                  onExport={handleExport}
+                  isExporting={isExporting}
+                  disabled={!referenceImage}
+                  isCalibrationActive={isCalibrationActive}
+                  onOpenCalibration={() => setActiveTab("settings")}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -1300,7 +1467,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleResetCalibration}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] transition-colors cursor-pointer"
+                  className="m3-btn-morph inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] cursor-pointer"
                   title="Reset all output calibration multipliers to 1.00x"
                 >
                   <RotateCcw className="w-3 h-3" />
@@ -1323,7 +1490,7 @@ export default function App() {
                     type="button"
                     onClick={handleRunPipelineCalibration}
                     disabled={calibrationStatus.running}
-                    className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-[#E2E4E9] hover:bg-white text-[#0E0E11] transition-all shrink-0 cursor-pointer active:scale-95"
+                    className="m3-btn-morph inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-[#E2E4E9] hover:bg-white text-[#0E0E11] shrink-0 cursor-pointer"
                   >
                     <RefreshCw
                       className={`w-3.5 h-3.5 ${
@@ -1420,10 +1587,10 @@ export default function App() {
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-lg font-bold font-display text-[#E2E4E9]">
-                        Color Match for Keyflow V.0.6.3 Beta
+                        Color Match for Keyflow V.0.6.4 Beta
                       </h2>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#1E1E24] text-[#6EE7B7] border border-white/[0.08]">
-                        v0.6.3 Beta
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.05] text-[#6EE7B7] border border-white/[0.09]">
+                        v0.6.4 Beta
                       </span>
                     </div>
                     <p className="text-xs text-[#9CA3AF] mt-0.5">
@@ -1432,25 +1599,37 @@ export default function App() {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("support")}
-                  title="Created by TFBAGAS — View Developer & Support Hub"
-                  className="cursor-pointer transition-transform hover:scale-[1.02]"
-                >
-                  <TfbagasWordmark compact />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleReplayIntro}
+                    title="Replay the interactive monochrome liquid glass entrance intro"
+                    className="m3-btn-morph inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] text-xs font-medium text-[#E2E4E9] cursor-pointer"
+                  >
+                    <Play className="w-3.5 h-3.5 text-[#6EE7B7]" />
+                    <span>Replay Intro</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("support")}
+                    title="Created by TFBAGAS — View Developer & Support Hub"
+                    className="cursor-pointer transition-transform hover:scale-[1.02]"
+                  >
+                    <TfbagasWordmark compact />
+                  </button>
+                </div>
               </div>
 
               <p className="text-xs sm:text-sm text-[#9CA3AF] leading-relaxed">
                 This tool analyzes the luminance distribution (Rec. 709), white balance neutrality, saturation, and 3-way split toning (Shadows, Midtones, Highlights) of any reference image directly inside your browser using Web Workers, then packages a native{" "}
-                <code className="text-[#E2E4E9] font-mono bg-[#1E1E24] px-1.5 py-0.5 rounded border border-white/[0.08]">
+                <code className="text-[#E2E4E9] font-mono bg-white/[0.05] px-1.5 py-0.5 rounded border border-white/[0.09]">
                   .kfplug
                 </code>{" "}
                 GLSL shader plugin for Keyflow.
               </p>
 
-              <div className="bg-[#1E1E24] border border-white/[0.08] rounded-xl p-4 text-xs text-[#9CA3AF] space-y-1.5">
+              <div className="bg-white/[0.035] border border-white/[0.09] rounded-xl p-4 text-xs text-[#9CA3AF] space-y-1.5">
                 <div className="font-semibold text-[#E2E4E9]">Privacy &amp; Architecture</div>
                 <p>
                   All images are processed locally in your device&apos;s memory. No photos or presets are ever uploaded to an external server.
@@ -1458,7 +1637,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Permanent Release History / Changelog Accordion (v0.5.0 Beta -> v0.6.3 Beta) */}
+            {/* Permanent Release History / Changelog Accordion (v0.5.0 Beta -> v0.6.4 Beta) */}
             <div className="m3-panel rounded-2xl p-5 sm:p-6 space-y-3.5">
               <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
                 <div className="flex items-center gap-2">
@@ -1468,7 +1647,7 @@ export default function App() {
                   </h3>
                 </div>
                 <span className="text-[11px] font-mono text-[#9CA3AF]">
-                  v0.5.0 – v0.6.3 Beta
+                  v0.5.0 - v0.6.4 Beta
                 </span>
               </div>
 
@@ -1485,7 +1664,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Interactive "What's New in v0.6.3 Beta" Modal Dialog */}
+      {/* Interactive "What's New in v0.6.4 Beta" Modal Dialog */}
       <ChangelogModal
         open={isChangelogOpen}
         onClose={() => setIsChangelogOpen(false)}

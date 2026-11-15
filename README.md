@@ -3,7 +3,7 @@
 Client-side color matching workstation that extracts Rec. 709 tonal and chromatic characteristics from a reference image and packages them into an importable Keyflow plugin (`.kfplug`). Runs entirely in the browser with zero server uploads.
 
 * **Live Web App:** [https://keyflow-color-match-tool.pages.dev](https://keyflow-color-match-tool.pages.dev)
-* **Current Version:** `v0.6.3-beta`
+* **Current Version:** `v0.6.4-beta`
 * **Developer:** TFBAGAS
 
 ## Capabilities

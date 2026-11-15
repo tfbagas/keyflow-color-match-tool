@@ -51,7 +51,7 @@ export default function SupportBanner({ onOpenSupport }) {
           href="https://sociabuzz.com/tfbagas/tribe"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-[#E2E4E9] border border-white/[0.09] text-xs font-medium transition-colors"
+          className="m3-btn-morph inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-[#E2E4E9] border border-white/[0.09] text-xs font-medium"
         >
           <span>Support on SociaBuzz</span>
           <ExternalLink className="w-3 h-3 text-[#9CA3AF]" />
