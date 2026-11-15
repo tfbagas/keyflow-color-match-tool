@@ -6,7 +6,7 @@ import {
   Sparkles,
   Code2,
 } from "lucide-react";
-import { TfbagasMonogram } from "./KeyflowLogo";
+import { TfbagasWordmark } from "./KeyflowLogo";
 
 function YouTubeIcon({ className }) {
   return (
@@ -70,8 +70,8 @@ export default function SupportTab() {
       {/* 1. Developer Profile Card (TFBAGAS) */}
       <div className="m3-panel rounded-2xl p-5 sm:p-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-5">
-          {/* Neutral Geometric Monogram */}
-          <TfbagasMonogram size={60} />
+          {/* Custom Geometric Wordmark (tfbagas•) */}
+          <TfbagasWordmark />
 
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">

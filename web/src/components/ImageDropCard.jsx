@@ -16,6 +16,9 @@ export default function ImageDropCard({
   onTrySample,
   isAnalyzing = false,
   defaultExpanded = true,
+  isPasteTarget = false,
+  onHoverChange,
+  onFocusSlot,
 }) {
   const inputRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -34,7 +37,16 @@ export default function ImageDropCard({
   };
 
   return (
-    <div className="m3-panel rounded-2xl p-3.5">
+    <div
+      onMouseEnter={() => onHoverChange && onHoverChange(true)}
+      onMouseLeave={() => onHoverChange && onHoverChange(false)}
+      onClick={() => onFocusSlot && onFocusSlot()}
+      className={`m3-panel rounded-2xl p-3.5 transition-all ${
+        isPasteTarget
+          ? "border-white/20 shadow-[0_0_0_1px_rgba(226,228,233,0.08)]"
+          : ""
+      }`}
+    >
       {/* Hidden File Input (Always Mounted for Quick Replace even when collapsed) */}
       <input
         ref={inputRef}
@@ -57,6 +69,11 @@ export default function ImageDropCard({
           <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors">
             {title}
           </h3>
+          {isPasteTarget && (
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#1E1E24] text-[#9CA3AF] border border-white/10">
+              Ctrl+V Target
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -105,14 +122,18 @@ export default function ImageDropCard({
                 {imageInfo.name}
               </div>
               <div className="text-[10px] font-mono text-[#9CA3AF] truncate">
-                {imageInfo.width}×{imageInfo.height} px • {imageInfo.ext} • {imageInfo.sizeMB} MB
+                {imageInfo.width}×{imageInfo.height} px • {imageInfo.ext} •{" "}
+                {imageInfo.sizeMB} MB
               </div>
             </div>
           </div>
 
           <button
             type="button"
-            onClick={() => inputRef.current?.click()}
+            onClick={(e) => {
+              e.stopPropagation();
+              inputRef.current?.click();
+            }}
             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#1E1E24] hover:bg-white/10 border border-white/[0.08] text-xs font-medium text-[#E2E4E9] transition-colors shrink-0 cursor-pointer"
           >
             <RefreshCw className="w-3 h-3 text-[#9CA3AF]" />
@@ -137,7 +158,7 @@ export default function ImageDropCard({
               }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
-              className={`relative flex-1 min-h-[148px] sm:min-h-[164px] rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center overflow-hidden bg-[#0E0E11] ${
+              className={`relative flex-1 min-h-[140px] sm:min-h-[154px] rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center overflow-hidden bg-[#0E0E11] ${
                 isDragging
                   ? "border-[#E2E4E9]/50 bg-[#1E1E24]/60"
                   : imageInfo
@@ -149,7 +170,7 @@ export default function ImageDropCard({
                 <img
                   src={imageInfo.dataUrl}
                   alt={title}
-                  className="w-full h-[164px] object-contain p-1.5 select-none"
+                  className="w-full h-[154px] object-contain p-1.5 select-none"
                 />
               ) : (
                 <div className="flex flex-col items-center text-center p-3">
@@ -157,32 +178,11 @@ export default function ImageDropCard({
                     <Upload className="w-4 h-4" />
                   </div>
                   <p className="text-xs font-medium text-[#E2E4E9]">
-                    Drop image, click to browse, or press{" "}
-                    <span className="font-mono text-[11px] bg-[#1E1E24] px-1.5 py-0.5 rounded border border-white/[0.08]">
-                      Ctrl+V
-                    </span>
+                    Drop image or click to browse
                   </p>
-                  <div className="flex items-center gap-2 mt-2.5">
-                    <span className="text-[11px] text-[#9CA3AF]/70">
-                      JPG, PNG, WEBP
-                    </span>
-                    {onTrySample && (
-                      <>
-                        <span className="text-white/15">•</span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onTrySample();
-                          }}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#1E1E24] hover:bg-white/15 text-[#E2E4E9] border border-white/[0.1] text-[11px] font-medium transition-colors cursor-pointer"
-                        >
-                          <Sparkles className="w-3 h-3 text-[#9CA3AF]" />
-                          Try Sample
-                        </button>
-                      </>
-                    )}
-                  </div>
+                  <span className="text-[11px] text-[#9CA3AF]/70 mt-1.5 font-mono">
+                    JPG, PNG, WEBP
+                  </span>
                 </div>
               )}
             </div>

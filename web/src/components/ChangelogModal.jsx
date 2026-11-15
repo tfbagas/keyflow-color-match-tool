@@ -1,38 +1,38 @@
 import React, { useEffect } from "react";
-import { X, Layers, Sliders, Columns, Type, Sparkles } from "lucide-react";
+import { X, Cpu, ListFilter, Columns, Fingerprint, Sparkles } from "lucide-react";
 import KeyflowLogo from "./KeyflowLogo";
 
-export const CHANGELOG_V06_ITEMS = [
+export const CHANGELOG_V061_ITEMS = [
   {
-    icon: Layers,
-    title: "Material 3 Achromatic UI Overhaul",
+    icon: Cpu,
+    title: "Engine & Export Calibration (Settings)",
     description:
-      "Replaced emerald-tinted styling and sidebar with a color-accurate neutral dark surface hierarchy (#0E0E11–#1E1E24) and a 48px Top App Bar.",
+      "Added synthetic Canvas/Web Worker self-calibration with cache flush recovery and .kfplug output multipliers (Tone/Contrast, White Balance, Chroma).",
   },
   {
-    icon: Sliders,
-    title: "Bipolar Center-Zero Controls & Live Telemetry",
+    icon: ListFilter,
+    title: "Custom Material 3 Dropdowns",
     description:
-      "Added center-detent bipolar sliders with functional Temp/Tint micro-chroma tracks, double-click parameter reset, and a real-time RGB/Luma histogram.",
+      "Replaced OS-native <select> menus with tonal achromatic dropdown controls.",
   },
   {
     icon: Columns,
-    title: "Interactive Workstation & Preview Fixes",
+    title: "Workstation Layout & Smart Paste",
     description:
-      "Added collapsible panels, instant Hold Before (\\) preview comparison, clipboard image paste (Ctrl+V), sample image loader, and fixed canvas rendering across Split Slider, Side-by-Side, and Split Result modes.",
+      "Aligned VISUAL PREVIEW height flush with EXPORT PLUGIN, removed duplicate sample buttons, and added hover/focus-aware Ctrl+V clipboard routing.",
   },
   {
-    icon: Type,
-    title: "Typography & Support Hub",
+    icon: Fingerprint,
+    title: "Achromatic Favicon & Brand Identity",
     description:
-      "Upgraded typography (Bricolage Grotesque, Instrument Sans, IBM Plex Mono with tabular-nums) and added the Developer & Support hub.",
+      "Updated browser favicons/PWA icons to achromatic dark and replaced the developer badge with the tfbagas• geometric wordmark.",
   },
 ];
 
 export function ChangelogList() {
   return (
     <div className="space-y-2.5">
-      {CHANGELOG_V06_ITEMS.map((item) => {
+      {CHANGELOG_V061_ITEMS.map((item) => {
         const Icon = item.icon;
         return (
           <div
@@ -87,7 +87,7 @@ export default function ChangelogModal({ open, onClose }) {
                   id="changelog-modal-title"
                   className="text-base sm:text-lg font-bold font-display text-[#E2E4E9]"
                 >
-                  What&apos;s New in v0.6 Beta
+                  What&apos;s New in v0.6.1 Beta
                 </h2>
                 <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#1E1E24] text-[#6EE7B7] border border-white/10">
                   <Sparkles className="w-2.5 h-2.5" />
@@ -118,7 +118,7 @@ export default function ChangelogModal({ open, onClose }) {
         {/* Modal Footer */}
         <div className="pt-3 border-t border-white/[0.08] flex items-center justify-between gap-3">
           <span className="text-[11px] font-mono text-[#9CA3AF]">
-            Build v0.6.0-beta • 100% Client-Side
+            Build v0.6.1-beta • 100% Client-Side
           </span>
           <button
             type="button"

@@ -67,9 +67,9 @@ export default function ComparisonSlider({
   }, []);
 
   return (
-    <div className="m3-panel rounded-2xl p-3.5">
+    <div className="m3-panel rounded-2xl p-3.5 flex-1 flex flex-col">
       {/* Header Row */}
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5 shrink-0">
         <div className="flex items-center gap-2">
           <Columns className="w-3.5 h-3.5 text-[#9CA3AF]" />
           <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF]">
@@ -123,7 +123,7 @@ export default function ComparisonSlider({
         </div>
       </div>
 
-      {/* Preview Viewport */}
+      {/* Preview Viewport (Stretches to align bottom edge flush with right column) */}
       <div
         ref={containerRef}
         onMouseDown={(e) => {
@@ -138,7 +138,7 @@ export default function ComparisonSlider({
             updatePosition(e.touches[0].clientX);
           }
         }}
-        className={`relative w-full min-h-[220px] sm:min-h-[270px] rounded-lg bg-[#0E0E11] border border-white/[0.08] overflow-hidden flex items-center justify-center select-none ${
+        className={`relative w-full flex-1 min-h-[240px] sm:min-h-[280px] rounded-lg bg-[#0E0E11] border border-white/[0.08] overflow-hidden flex items-center justify-center select-none ${
           mode === "split" && hasImage ? "cursor-ew-resize" : ""
         }`}
       >
@@ -147,12 +147,12 @@ export default function ComparisonSlider({
             Load a Reference or Target image above to inspect Before / After grading
           </div>
         ) : mode === "side" ? (
-          <div className="grid grid-cols-2 gap-1.5 w-full h-[250px] sm:h-[290px] p-2 items-center">
+          <div className="grid grid-cols-2 gap-1.5 w-full h-full min-h-[240px] sm:min-h-[280px] p-2 items-center">
             <div className="relative h-full flex items-center justify-center bg-black/40 rounded-md overflow-hidden border border-white/[0.06]">
               <img
                 src={originalImage}
                 alt="Before"
-                className="w-full h-full object-contain"
+                className="w-full h-full max-h-[360px] object-contain"
               />
               <span className="absolute top-2 left-2 bg-[#151519]/90 backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#9CA3AF] border border-white/[0.08]">
                 BEFORE
@@ -161,13 +161,15 @@ export default function ComparisonSlider({
             <div className="relative h-full flex items-center justify-center bg-black/40 rounded-md overflow-hidden border border-white/[0.06]">
               <canvas
                 ref={gradedCanvasRef}
-                className={`w-full h-full object-contain ${isHoldingBefore ? "hidden" : "block"}`}
+                className={`w-full h-full max-h-[360px] object-contain ${
+                  isHoldingBefore ? "hidden" : "block"
+                }`}
               />
               {isHoldingBefore && (
                 <img
                   src={originalImage}
                   alt="Before Peek"
-                  className="w-full h-full object-contain"
+                  className="w-full h-full max-h-[360px] object-contain"
                 />
               )}
               <span className="absolute top-2 right-2 bg-[#1E1E24]/90 backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#E2E4E9] border border-white/15">
@@ -176,16 +178,18 @@ export default function ComparisonSlider({
             </div>
           </div>
         ) : mode === "result" ? (
-          <div className="relative w-full h-[250px] sm:h-[290px] flex items-center justify-center p-2">
+          <div className="relative w-full h-full min-h-[240px] sm:min-h-[280px] flex items-center justify-center p-2">
             <canvas
               ref={gradedCanvasRef}
-              className={`w-full h-full object-contain rounded ${isHoldingBefore ? "hidden" : "block"}`}
+              className={`w-full h-full max-h-[360px] object-contain rounded ${
+                isHoldingBefore ? "hidden" : "block"
+              }`}
             />
             {isHoldingBefore && (
               <img
                 src={originalImage}
                 alt="Before Peek"
-                className="w-full h-full object-contain rounded"
+                className="w-full h-full max-h-[360px] object-contain rounded"
               />
             )}
             <span className="absolute top-3 right-3 bg-[#1E1E24]/90 backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2.5 py-0.5 rounded text-[#E2E4E9] border border-white/15">
@@ -194,11 +198,11 @@ export default function ComparisonSlider({
           </div>
         ) : (
           /* Interactive Split Slider Mode */
-          <div className="relative w-full h-[250px] sm:h-[290px] flex items-center justify-center">
+          <div className="relative w-full h-full min-h-[240px] sm:min-h-[280px] flex items-center justify-center">
             {/* Layer 1: Graded After Canvas (Full Width underneath) */}
             <canvas
               ref={gradedCanvasRef}
-              className="w-full h-full object-contain pointer-events-none"
+              className="w-full h-full max-h-[360px] object-contain pointer-events-none"
             />
 
             {/* Layer 2: Original Before Image (Clipped to left side, or 100% when holding before) */}
@@ -211,7 +215,7 @@ export default function ComparisonSlider({
               <img
                 src={originalImage}
                 alt="Original Before"
-                className="w-full h-full object-contain"
+                className="w-full h-full max-h-[360px] object-contain"
               />
             </div>
 

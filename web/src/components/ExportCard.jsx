@@ -6,6 +6,7 @@ import {
   FileText,
   Package,
   ChevronDown,
+  Sliders,
 } from "lucide-react";
 
 export default function ExportCard({
@@ -18,6 +19,8 @@ export default function ExportCard({
   onExport,
   isExporting,
   disabled,
+  isCalibrationActive = false,
+  onOpenCalibration,
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -33,6 +36,21 @@ export default function ExportCard({
           <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors">
             EXPORT PLUGIN (.KFPLUG)
           </h3>
+
+          {isCalibrationActive && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onOpenCalibration) onOpenCalibration();
+              }}
+              title="Custom .kfplug Output Calibration Multipliers active — Click to adjust in Settings"
+              className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#1E1E24] text-[#6EE7B7] border border-[#6EE7B7]/30 hover:border-[#6EE7B7]/60 transition-colors cursor-pointer"
+            >
+              <Sliders className="w-2.5 h-2.5" />
+              <span>Calibrated</span>
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

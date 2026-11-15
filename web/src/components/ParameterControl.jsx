@@ -10,6 +10,7 @@ export default function ParameterControl({
   value,
   defaultValue = 0,
   isBipolar = true,
+  valueSuffix = "",
   onChange,
   icon: Icon,
 }) {
@@ -157,8 +158,10 @@ export default function ParameterControl({
           isDragging ? "border-white/25" : "border-white/[0.08]"
         }`}
       >
-        <span className="w-12 text-right px-1.5 py-1 text-[11px] font-mono tabular-nums text-[#E2E4E9]">
-          {value >= 0 && min < 0 ? `+${value.toFixed(2)}` : value.toFixed(2)}
+        <span className="w-13 text-right px-1.5 py-1 text-[11px] font-mono tabular-nums text-[#E2E4E9]">
+          {value >= 0 && min < 0
+            ? `+${value.toFixed(2)}${valueSuffix}`
+            : `${value.toFixed(2)}${valueSuffix}`}
         </span>
         <div className="flex flex-col border-l border-white/[0.08]">
           <button

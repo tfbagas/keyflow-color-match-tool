@@ -1,41 +1,49 @@
 import React from "react";
 
 /**
- * Material 3 Achromatic Keyflow Logo
- * Preserves the signature Keyflow prism diamond + orbital ring + satellite diamond
- * rendered in neutral silver (#E2E4E9) and slate gray (#9CA3AF) inside a #1E1E24 tonal container.
+ * Keyflow Achromatic Material 3 Vector Logo
+ * Preserves the original Keyflow diamond/prism + orbital ring + satellite dot geometry,
+ * adapted to the Material 3 Achromatic neutral dark palette (#1E1E24 container, #E2E4E9 & #9CA3AF vectors).
  */
-export function KeyflowLogo({ size = 28, className = "" }) {
+export default function KeyflowLogo({ size = 32, className = "" }) {
   return (
     <div
       style={{ width: size, height: size }}
-      className={`rounded-lg bg-[#1E1E24] border border-white/10 flex items-center justify-center shrink-0 select-none ${className}`}
+      className={`relative rounded-lg bg-[#1E1E24] border border-white/10 flex items-center justify-center shrink-0 select-none ${className}`}
     >
       <svg
-        width={Math.round(size * 0.72)}
-        height={Math.round(size * 0.72)}
-        viewBox="0 0 64 64"
+        viewBox="0 0 40 40"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
+        className="w-[76%] h-[76%]"
       >
-        {/* Upper & main prism diamond */}
+        {/* Outer Orbital Ring (Tilted Ellipse) */}
+        <ellipse
+          cx="20"
+          cy="20"
+          rx="14.5"
+          ry="6"
+          transform="rotate(-28 20 20)"
+          stroke="#9CA3AF"
+          strokeOpacity="0.55"
+          strokeWidth="1.6"
+        />
+
+        {/* Central Keyflow Diamond / Prism */}
         <path
-          d="M32 6L46 31L32 45.5L18 31L32 6Z"
+          d="M20 6L28 20L20 34L12 20L20 6Z"
           fill="#E2E4E9"
         />
-        {/* Lower prism tip below orbital cut */}
+        {/* Subtle Right Facet Tonal Shade for 3D Prism Depth */}
         <path
-          d="M25.5 44L32 58L37.5 46.5C33.5 46 29.3 45.2 25.5 44Z"
+          d="M20 6L28 20L20 34V6Z"
           fill="#9CA3AF"
+          fillOpacity="0.35"
         />
-        {/* Sweeping orbital ring */}
+
+        {/* Satellite Diamond Dot (Bottom-Right) */}
         <path
-          d="M17 29.5C9.5 30.2 6.2 33.2 8.2 36.8C11.2 42.2 26.5 46.8 45.5 46.2C31.5 45.2 18.2 41.2 14.5 36.2C12.5 33.5 13.8 31.2 17 29.5Z"
-          fill="#9CA3AF"
-        />
-        {/* Satellite micro-diamond */}
-        <path
-          d="M52.5 41L56 46.5L52.5 52L49 46.5L52.5 41Z"
+          d="M31 26.5L33 29.5L31 32.5L29 29.5L31 26.5Z"
           fill="#E2E4E9"
         />
       </svg>
@@ -44,40 +52,43 @@ export function KeyflowLogo({ size = 28, className = "" }) {
 }
 
 /**
- * Geometric Monogram Logo for TFBAGAS (Achromatic Neutral)
+ * TFBAGAS Geometric Wordmark Logo (`tfbagas•`)
+ * Lowercase geometric sans-serif bold ("tfbagas", font-weight: 800, letter-spacing: -0.03em)
+ * in silver-white (#E2E4E9) with a solid superscript circle at the top-right of the "s",
+ * housed inside a Material 3 tonal container (#1E1E24, border-white/[0.08], rounded-xl).
  */
-export function TfbagasMonogram({ size = 56, className = "" }) {
+export function TfbagasWordmark({ compact = false, className = "" }) {
   return (
     <div
-      style={{ width: size, height: size }}
-      className={`rounded-2xl bg-[#1E1E24] border border-white/10 flex items-center justify-center shrink-0 select-none ${className}`}
+      className={`inline-flex items-center justify-center rounded-xl bg-[#1E1E24] border border-white/[0.08] shrink-0 select-none ${
+        compact ? "px-3 py-1.5" : "px-4 py-3"
+      } ${className}`}
     >
       <svg
-        width={Math.round(size * 0.58)}
-        height={Math.round(size * 0.58)}
-        viewBox="0 0 48 48"
+        viewBox="0 0 156 42"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
+        className={compact ? "h-5 w-auto" : "h-7 sm:h-8 w-auto"}
+        role="img"
+        aria-label="tfbagas logo"
       >
-        {/* Outer geometric hexagon frame */}
-        <path
-          d="M24 3L43 13.5V34.5L24 45L5 34.5V13.5L24 3Z"
-          stroke="#9CA3AF"
-          strokeWidth="2"
-          strokeOpacity="0.45"
-        />
-        {/* Geometric T + F / B interlocking prism bars */}
-        <path
-          d="M12 15H36V19.5H26.2V35H21.8V19.5H12V15Z"
+        <text
+          x="2"
+          y="31"
           fill="#E2E4E9"
-        />
-        <path
-          d="M28.5 23.5H35.5V27.5H28.5V23.5ZM28.5 30.5H34V35H28.5V30.5Z"
-          fill="#9CA3AF"
-        />
+          fontFamily="'Bricolage Grotesque', 'Instrument Sans', -apple-system, BlinkMacSystemFont, sans-serif"
+          fontWeight="800"
+          fontSize="33"
+          letterSpacing="-0.03em"
+        >
+          tfbagas
+        </text>
+        {/* Solid Superscript Circle at Top-Right of 's' */}
+        <circle cx="144" cy="11" r="4.8" fill="#E2E4E9" />
       </svg>
     </div>
   );
 }
 
-export default KeyflowLogo;
+// Keep alias for compatibility
+export const TfbagasMonogram = TfbagasWordmark;
