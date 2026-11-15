@@ -1,54 +1,70 @@
-import React, { useState } from "react";
-import { Coffee, ExternalLink, X } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Heart, X, ExternalLink } from "lucide-react";
 
-export default function SupportBanner() {
-  const [dismissed, setDismissed] = useState(() => {
-    return localStorage.getItem("kf_banner_dismissed") === "true";
-  });
+const STORAGE_KEY = "kf_hide_support_banner_v1";
 
-  if (dismissed) return null;
+export default function SupportBanner({ onOpenSupport }) {
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(STORAGE_KEY) === "true") {
+        setDismissed(true);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
 
   const handleDismiss = () => {
     setDismissed(true);
-    localStorage.setItem("kf_banner_dismissed", "true");
+    try {
+      localStorage.setItem(STORAGE_KEY, "true");
+    } catch {
+      // ignore storage errors
+    }
   };
 
+  if (dismissed) return null;
+
   return (
-    <div className="w-full mt-2 liquid-glass-subtle rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-3 border border-[#00E987]/30 shadow-[0_4px_16px_rgba(0,233,135,0.06)]">
-      <div className="flex items-center gap-2.5 min-w-0">
-        <span className="p-1 rounded-md bg-[#00E987]/15 text-[#00E987] shrink-0">
-          <Coffee size={14} />
+    <div className="m3-panel rounded-2xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+      <div className="flex items-center gap-2.5 text-xs text-[#9CA3AF]">
+        <span className="w-6 h-6 rounded-lg bg-[#1E1E24] border border-white/[0.08] flex items-center justify-center text-[#E2E4E9] shrink-0">
+          <Heart className="w-3.5 h-3.5 text-[#6EE7B7]" />
         </span>
-        <p className="text-[11px] sm:text-xs text-[#E8F2ED] truncate">
-          100% free &amp; ad-free tool by <strong className="text-[#00E987]">TFBAGAS</strong>. Enjoying it?{" "}
-          <a
-            href="https://sociabuzz.com/tfbagas/support"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[#00E987] hover:text-[#16FFA0] underline underline-offset-2 font-semibold inline-flex items-center gap-1 ml-1"
+        <p className="leading-snug">
+          Enjoying <span className="font-semibold text-[#E2E4E9]">Color Match Tool</span>? Built for free by{" "}
+          <button
+            type="button"
+            onClick={onOpenSupport}
+            className="font-semibold text-[#E2E4E9] underline decoration-white/30 hover:decoration-white transition-colors cursor-pointer"
           >
-            Support future updates →
-          </a>
+            @tfbagas
+          </button>{" "}
+          — support future updates if this tool saves you time!
         </p>
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-2 ml-auto">
         <a
-          href="https://sociabuzz.com/tfbagas/support"
+          href="https://sociabuzz.com/tfbagas/tribe"
           target="_blank"
           rel="noopener noreferrer"
-          className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#00E987]/15 hover:bg-[#00E987] text-[#00E987] hover:text-[#080D0B] border border-[#00E987]/30 text-[10px] font-bold transition-all"
+          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#1E1E24] hover:bg-white/10 text-[#E2E4E9] border border-white/[0.1] text-xs font-medium transition-colors"
         >
-          <span>Support ☕</span>
-          <ExternalLink size={10} />
+          <span>Support on SociaBuzz</span>
+          <ExternalLink className="w-3 h-3 text-[#9CA3AF]" />
         </a>
+
         <button
           type="button"
           onClick={handleDismiss}
-          title="Dismiss banner"
-          className="p-1 rounded-md text-[#91A69A] hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+          className="p-1 rounded-lg text-[#9CA3AF]/60 hover:text-[#E2E4E9] hover:bg-white/5 transition-colors cursor-pointer"
+          title="Dismiss"
+          aria-label="Dismiss support banner"
         >
-          <X size={14} />
+          <X className="w-3.5 h-3.5" />
         </button>
       </div>
     </div>

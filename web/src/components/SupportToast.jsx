@@ -1,67 +1,64 @@
-import React, { useEffect } from "react";
-import { Coffee, ExternalLink, X, Check } from "lucide-react";
+import React from "react";
+import { CheckCircle2, Heart, X, ExternalLink } from "lucide-react";
 
-export default function SupportToast({ show, onClose }) {
-  useEffect(() => {
-    if (!show) return;
-    const timer = setTimeout(() => {
-      onClose();
-    }, 10000); // Auto close after 10 seconds
-    return () => clearTimeout(timer);
-  }, [show, onClose]);
-
-  if (!show) return null;
+export default function SupportToast({ visible, filename, onClose }) {
+  if (!visible) return null;
 
   return (
-    <aside
-      aria-label="Export Success & Support"
-      className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 max-w-[92vw] sm:max-w-md liquid-glass rounded-2xl p-4 border border-[#00E987]/50 shadow-[0_12px_36px_rgba(0,0,0,0.6),0_0_20px_rgba(0,233,135,0.2)] flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-5 duration-300"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-[#00E987]/20 border border-[#00E987]/40 flex items-center justify-center shrink-0 text-[#00E987] mt-0.5">
-            <Check size={16} className="text-[#00E987]" />
+    <div className="fixed bottom-4 right-4 left-4 sm:left-auto sm:w-96 z-50">
+      <div className="m3-panel rounded-2xl p-4 shadow-[0_16px_40px_rgba(0,0,0,0.75)] bg-[#151519]/95 backdrop-blur-xl">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-[#1E1E24] border border-white/[0.08] flex items-center justify-center text-[#6EE7B7] shrink-0 mt-0.5">
+              <CheckCircle2 className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-[#E2E4E9]">
+                Plugin Exported Successfully!
+              </h4>
+              {filename && (
+                <p className="text-[11px] font-mono text-[#9CA3AF] truncate max-w-[230px] mt-0.5">
+                  {filename}
+                </p>
+              )}
+              <p className="text-xs text-[#9CA3AF] mt-1.5 leading-relaxed">
+                Saved your time? Support{" "}
+                <span className="text-[#E2E4E9] font-semibold">@tfbagas</span> so
+                this tool stays free &amp; keeps getting better!
+              </p>
+            </div>
           </div>
-          <div className="flex flex-col">
-            <span className="text-xs font-bold text-white flex items-center gap-1.5 font-display">
-              Plugin Exported Successfully!
-            </span>
-            <span className="text-[11px] text-[#91A69A] mt-0.5 leading-snug">
-              Plugin exported! Support TFBAGAS on SociaBuzz ☕
-            </span>
-          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-lg text-[#9CA3AF]/60 hover:text-[#E2E4E9] hover:bg-white/5 transition-colors cursor-pointer shrink-0"
+            aria-label="Close notification"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
-        <button
-          type="button"
-          onClick={onClose}
-          title="Close notification"
-          className="p-1 rounded-lg text-[#91A69A] hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
-        >
-          <X size={14} />
-        </button>
+        <div className="mt-3 pt-2.5 border-t border-white/[0.08] flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 rounded-lg text-xs text-[#9CA3AF] hover:text-[#E2E4E9] hover:bg-white/5 transition-colors cursor-pointer"
+          >
+            Maybe Later
+          </button>
+          <a
+            href="https://sociabuzz.com/tfbagas/tribe"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-[#6EE7B7] hover:bg-[#86EFAC] text-[#042F1E] transition-all"
+          >
+            <Heart className="w-3.5 h-3.5" />
+            <span>Support on SociaBuzz</span>
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
       </div>
-
-      <div className="flex items-center gap-2 pt-1 border-t border-[#20352B]/60">
-        <a
-          href="https://sociabuzz.com/tfbagas/support"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex-1 h-9 rounded-xl bg-[#00E987] hover:bg-[#16FFA0] text-[#080D0B] font-bold text-xs flex items-center justify-center gap-1.5 shadow-[0_0_12px_rgba(0,233,135,0.3)] transition-all cursor-pointer active:scale-95"
-        >
-          <Coffee size={14} className="fill-[#080D0B]" />
-          <span>Support on SociaBuzz ☕</span>
-          <ExternalLink size={12} />
-        </a>
-
-        <button
-          type="button"
-          onClick={onClose}
-          className="px-3 h-9 rounded-xl bg-[#16231D]/80 hover:bg-[#1C2C24] border border-[#20352B] text-[#91A69A] hover:text-white text-xs font-semibold transition-all cursor-pointer"
-        >
-          Dismiss
-        </button>
-      </div>
-    </aside>
+    </div>
   );
 }

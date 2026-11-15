@@ -1,11 +1,20 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Home,
+  Sliders,
   Settings,
   Info,
-  RotateCcw,
+  Sun,
+  Contrast,
+  SlidersHorizontal,
+  Droplet,
+  Sparkles,
+  Thermometer,
+  Palette,
+  Activity,
   Layers,
-  Heart
+  RotateCcw,
+  Heart,
+  BarChart3,
 } from "lucide-react";
 
 import ImageDropCard from "./components/ImageDropCard";
@@ -16,647 +25,782 @@ import ExportCard from "./components/ExportCard";
 import SupportTab from "./components/SupportTab";
 import SupportBanner from "./components/SupportBanner";
 import SupportToast from "./components/SupportToast";
-
-import {
-  DEFAULT_PARAMS,
-  simulateGradePixels
-} from "./utils/colorGrading";
+import KeyflowLogo from "./components/KeyflowLogo";
+import { DEFAULT_PARAMS, simulateGradePixels } from "./utils/colorGrading";
 import { generateKfplug, downloadBlob } from "./utils/kfplugPackager";
 
+const PARAM_CONTROLS = [
+  { key: "exposure", label: "Exposure (EV)", min: -2.0, max: 2.0, step: 0.01, icon: Sun, isBipolar: true },
+  { key: "contrast", label: "Contrast", min: 0.2, max: 2.0, step: 0.01, icon: Contrast, isBipolar: true },
+  { key: "pivot", label: "Contrast Pivot", min: 0.1, max: 0.9, step: 0.01, icon: SlidersHorizontal, isBipolar: false },
+  { key: "shadows", label: "Shadows Tint/Level", min: -0.5, max: 0.5, step: 0.01, icon: Droplet, isBipolar: true },
+  { key: "highlights", label: "Highlights Tint/Level", min: -0.5, max: 0.5, step: 0.01, icon: Sparkles, isBipolar: true },
+  { key: "temp", label: "Color Temperature", min: -1.0, max: 1.0, step: 0.01, icon: Thermometer, isBipolar: true },
+  { key: "tint", label: "Color Tint", min: -1.0, max: 1.0, step: 0.01, icon: Palette, isBipolar: true },
+  { key: "sat", label: "Saturation", min: 0.0, max: 2.0, step: 0.01, icon: Droplet, isBipolar: true },
+  { key: "vib", label: "Vibrance", min: -0.8, max: 0.8, step: 0.01, icon: Activity, isBipolar: true },
+];
+
+// Helper to draw real-time RGB + Rec.709 Luma histogram onto the telemetry canvas
+function drawHistogram(canvas, imageData) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  // Subtle background grid lines (25%, 50%, 75%)
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+  ctx.lineWidth = 1;
+  [0.25, 0.5, 0.75].forEach((p) => {
+    const x = Math.round(w * p) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+  });
+
+  if (!imageData || !imageData.data) {
+    return;
+  }
+
+  const data = imageData.data;
+  const rHist = new Uint32Array(256);
+  const gHist = new Uint32Array(256);
+  const bHist = new Uint32Array(256);
+  const yHist = new Uint32Array(256);
+
+  // Sample every 2nd pixel for instant 60fps telemetry
+  const step = 8;
+  for (let i = 0; i < data.length; i += step) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    rHist[r]++;
+    gHist[g]++;
+    bHist[b]++;
+    const y = Math.min(255, Math.max(0, Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b)));
+    yHist[y]++;
+  }
+
+  // Find peak (ignoring extreme clipping bins 0 and 255 so midtones stay readable)
+  let maxCount = 1;
+  for (let i = 2; i < 254; i++) {
+    if (rHist[i] > maxCount) maxCount = rHist[i];
+    if (gHist[i] > maxCount) maxCount = gHist[i];
+    if (bHist[i] > maxCount) maxCount = bHist[i];
+    if (yHist[i] > maxCount) maxCount = yHist[i];
+  }
+
+  const drawChannel = (hist, strokeColor, fillColor) => {
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    for (let i = 0; i < 256; i++) {
+      const x = (i / 255) * w;
+      const norm = Math.min(1, hist[i] / maxCount);
+      const y = h - norm * (h - 6);
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(w, h);
+    ctx.closePath();
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+
+    ctx.beginPath();
+    for (let i = 0; i < 256; i++) {
+      const x = (i / 255) * w;
+      const norm = Math.min(1, hist[i] / maxCount);
+      const y = h - norm * (h - 6);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = 1.25;
+    ctx.stroke();
+  };
+
+  ctx.globalCompositeOperation = "screen";
+  drawChannel(rHist, "rgba(248, 113, 113, 0.75)", "rgba(248, 113, 113, 0.14)");
+  drawChannel(gHist, "rgba(74, 222, 128, 0.75)", "rgba(74, 222, 128, 0.14)");
+  drawChannel(bHist, "rgba(96, 165, 250, 0.75)", "rgba(96, 165, 250, 0.14)");
+  drawChannel(yHist, "rgba(226, 228, 233, 0.85)", "rgba(226, 228, 233, 0.08)");
+  ctx.globalCompositeOperation = "source-over";
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState("home"); // "home" | "settings" | "about" | "support"
+  const [activeTab, setActiveTab] = useState("home");
 
-  // Images state
-  const [refImage, setRefImage] = useState(null);
+  // Image states
+  const [referenceImage, setReferenceImage] = useState(null);
   const [targetImage, setTargetImage] = useState(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [statusText, setStatusText] = useState("Ready");
 
-  // Preview mode state ("split" | "side" | "result")
+  // Grading parameter state
+  const [gradingParams, setGradingParams] = useState({ ...DEFAULT_PARAMS });
+
+  // Preview mode state lifted so mode switches always trigger canvas re-render
   const [previewMode, setPreviewMode] = useState("split");
 
-  // Status & Worker state
-  const [statusText, setStatusText] = useState("Ready");
-  const [isBusy, setIsBusy] = useState(false);
-
-  // Grading Parameters
-  const [params, setParams] = useState({ ...DEFAULT_PARAMS });
-  const [autoParams, setAutoParams] = useState({ ...DEFAULT_PARAMS });
-
   // Export metadata
-  const [presetName, setPresetName] = useState("Custom Look");
-  const [author, setAuthor] = useState(() => {
-    return localStorage.getItem("kf_author") || "TFBAGAS";
-  });
-  const [description, setDescription] = useState(
-    "Grading preset matched from reference 'Custom Look'."
-  );
+  const [presetName, setPresetName] = useState("");
+  const [authorName, setAuthorName] = useState("TFBAGAS");
+  const [description, setDescription] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportToast, setExportToast] = useState({ visible: false, filename: "" });
 
-  // Post-Export Toast state
-  const [showSupportToast, setShowSupportToast] = useState(false);
+  // Settings state
+  const [analysisMaxDim, setAnalysisMaxDim] = useState(1280);
+  const [previewMaxDim, setPreviewMaxDim] = useState(960);
 
-  // Canvas & Worker refs
-  const previewCanvasRef = useRef(null);
+  // Refs for Web Worker and Preview / Histogram Canvas
   const workerRef = useRef(null);
-  const rafRef = useRef(null);
+  const gradedCanvasRef = useRef(null);
+  const histogramCanvasRef = useRef(null);
+  const previewSourceImageDataRef = useRef(null);
   const lastRenderedImgRef = useRef(null);
+  const rafRef = useRef(null);
 
   // Initialize Web Worker
   useEffect(() => {
-    workerRef.current = new Worker(
+    const worker = new Worker(
       new URL("./workers/colorMatchWorker.js", import.meta.url),
       { type: "module" }
     );
 
-    workerRef.current.onmessage = (e) => {
-      const { type, stage, params: detectedParams, error } = e.data;
-
+    worker.onmessage = (e) => {
+      const { type, params, stage, error } = e.data;
       if (type === "stage") {
-        setStatusText(stage);
-      } else if (type === "success") {
-        setParams({ ...detectedParams });
-        setAutoParams({ ...detectedParams });
-        setStatusText("Ready");
-        setIsBusy(false);
+        setStatusText(stage || "Analyzing...");
+      } else if (type === "success" && params) {
+        setIsAnalyzing(false);
+        setGradingParams(params);
+        setStatusText("Matched");
       } else if (type === "error") {
-        alert("Error analyzing image: " + error);
-        setStatusText("Ready");
-        setIsBusy(false);
+        setIsAnalyzing(false);
+        console.error("Worker error:", error);
+        setStatusText("Error");
       }
     };
 
-    return () => {
-      workerRef.current?.terminate();
-    };
+    workerRef.current = worker;
+    return () => worker.terminate();
   }, []);
 
-  // Save author to localStorage whenever it changes
+  // Helper to read image file and extract downscaled ImageData
+  const loadImageFile = useCallback(
+    (file, type) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target.result;
+        const img = new Image();
+        img.onload = () => {
+          const ext = file.name.split(".").pop()?.toUpperCase() || "IMG";
+          const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+          const baseName = file.name.replace(/\.[^/.]+$/, "");
+
+          const info = {
+            name: file.name,
+            baseName,
+            width: img.naturalWidth,
+            height: img.naturalHeight,
+            ext,
+            sizeMB,
+            dataUrl,
+            imgElement: img,
+          };
+
+          if (type === "reference") {
+            setReferenceImage(info);
+            setPresetName(baseName.slice(0, 28));
+            setDescription(`Grading preset matched from reference '${baseName}'.`);
+
+            // Downscale for Web Worker analysis
+            setIsAnalyzing(true);
+            setStatusText("Analyzing...");
+
+            const scale = Math.min(
+              1,
+              analysisMaxDim / Math.max(img.naturalWidth, img.naturalHeight)
+            );
+            const w = Math.max(1, Math.round(img.naturalWidth * scale));
+            const h = Math.max(1, Math.round(img.naturalHeight * scale));
+
+            const offCanvas = document.createElement("canvas");
+            offCanvas.width = w;
+            offCanvas.height = h;
+            const ctx = offCanvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, w, h);
+            const imgData = ctx.getImageData(0, 0, w, h);
+
+            workerRef.current?.postMessage({
+              type: "analyze",
+              rgbaData: imgData.data,
+              numPixels: w * h,
+            });
+          } else {
+            setTargetImage(info);
+          }
+        };
+        img.src = dataUrl;
+      };
+      reader.readAsDataURL(file);
+    },
+    [analysisMaxDim]
+  );
+
+  // Generate a procedural sample image so users can test immediately
+  const handleTrySample = useCallback(
+    (type) => {
+      const w = 960;
+      const h = 540;
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+
+      if (type === "reference") {
+        // Cinematic Teal & Amber Sunset Film Frame
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.68);
+        skyGrad.addColorStop(0, "#0b2434");
+        skyGrad.addColorStop(0.45, "#194a5a");
+        skyGrad.addColorStop(0.8, "#d97736");
+        skyGrad.addColorStop(1, "#f3a852");
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // Warm sun glow
+        const sunGrad = ctx.createRadialGradient(w * 0.62, h * 0.52, 10, w * 0.62, h * 0.52, 220);
+        sunGrad.addColorStop(0, "rgba(255, 220, 145, 0.95)");
+        sunGrad.addColorStop(0.4, "rgba(240, 135, 60, 0.45)");
+        sunGrad.addColorStop(1, "rgba(20, 50, 65, 0)");
+        ctx.fillStyle = sunGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // Deep teal ocean / horizon reflection
+        const seaGrad = ctx.createLinearGradient(0, h * 0.65, 0, h);
+        seaGrad.addColorStop(0, "#143542");
+        seaGrad.addColorStop(0.5, "#0d2530");
+        seaGrad.addColorStop(1, "#07141b");
+        ctx.fillStyle = seaGrad;
+        ctx.fillRect(0, h * 0.65, w, h * 0.35);
+
+        // City skyline silhouettes
+        ctx.fillStyle = "#091820";
+        const blocks = [
+          [60, 270, 55, 90],
+          [125, 230, 65, 130],
+          [200, 255, 48, 105],
+          [260, 205, 75, 155],
+          [345, 240, 60, 120],
+          [420, 280, 90, 80],
+          [710, 250, 65, 110],
+          [785, 220, 70, 140],
+        ];
+        blocks.forEach(([bx, by, bw, bh]) => ctx.fillRect(bx, by, bw, bh));
+      } else {
+        // Neutral Daylight Scene for Target Preview
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.62);
+        skyGrad.addColorStop(0, "#4b79a1");
+        skyGrad.addColorStop(0.6, "#7fa6c9");
+        skyGrad.addColorStop(1, "#c8d9e6");
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // Soft mountains
+        ctx.fillStyle = "#4d5d6c";
+        ctx.beginPath();
+        ctx.moveTo(0, h * 0.62);
+        ctx.lineTo(w * 0.25, h * 0.36);
+        ctx.lineTo(w * 0.52, h * 0.58);
+        ctx.lineTo(w * 0.78, h * 0.32);
+        ctx.lineTo(w, h * 0.55);
+        ctx.lineTo(w, h * 0.62);
+        ctx.closePath();
+        ctx.fill();
+
+        // Neutral foreground foliage & ground
+        const groundGrad = ctx.createLinearGradient(0, h * 0.62, 0, h);
+        groundGrad.addColorStop(0, "#5c7457");
+        groundGrad.addColorStop(0.5, "#3f533d");
+        groundGrad.addColorStop(1, "#273326");
+        ctx.fillStyle = groundGrad;
+        ctx.fillRect(0, h * 0.62, w, h * 0.38);
+
+        // Mini color reference patches in corner
+        const patches = ["#d14949", "#d98a3c", "#e0c341", "#4ba366", "#457ec4", "#e5e7eb", "#6b7280", "#1f2937"];
+        patches.forEach((col, idx) => {
+          ctx.fillStyle = col;
+          ctx.fillRect(36 + idx * 34, h - 54, 28, 28);
+        });
+      }
+
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const fileName =
+          type === "reference"
+            ? "Sample_Cinematic_TealAmber.png"
+            : "Sample_Daylight_Target.png";
+        const file = new File([blob], fileName, { type: "image/png" });
+        loadImageFile(file, type);
+      }, "image/png");
+    },
+    [loadImageFile]
+  );
+
+  // Global Clipboard Paste (Ctrl+V / Cmd+V) support
   useEffect(() => {
-    if (author) localStorage.setItem("kf_author", author);
-  }, [author]);
+    const handlePaste = (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith("image/")) {
+          const blob = items[i].getAsFile();
+          if (blob) {
+            const ext = blob.type.split("/")[1] || "png";
+            const file = new File([blob], `Clipboard_Image.${ext}`, {
+              type: blob.type,
+            });
+            const targetSlot = !referenceImage ? "reference" : "target";
+            loadImageFile(file, targetSlot);
+            break;
+          }
+        }
+      }
+    };
+    window.addEventListener("paste", handlePaste);
+    return () => window.removeEventListener("paste", handlePaste);
+  }, [referenceImage, loadImageFile]);
 
-  // Sync description when preset name changes
-  const handlePresetNameChange = (name) => {
-    setPresetName(name);
-    const clean = name.trim() || "Custom Look";
-    if (
-      !description ||
-      description.startsWith("Grading preset matched from reference")
-    ) {
-      setDescription(`Grading preset matched from reference '${clean}'.`);
-    }
-  };
-
-  // Render graded preview to visible canvas
+  // Core function that draws graded pixels onto the active preview canvas and updates histogram
   const updatePreviewSimulation = useCallback(() => {
-    const activeImg = targetImage?.imgElement || refImage?.imgElement;
-    const canvas = previewCanvasRef.current;
-    if (!activeImg || !canvas) return;
-    if (!activeImg.complete || activeImg.naturalWidth === 0 || activeImg.naturalHeight === 0) {
+    const srcData = previewSourceImageDataRef.current;
+    const canvas = gradedCanvasRef.current;
+    if (!srcData || !canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    const targetImgData = ctx.createImageData(srcData.width, srcData.height);
+    simulateGradePixels(srcData.data, targetImgData.data, gradingParams);
+    ctx.putImageData(targetImgData, 0, 0);
+    canvas.dataset.rendered = "true";
+
+    drawHistogram(histogramCanvasRef.current, targetImgData);
+  }, [gradingParams]);
+
+  // Prepare base preview ImageData and render whenever target/reference image, previewMode, or gradingParams change
+  useEffect(() => {
+    const activeImg = targetImage?.imgElement || referenceImage?.imgElement;
+    const canvas = gradedCanvasRef.current;
+
+    if (!activeImg || !canvas) {
+      previewSourceImageDataRef.current = null;
+      lastRenderedImgRef.current = null;
+      drawHistogram(histogramCanvasRef.current, null);
       return;
     }
 
-    // Use optimal resolution for preview (max 1024px) while preserving exact aspect ratio
-    const maxDim = 1024;
-    let w = activeImg.naturalWidth;
-    let h = activeImg.naturalHeight;
-    if (Math.max(w, h) > maxDim) {
-      const scale = maxDim / Math.max(w, h);
-      w = Math.max(1, Math.round(w * scale));
-      h = Math.max(1, Math.round(h * scale));
-    }
+    const scale = Math.min(
+      1,
+      previewMaxDim / Math.max(activeImg.naturalWidth, activeImg.naturalHeight)
+    );
+    const w = Math.max(1, Math.round(activeImg.naturalWidth * scale));
+    const h = Math.max(1, Math.round(activeImg.naturalHeight * scale));
 
-    if (canvas.width !== w || canvas.height !== h) {
+    const needsRebuild =
+      lastRenderedImgRef.current !== activeImg ||
+      !previewSourceImageDataRef.current ||
+      canvas.width !== w ||
+      canvas.height !== h ||
+      canvas.dataset.rendered !== "true";
+
+    if (needsRebuild) {
       canvas.width = w;
       canvas.height = h;
-    }
 
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return;
+      const offCanvas = document.createElement("canvas");
+      offCanvas.width = w;
+      offCanvas.height = h;
+      const ctx = offCanvas.getContext("2d");
+      ctx.drawImage(activeImg, 0, 0, w, h);
+      previewSourceImageDataRef.current = ctx.getImageData(0, 0, w, h);
+      lastRenderedImgRef.current = activeImg;
 
-    ctx.clearRect(0, 0, w, h);
-    ctx.drawImage(activeImg, 0, 0, w, h);
-
-    const imgData = ctx.getImageData(0, 0, w, h);
-    const targetData = ctx.createImageData(w, h);
-
-    simulateGradePixels(imgData.data, targetData.data, params);
-    ctx.putImageData(targetData, 0, 0);
-
-    canvas.dataset.rendered = "true";
-    lastRenderedImgRef.current = activeImg;
-  }, [refImage, targetImage, params]);
-
-  // Re-render graded preview whenever images, grading parameters, preview mode, or active tab change
-  useEffect(() => {
-    if (activeTab !== "home") return;
-
-    const activeImg = targetImage?.imgElement || refImage?.imgElement;
-    const canvas = previewCanvasRef.current;
-    if (!activeImg || !canvas) return;
-
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
-
-    const needsImmediateDraw =
-      canvas.dataset.rendered !== "true" ||
-      lastRenderedImgRef.current !== activeImg;
-
-    if (needsImmediateDraw) {
       updatePreviewSimulation();
     } else {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(() => {
         updatePreviewSimulation();
-        rafRef.current = null;
       });
     }
 
     return () => {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [refImage, targetImage, params, previewMode, activeTab, updatePreviewSimulation]);
+  }, [targetImage, referenceImage, previewMaxDim, previewMode, updatePreviewSimulation]);
 
-  // Handle Reference Image Loaded -> Trigger Worker
-  const handleRefImageSelected = (imgData) => {
-    setRefImage(imgData);
-    setIsBusy(true);
-    setStatusText("Optimizing image cache...");
-
-    // Downscale for fast statistical analysis (~1280px max)
-    const maxDim = 1280;
-    let w = imgData.width;
-    let h = imgData.height;
-    if (Math.max(w, h) > maxDim) {
-      const scale = maxDim / Math.max(w, h);
-      w = Math.round(w * scale);
-      h = Math.round(h * scale);
-    }
-
-    const offscreenCanvas = document.createElement("canvas");
-    offscreenCanvas.width = w;
-    offscreenCanvas.height = h;
-    const ctx = offscreenCanvas.getContext("2d", { willReadFrequently: true });
-    ctx.drawImage(imgData.imgElement, 0, 0, w, h);
-
-    const rawData = ctx.getImageData(0, 0, w, h);
-
-    // Auto-populate clean name from file
-    const baseName = imgData.name.replace(/\.[^/.]+$/, "");
-    const cleanName = baseName
-      .replace(/[_-]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .split(" ")
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-      .join(" ")
-      .slice(0, 24);
-
-    handlePresetNameChange(cleanName);
-
-    // Offload analysis to Web Worker
-    workerRef.current.postMessage({
-      type: "analyze",
-      rgbaData: rawData.data,
-      numPixels: w * h
-    });
-  };
-
-  const handleRefImageRemoved = () => {
-    setRefImage(null);
-    if (!targetImage) {
-      lastRenderedImgRef.current = null;
-    }
-    setParams({ ...DEFAULT_PARAMS });
-    setAutoParams({ ...DEFAULT_PARAMS });
-  };
-
-  const handleTargetImageSelected = (imgData) => {
-    setTargetImage(imgData);
-  };
-
-  const handleTargetImageRemoved = () => {
-    setTargetImage(null);
-    if (!refImage) {
-      lastRenderedImgRef.current = null;
-    }
-  };
-
-  const handleParamChange = (key, val) => {
-    setParams((prev) => ({ ...prev, [key]: val }));
-  };
-
-  const handleSwatchChange = (prefix, r, g, b) => {
-    setParams((prev) => ({
+  const handleParamChange = (key, value) => {
+    setGradingParams((prev) => ({
       ...prev,
-      [`${prefix}R`]: r,
-      [`${prefix}G`]: g,
-      [`${prefix}B`]: b
+      [key]: value,
     }));
   };
 
-  const handleResetAll = () => {
-    setParams({ ...autoParams });
+  const handleResetParams = () => {
+    setGradingParams({ ...DEFAULT_PARAMS });
   };
 
   const handleExport = async () => {
-    if (!refImage) {
-      alert("Please select a reference image first!");
-      return;
+    if (!referenceImage) return;
+    setIsExporting(true);
+    setStatusText("Exporting...");
+    try {
+      const { blob, fileName } = await generateKfplug(
+        gradingParams,
+        presetName || referenceImage.baseName || "Custom Look",
+        authorName || "TFBAGAS",
+        description
+      );
+      downloadBlob(blob, fileName);
+      setStatusText("Exported!");
+      setExportToast({ visible: true, filename: fileName });
+    } catch (err) {
+      console.error("Failed to package .kfplug:", err);
+      setStatusText("Export Error");
+    } finally {
+      setIsExporting(false);
     }
-    const { blob, fileName, displayName } = await generateKfplug(
-      params,
-      presetName,
-      author,
-      description
-    );
-    downloadBlob(blob, fileName);
-    setShowSupportToast(true);
-    return { fileName, displayName };
   };
 
-  const PARAM_DEFS = [
-    { key: "exposure", label: "Exposure (EV)", iconName: "sun", min: -2.0, max: 2.0, step: 0.05 },
-    { key: "contrast", label: "Contrast", iconName: "contrast", min: 0.2, max: 2.0, step: 0.05 },
-    { key: "pivot", label: "Contrast Pivot", iconName: "pivot", min: 0.1, max: 0.9, step: 0.01 },
-    { key: "shadows", label: "Shadows Tint/Level", iconName: "droplet", min: -0.5, max: 0.5, step: 0.02 },
-    { key: "highlights", label: "Highlights Tint/Level", iconName: "highlights", min: -0.5, max: 0.5, step: 0.02 },
-    { key: "temp", label: "Color Temperature", iconName: "thermometer", min: -1.0, max: 1.0, step: 0.02 },
-    { key: "tint", label: "Color Tint", iconName: "palette", min: -1.0, max: 1.0, step: 0.02 },
-    { key: "sat", label: "Saturation", iconName: "droplet", min: 0.0, max: 2.0, step: 0.05 },
-    { key: "vib", label: "Vibrance", iconName: "activity", min: -0.8, max: 0.8, step: 0.05 }
+  const activePreviewImageUrl =
+    targetImage?.dataUrl || referenceImage?.dataUrl || null;
+
+  const navTabs = [
+    { id: "home", label: "Workspace", icon: Sliders },
+    { id: "settings", label: "Settings", icon: Settings },
+    { id: "about", label: "About", icon: Info },
+    { id: "support", label: "Support", icon: Heart },
   ];
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen bg-[#080D0B] text-[#E8F2ED]">
-      {/* ------------------------------------------------------------- */}
-      {/* SIDEBAR (Desktop) / TOPBAR (Mobile)                           */}
-      {/* ------------------------------------------------------------- */}
-      <aside className="w-full md:w-44 bg-[#060B08]/85 border-b md:border-b-0 md:border-r border-[#00E987]/20 flex flex-row md:flex-col items-center justify-between p-3 md:p-5 shrink-0 z-20">
-        {/* Logo & Brand */}
-        <div className="flex items-center gap-2.5 md:flex-col md:gap-3">
-          <img
-            src="/keyflow_logo.png"
-            alt="Keyflow"
-            className="w-8 h-8 md:w-14 md:h-14 object-contain drop-shadow-[0_0_12px_rgba(0,233,135,0.3)]"
-          />
-          <div className="flex flex-col md:hidden">
-            <span className="text-xs font-bold text-white leading-tight font-display">Color Match</span>
-            <span className="text-[10px] text-[#00E987] font-semibold font-display">for Keyflow</span>
-          </div>
-        </div>
-
-        {/* Navigation Buttons */}
-        <nav className="flex md:flex-col gap-1.5 md:w-full md:mt-6">
-          <button
-            onClick={() => setActiveTab("home")}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === "home"
-                ? "bg-[#00E987] text-[#05120B] shadow-[0_0_12px_rgba(0,233,135,0.3)]"
-                : "text-[#91A69A] hover:text-[#E8F2ED] hover:bg-[#16231D]/60"
-            }`}
-          >
-            <Home size={15} />
-            <span>Home</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("settings")}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === "settings"
-                ? "bg-[#00E987] text-[#05120B] shadow-[0_0_12px_rgba(0,233,135,0.3)]"
-                : "text-[#91A69A] hover:text-[#E8F2ED] hover:bg-[#16231D]/60"
-            }`}
-          >
-            <Settings size={15} />
-            <span>Settings</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("about")}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === "about"
-                ? "bg-[#00E987] text-[#05120B] shadow-[0_0_12px_rgba(0,233,135,0.3)]"
-                : "text-[#91A69A] hover:text-[#E8F2ED] hover:bg-[#16231D]/60"
-            }`}
-          >
-            <Info size={15} />
-            <span>About</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("support")}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === "support"
-                ? "bg-[#00E987] text-[#05120B] shadow-[0_0_12px_rgba(0,233,135,0.3)]"
-                : "text-[#91A69A] hover:text-[#E8F2ED] hover:bg-[#16231D]/60"
-            }`}
-          >
-            <Heart size={15} className={activeTab === "support" ? "fill-current" : ""} />
-            <span>Support</span>
-          </button>
-        </nav>
-
-        {/* Desktop Sidebar Watermark */}
-        <div className="hidden md:flex flex-col items-center text-center mt-auto pt-6 border-t border-[#20352B]/40 w-full">
-          <span className="text-[9px] font-bold text-[#00E987]/50 tracking-wider font-display">
-            Color Match for Keyflow
-          </span>
-          <span className="text-[8px] font-bold text-[#00E987]/40 tracking-wider font-mono">
-            V.0.5 Beta
-          </span>
-        </div>
-      </aside>
-
-      {/* ------------------------------------------------------------- */}
-      {/* MAIN CONTENT AREA                                             */}
-      {/* ------------------------------------------------------------- */}
-      <main className="flex-1 flex flex-col p-4 sm:p-6 lg:p-7 max-w-7xl mx-auto w-full overflow-y-auto">
-        {/* Header Bar */}
-        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-          <div className="flex flex-col gap-0.5">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight font-display">
-                Color Match Tool
-              </h1>
-              <span className="text-xl sm:text-2xl font-extrabold text-[#00E987] tracking-tight font-display">
-                for Keyflow
-              </span>
-            </div>
-            <p className="text-xs text-[#91A69A]">
-              Extract Look &amp; Grading from Reference Image and Export as Keyflow Mobile Plugin (.kfplug)
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-            {/* Quick-Access Support Button */}
-            <button
-              onClick={() => setActiveTab("support")}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold border transition-all cursor-pointer active:scale-95 ${
-                activeTab === "support"
-                  ? "bg-[#00E987] text-[#05120B] border-[#00E987] shadow-[0_0_12px_rgba(0,233,135,0.4)]"
-                  : "bg-[#00E987]/15 hover:bg-[#00E987]/25 text-[#00E987] border-[#00E987]/35 shadow-[0_0_10px_rgba(0,233,135,0.1)]"
-              }`}
-              title="Support Developer & Tool"
-            >
-              <Heart size={12} className={activeTab === "support" ? "fill-[#05120B]" : "fill-[#00E987]"} />
-              <span>Support</span>
-            </button>
-
-            {/* Non-blocking Status Pill */}
-            <div
-              className={`px-3 py-1 rounded-full text-[11px] font-semibold border transition-all ${
-                isBusy
-                  ? "bg-[#162D22] text-[#16FFA0] border-[#00E987] shadow-[0_0_12px_rgba(0,233,135,0.3)] animate-pulse"
-                  : "bg-[#0E1C16]/85 text-[#00E987] border-[#00E987]/35"
-              }`}
-            >
-              {statusText}
-            </div>
-
-            {/* Version Badge */}
-            <div className="px-2.5 py-1 rounded-full text-[11px] font-semibold font-mono bg-[#0E1C16]/80 text-[#91A69A] border border-[#00E987]/20">
+    <div className="min-h-screen flex flex-col bg-[#0E0E11] text-[#E2E4E9]">
+      {/* Compact 48px Top App Bar (Material 3 Workstation Header) */}
+      <header className="sticky top-0 z-40 min-h-12 px-3 sm:px-5 py-1.5 bg-[#151519]/95 backdrop-blur-md border-b border-white/[0.08] flex flex-wrap items-center justify-between gap-2">
+        {/* Left: Achromatic Keyflow Logo + Brand Title + Version Badge */}
+        <div className="flex items-center gap-2.5">
+          <KeyflowLogo size={28} />
+          <div className="flex items-center gap-2">
+            <h1 className="text-sm sm:text-base font-bold font-display tracking-tight text-[#E2E4E9]">
+              Color Match Tool
+            </h1>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#1E1E24] text-[#9CA3AF] border border-white/[0.08]">
               v0.5 Beta
-            </div>
+            </span>
           </div>
-        </header>
+        </div>
 
-        {/* --------------------------------------------------------- */}
-        {/* TAB 1: HOME PAGE                                          */}
-        {/* --------------------------------------------------------- */}
-        <div className={activeTab === "home" ? "flex flex-col gap-4" : "hidden"}>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 items-start">
-            {/* LEFT COLUMN: Input Images & Before/After Comparison */}
-            <div className="flex flex-col gap-4">
-              <ImageDropCard
-                stepNum="1"
-                title="Reference Image (Required)"
-                isRequired={true}
-                imageData={refImage}
-                statusText={refImage ? "✓ Loaded" : ""}
-                disabled={isBusy}
-                onImageSelected={handleRefImageSelected}
-                onImageRemoved={handleRefImageRemoved}
-              />
+        {/* Right: Material 3 Segmented Navigation Pill + Status Chip */}
+        <div className="flex items-center gap-2 ml-auto">
+          <nav
+            aria-label="Primary Navigation"
+            className="flex items-center bg-[#0E0E11] border border-white/[0.08] rounded-xl p-0.5"
+          >
+            {navTabs.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setActiveTab(item.id)}
+                  className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                    isActive
+                      ? "bg-[#E2E4E9] text-[#0E0E11] font-semibold"
+                      : "text-[#9CA3AF] hover:text-[#E2E4E9]"
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden xs:inline sm:inline">{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
 
-              <ImageDropCard
-                stepNum="2"
-                title="Target Image / Preview (Optional)"
-                isRequired={false}
-                imageData={targetImage}
-                statusText={targetImage ? "✓ Loaded" : ""}
-                disabled={isBusy}
-                onImageSelected={handleTargetImageSelected}
-                onImageRemoved={handleTargetImageRemoved}
-              />
+          {/* Status Indicator */}
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1E1E24] border border-white/[0.08] text-[11px] font-mono text-[#E2E4E9]">
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                isAnalyzing
+                  ? "bg-amber-400 animate-ping"
+                  : statusText === "Matched" || statusText === "Exported!"
+                  ? "bg-[#6EE7B7]"
+                  : "bg-[#9CA3AF]"
+              }`}
+            />
+            <span>{statusText.toUpperCase()}</span>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content Container */}
+      <main className="flex-1 max-w-[1440px] w-full mx-auto px-3 sm:px-5 py-3.5">
+        {/* WORKSPACE TAB (Kept mounted so canvas & state never reset when switching tabs) */}
+        <div className={activeTab === "home" ? "space-y-3" : "hidden"}>
+          {/* Subtle Support Banner */}
+          <SupportBanner onOpenSupport={() => setActiveTab("support")} />
+
+          {/* 2-Column Workstation Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
+            {/* LEFT COLUMN: Reference, Target, and Visual Preview (7 Cols) */}
+            <div className="lg:col-span-7 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3">
+                <ImageDropCard
+                  title="REFERENCE"
+                  imageInfo={referenceImage}
+                  onSelectImage={(file) => loadImageFile(file, "reference")}
+                  onClearImage={() => {
+                    setReferenceImage(null);
+                    setStatusText("Ready");
+                  }}
+                  onTrySample={() => handleTrySample("reference")}
+                  isAnalyzing={isAnalyzing}
+                />
+
+                <ImageDropCard
+                  title="TARGET IMAGE"
+                  imageInfo={targetImage}
+                  onSelectImage={(file) => loadImageFile(file, "target")}
+                  onClearImage={() => setTargetImage(null)}
+                  onTrySample={() => handleTrySample("target")}
+                />
+              </div>
 
               <ComparisonSlider
-                originalImage={targetImage?.dataUrl || refImage?.dataUrl}
-                gradedCanvasRef={previewCanvasRef}
-                previewMode={previewMode}
-                onPreviewModeChange={setPreviewMode}
+                originalImage={activePreviewImageUrl}
+                gradedCanvasRef={gradedCanvasRef}
+                hasImage={Boolean(activePreviewImageUrl)}
+                mode={previewMode}
+                onModeChange={setPreviewMode}
               />
             </div>
 
-            {/* RIGHT COLUMN: Grading Parameters, Swatches & Export */}
-            <div className="flex flex-col gap-4">
-              {/* Card 3: Detected Grading Parameters */}
-              <div className="liquid-glass rounded-2xl p-4 flex flex-col gap-3">
-                <div className="flex items-center justify-between">
+            {/* RIGHT COLUMN: Telemetry Histogram + Detected Parameters + Export (5 Cols) */}
+            <div className="lg:col-span-5 space-y-3">
+              {/* Detected Parameters Card */}
+              <div className="m3-panel rounded-2xl p-3.5">
+                {/* Header */}
+                <div className="flex items-center justify-between mb-2.5">
                   <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-[#00E987] text-[#080D0B] font-bold text-[11px] flex items-center justify-center">
-                      3
-                    </span>
-                    <span className="text-xs font-bold text-white">
-                      Detected Grading Parameters
-                    </span>
+                    <Sliders className="w-3.5 h-3.5 text-[#9CA3AF]" />
+                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF]">
+                      DETECTED PARAMETERS
+                    </h3>
                   </div>
 
                   <button
-                    onClick={handleResetAll}
-                    disabled={isBusy}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-[#20352B] hover:border-[#00E987] text-[#91A69A] hover:text-[#00E987] text-[10px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                    type="button"
+                    onClick={handleResetParams}
+                    className="flex items-center gap-1 text-[11px] font-medium text-[#9CA3AF] hover:text-[#E2E4E9] px-2 py-1 rounded-md bg-[#1E1E24] hover:bg-white/10 border border-white/[0.08] transition-colors cursor-pointer"
+                    title="Reset all sliders to neutral defaults"
                   >
-                    <RotateCcw size={12} />
-                    Reset All
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Reset All</span>
                   </button>
                 </div>
 
-                {/* 9 Sliders */}
-                <div className="flex flex-col divide-y divide-[#20352B]/40">
-                  {PARAM_DEFS.map((p) => (
+                {/* Real-Time Mini RGB / Rec.709 Luma Histogram Telemetry */}
+                <div className="mb-3 rounded-lg bg-[#0E0E11] border border-white/[0.08] p-2">
+                  <div className="flex items-center justify-between text-[10px] font-mono text-[#9CA3AF] mb-1">
+                    <span className="inline-flex items-center gap-1 uppercase tracking-wider">
+                      <BarChart3 className="w-3 h-3 text-[#9CA3AF]" />
+                      RGB / Rec.709 Luma Scope
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-red-400/90">R</span>
+                      <span className="text-green-400/90">G</span>
+                      <span className="text-blue-400/90">B</span>
+                      <span className="text-[#E2E4E9]/90">Y</span>
+                    </div>
+                  </div>
+                  <div className="relative h-14 w-full overflow-hidden rounded">
+                    <canvas
+                      ref={histogramCanvasRef}
+                      width={340}
+                      height={56}
+                      className="w-full h-full block"
+                    />
+                    {!activePreviewImageUrl && (
+                      <div className="absolute inset-0 flex items-center justify-center text-[11px] font-mono text-[#9CA3AF]/50">
+                        NO SIGNAL — LOAD IMAGE OR CLICK TRY SAMPLE
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Bipolar Sliders List */}
+                <div className="space-y-0.5 divide-y divide-white/[0.04]">
+                  {PARAM_CONTROLS.map((ctrl) => (
                     <ParameterControl
-                      key={p.key}
-                      paramKey={p.key}
-                      label={p.label}
-                      iconName={p.iconName}
-                      min={p.min}
-                      max={p.max}
-                      step={p.step}
-                      value={params[p.key]}
+                      key={ctrl.key}
+                      paramKey={ctrl.key}
+                      label={ctrl.label}
+                      min={ctrl.min}
+                      max={ctrl.max}
+                      step={ctrl.step}
+                      value={gradingParams[ctrl.key] ?? DEFAULT_PARAMS[ctrl.key]}
+                      defaultValue={DEFAULT_PARAMS[ctrl.key]}
+                      isBipolar={ctrl.isBipolar}
                       onChange={handleParamChange}
-                      disabled={isBusy}
+                      icon={ctrl.icon}
                     />
                   ))}
                 </div>
 
                 {/* 3-Way Color Wheels Swatches */}
-                <div className="mt-1 flex flex-col gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <Layers size={14} className="text-[#00E987]" />
-                    <span className="text-[11px] font-bold text-white">
-                      3-Way Color Wheels Swatches:
+                <div className="mt-3 pt-3 border-t border-white/[0.08]">
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <Layers className="w-3.5 h-3.5 text-[#9CA3AF]" />
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF]">
+                      3-WAY COLOR WHEELS SWATCHES
                     </span>
                   </div>
 
                   <div className="grid grid-cols-3 gap-2">
                     <ColorSwatchCard
                       title="Shadows (Lift)"
-                      rNorm={params.liftR}
-                      gNorm={params.liftG}
-                      bNorm={params.liftB}
-                      onChange={(r, g, b) => handleSwatchChange("lift", r, g, b)}
-                      disabled={isBusy}
+                      rgb={[
+                        gradingParams.liftR,
+                        gradingParams.liftG,
+                        gradingParams.liftB,
+                      ]}
                     />
                     <ColorSwatchCard
                       title="Midtones (Gamma)"
-                      rNorm={params.gammaR}
-                      gNorm={params.gammaG}
-                      bNorm={params.gammaB}
-                      onChange={(r, g, b) => handleSwatchChange("gamma", r, g, b)}
-                      disabled={isBusy}
+                      rgb={[
+                        gradingParams.gammaR,
+                        gradingParams.gammaG,
+                        gradingParams.gammaB,
+                      ]}
                     />
                     <ColorSwatchCard
                       title="Highs (Gain)"
-                      rNorm={params.gainR}
-                      gNorm={params.gainG}
-                      bNorm={params.gainB}
-                      onChange={(r, g, b) => handleSwatchChange("gain", r, g, b)}
-                      disabled={isBusy}
+                      rgb={[
+                        gradingParams.gainR,
+                        gradingParams.gainG,
+                        gradingParams.gainB,
+                      ]}
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Card 4: Export Plugin */}
+              {/* Export Card */}
               <ExportCard
                 presetName={presetName}
-                setPresetName={handlePresetNameChange}
-                author={author}
-                setAuthor={setAuthor}
+                setPresetName={setPresetName}
+                authorName={authorName}
+                setAuthorName={setAuthorName}
                 description={description}
                 setDescription={setDescription}
                 onExport={handleExport}
-                disabled={!refImage || isBusy}
+                isExporting={isExporting}
+                disabled={!referenceImage}
               />
             </div>
           </div>
-
-          {/* Slim Dismissible Support Banner on Home */}
-          <SupportBanner />
         </div>
 
-        {/* --------------------------------------------------------- */}
-        {/* TAB 2: SETTINGS PAGE                                      */}
-        {/* --------------------------------------------------------- */}
+        {/* SETTINGS TAB */}
         {activeTab === "settings" && (
-          <div className="flex flex-col gap-4 max-w-2xl">
-            <div className="liquid-glass rounded-2xl p-6 flex flex-col gap-4">
-              <h2 className="text-base font-bold text-white font-display">Default Export Preferences</h2>
+          <div className="max-w-xl mx-auto m3-panel rounded-2xl p-5 sm:p-6 space-y-5">
+            <div className="flex items-center gap-2.5 border-b border-white/[0.08] pb-3.5">
+              <Settings className="w-4 h-4 text-[#E2E4E9]" />
+              <h2 className="text-base font-bold font-display text-[#E2E4E9]">
+                Performance &amp; Processing Settings
+              </h2>
+            </div>
 
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-[#E8F2ED]">
-                  Default Creator Name (Made By):
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-[#E2E4E9] mb-1">
+                  Reference Analysis Resolution Limit
                 </label>
-                <input
-                  type="text"
-                  value={author}
-                  onChange={(e) => setAuthor(e.target.value)}
-                  placeholder="e.g. TFBAGAS"
-                  className="px-3.5 py-2 rounded-xl bg-[#09100D]/90 border border-[#20352B] focus:border-[#00E987] text-white text-xs outline-none"
-                />
-                <span className="text-[11px] text-[#91A69A]">
-                  This author name will be embedded as the plugin creator in Keyflow Mobile.
-                </span>
+                <p className="text-xs text-[#9CA3AF] mb-2">
+                  Downscales reference images in the background Web Worker before computing Rec. 709 histograms and percentiles.
+                </p>
+                <select
+                  value={analysisMaxDim}
+                  onChange={(e) => setAnalysisMaxDim(Number(e.target.value))}
+                  className="w-full bg-[#1E1E24] border border-white/[0.08] rounded-xl px-3.5 py-2 text-xs text-[#E2E4E9] outline-none focus:border-white/25"
+                >
+                  <option value={720}>720 px (Ultra Fast - Low RAM)</option>
+                  <option value={1280}>1280 px (Recommended Balanced)</option>
+                  <option value={1920}>1920 px (Full HD Precision)</option>
+                </select>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-[#16231D]/60 border border-[#20352B] text-xs text-[#91A69A] flex flex-col gap-1">
-                <span className="font-bold text-[#00E987]">Multi-Plugin Co-existence Active</span>
-                <span>
-                  Every exported look automatically generates an isolated package ID (e.g.{" "}
-                  <code className="text-[#00E987] font-mono">com.keyflow.matchgrade.&lt;slug&gt;</code>) to prevent
-                  overwriting your existing installed plugins in Keyflow.
-                </span>
+              <div>
+                <label className="block text-xs font-medium text-[#E2E4E9] mb-1">
+                  Live Preview Simulation Resolution
+                </label>
+                <p className="text-xs text-[#9CA3AF] mb-2">
+                  Controls the internal canvas resolution when dragging sliders in real time.
+                </p>
+                <select
+                  value={previewMaxDim}
+                  onChange={(e) => setPreviewMaxDim(Number(e.target.value))}
+                  className="w-full bg-[#1E1E24] border border-white/[0.08] rounded-xl px-3.5 py-2 text-xs text-[#E2E4E9] outline-none focus:border-white/25"
+                >
+                  <option value={640}>640 px (60fps Mobile Smoothness)</option>
+                  <option value={960}>960 px (Recommended Default)</option>
+                  <option value={1440}>1440 px (High Detail Desktop)</option>
+                </select>
               </div>
             </div>
           </div>
         )}
 
-        {/* --------------------------------------------------------- */}
-        {/* TAB 3: ABOUT PAGE                                         */}
-        {/* --------------------------------------------------------- */}
+        {/* ABOUT TAB */}
         {activeTab === "about" && (
-          <div className="flex flex-col gap-4 max-w-2xl">
-            <div className="liquid-glass rounded-2xl p-6 flex flex-col gap-5">
-              <div className="flex items-center gap-4">
-                <img src="/keyflow_logo.png" alt="Keyflow" className="w-14 h-14 object-contain" />
-                <div className="flex flex-col">
-                  <h2 className="text-lg font-bold text-white font-display">Color Match Tool for Keyflow</h2>
-                  <span className="text-xs text-[#91A69A]">
-                    Web Client-Side Edition (PWA Ready)
-                  </span>
-                  <span className="text-[11px] text-[#00E987] italic mt-0.5">
-                    Target Engine: Keyflow Mobile 1.5.x+ (OpenGL ES Pipeline)
-                  </span>
-                </div>
+          <div className="max-w-xl mx-auto m3-panel rounded-2xl p-5 sm:p-6 space-y-4">
+            <div className="flex items-center gap-3.5 border-b border-white/[0.08] pb-4">
+              <KeyflowLogo size={48} />
+              <div>
+                <h2 className="text-lg font-bold font-display text-[#E2E4E9]">
+                  Color Match for Keyflow V.0.5 Beta
+                </h2>
+                <p className="text-xs text-[#9CA3AF]">
+                  100% Client-Side Web App • Zero Server Upload
+                </p>
               </div>
+            </div>
 
-              {/* Credit Card */}
-              <div className="p-4 rounded-xl bg-[#0E1C16] border border-[#00E987]/30 flex flex-col gap-1">
-                <span className="text-[10px] font-bold text-[#00E987] uppercase tracking-wider">
-                  CREDIT & DEVELOPMENT
-                </span>
-                <span className="text-sm font-bold text-white">Created & Developed by: TFBAGAS</span>
-                <span className="text-xs text-[#91A69A]">
-                  Reverse-engineered from Keyflow DEX runtime bytecode & mobile GLSL engine.
-                </span>
-              </div>
+            <p className="text-xs sm:text-sm text-[#9CA3AF] leading-relaxed">
+              This tool analyzes the luminance distribution (Rec. 709), white balance neutrality, saturation, and 3-way split toning (Shadows, Midtones, Highlights) of any reference image directly inside your browser using Web Workers, then packages a native{" "}
+              <code className="text-[#E2E4E9] font-mono bg-[#1E1E24] px-1.5 py-0.5 rounded border border-white/[0.08]">
+                .kfplug
+              </code>{" "}
+              GLSL shader plugin for Keyflow.
+            </p>
 
-              {/* Specifications */}
-              <div className="flex flex-col gap-2">
-                <span className="text-xs font-bold text-white">Engine Specifications:</span>
-                <ul className="text-xs text-[#91A69A] flex flex-col gap-1.5 list-disc pl-4">
-                  <li>
-                    <strong className="text-[#E8F2ED]">100% Client-Side Processing:</strong> No server upload, zero backend costs, runs directly inside your browser.
-                  </li>
-                  <li>
-                    <strong className="text-[#E8F2ED]">Web Worker Multithreading:</strong> Heavy pixel statistics run on background threads without freezing the UI.
-                  </li>
-                  <li>
-                    <strong className="text-[#E8F2ED]">Rec. 709 Computer Vision:</strong> Exposure EV curve, dynamic contrast pivot, Planckian white balance, and 3-way Lift/Gamma/Gain swatches.
-                  </li>
-                  <li>
-                    <strong className="text-[#E8F2ED]">Mobile Friendly:</strong> Works on desktop and touchscreens (Android/iOS) with PWA install support.
-                  </li>
-                </ul>
-              </div>
+            <div className="bg-[#1E1E24] border border-white/[0.08] rounded-xl p-4 text-xs text-[#9CA3AF] space-y-1.5">
+              <div className="font-semibold text-[#E2E4E9]">Privacy &amp; Architecture</div>
+              <p>
+                All images are processed locally in your device&apos;s memory. No photos or presets are ever uploaded to an external server.
+              </p>
             </div>
           </div>
         )}
 
-        {/* --------------------------------------------------------- */}
-        {/* TAB 4: SUPPORT PAGE                                       */}
-        {/* --------------------------------------------------------- */}
+        {/* SUPPORT TAB */}
         {activeTab === "support" && <SupportTab />}
-
-        {/* Post-Export Toast Notification */}
-        <SupportToast
-          show={showSupportToast}
-          onClose={() => setShowSupportToast(false)}
-        />
       </main>
+
+      {/* Post-Export Support Toast */}
+      <SupportToast
+        visible={exportToast.visible}
+        filename={exportToast.filename}
+        onClose={() => setExportToast({ visible: false, filename: "" })}
+      />
     </div>
   );
 }

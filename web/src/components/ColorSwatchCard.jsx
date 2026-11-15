@@ -1,78 +1,56 @@
-import React, { useRef, useState } from "react";
+import React, { useState } from "react";
 import { Copy, Check } from "lucide-react";
 
-export default function ColorSwatchCard({
-  title,
-  rNorm,
-  gNorm,
-  bNorm,
-  onChange,
-  disabled
-}) {
+export default function ColorSwatchCard({ title, rgb = [0.5, 0.5, 0.5] }) {
   const [copied, setCopied] = useState(false);
-  const colorInputRef = useRef(null);
 
-  const rInt = Math.min(255, Math.max(0, Math.round(rNorm * 255)));
-  const gInt = Math.min(255, Math.max(0, Math.round(gNorm * 255)));
-  const bInt = Math.min(255, Math.max(0, Math.round(bNorm * 255)));
+  const clampByte = (v) =>
+    Math.max(0, Math.min(255, Math.round((v ?? 0.5) * 255)));
 
-  const hexCode = `#${rInt.toString(16).padStart(2, "0")}${gInt.toString(16).padStart(2, "0")}${bInt.toString(16).padStart(2, "0")}`.toUpperCase();
+  const r = clampByte(rgb[0]);
+  const g = clampByte(rgb[1]);
+  const b = clampByte(rgb[2]);
 
-  const handleColorChange = (e) => {
-    const hex = e.target.value;
-    const r = parseInt(hex.slice(1, 3), 16) / 255.0;
-    const g = parseInt(hex.slice(3, 5), 16) / 255.0;
-    const b = parseInt(hex.slice(5, 7), 16) / 255.0;
-    onChange(r, g, b);
-  };
+  const hex = `#${r.toString(16).padStart(2, "0")}${g
+    .toString(16)
+    .padStart(2, "0")}${b.toString(16).padStart(2, "0")}`.toUpperCase();
 
-  const handleCopyHex = (e) => {
-    e.stopPropagation();
-    navigator.clipboard.writeText(hexCode);
+  const handleCopy = () => {
+    navigator.clipboard?.writeText(hex);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
 
   return (
-    <div className="flex-1 bg-[#0E1914]/85 border border-[#20352B] rounded-xl p-2.5 flex flex-col items-center gap-1.5">
-      <span className="text-[10px] font-semibold text-[#91A69A]">{title}</span>
+    <div className="flex flex-col items-center bg-[#1E1E24]/70 border border-white/[0.08] rounded-lg p-2.5 transition-all hover:border-white/15">
+      <span className="text-[11px] font-medium text-[#9CA3AF] mb-1.5">
+        {title}
+      </span>
 
-      {/* Clickable Color Block */}
+      {/* Color Swatch Box */}
+      <div
+        className="w-full h-9 rounded-md border border-white/10 shadow-inner mb-2 transition-colors duration-200"
+        style={{ backgroundColor: `rgb(${r}, ${g}, ${b})` }}
+      />
+
+      {/* Hex Code + Copy Button */}
       <button
         type="button"
-        disabled={disabled}
-        onClick={() => colorInputRef.current?.click()}
-        style={{ backgroundColor: hexCode }}
-        className="w-full h-9 rounded-lg border border-white/15 cursor-pointer shadow-inner relative transition-transform active:scale-95 disabled:opacity-50"
+        onClick={handleCopy}
+        className="flex items-center gap-1.5 text-xs font-mono tabular-nums font-semibold text-[#E2E4E9] hover:text-white transition-colors cursor-pointer"
+        title="Copy Hex Color"
       >
-        <input
-          ref={colorInputRef}
-          type="color"
-          value={hexCode}
-          disabled={disabled}
-          onChange={handleColorChange}
-          className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-        />
+        <span>{hex}</span>
+        {copied ? (
+          <Check className="w-3 h-3 text-[#6EE7B7]" />
+        ) : (
+          <Copy className="w-3 h-3 text-[#9CA3AF]" />
+        )}
       </button>
 
-      {/* HEX + Copy Button */}
-      <div className="flex items-center gap-1.5 mt-0.5">
-        <span className="text-[11px] font-semibold text-white tracking-wider font-mono">
-          {hexCode}
-        </span>
-        <button
-          type="button"
-          onClick={handleCopyHex}
-          title="Copy HEX Code"
-          className="p-1 rounded hover:bg-[#00E987]/15 text-[#91A69A] hover:text-[#00E987] transition-colors cursor-pointer"
-        >
-          {copied ? <Check size={12} className="text-[#00E987]" /> : <Copy size={12} />}
-        </button>
-      </div>
-
       {/* RGB Readout */}
-      <span className="text-[9px] text-[#91A69A] font-mono">
-        {rInt}, {gInt}, {bInt}
+      <span className="text-[10px] font-mono tabular-nums text-[#9CA3AF]/70 mt-0.5">
+        {r}, {g}, {b}
       </span>
     </div>
   );

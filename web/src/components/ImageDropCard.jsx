@@ -1,172 +1,164 @@
 import React, { useRef, useState } from "react";
-import { Image as ImageIcon, Upload, RefreshCw, Trash2 } from "lucide-react";
+import { Upload, RefreshCw, Trash2, Sparkles, Image as ImageIcon } from "lucide-react";
 
 export default function ImageDropCard({
-  stepNum,
   title,
-  isRequired,
-  imageData,
-  statusText,
-  disabled,
-  onImageSelected,
-  onImageRemoved
+  imageInfo,
+  onSelectImage,
+  onClearImage,
+  onTrySample,
+  isAnalyzing = false,
 }) {
-  const [isDragOver, setIsDragOver] = useState(false);
-  const fileInputRef = useRef(null);
+  const inputRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
 
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    if (!disabled) setIsDragOver(true);
-  };
-
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    setIsDragOver(false);
+  const handleFile = (file) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    onSelectImage(file);
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
-    setIsDragOver(false);
-    if (disabled) return;
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFile(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleFileChange = (e) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0];
-      e.target.value = "";
-      handleFile(file);
-    }
-  };
-
-  const handleFile = (file) => {
-    if (!file.type.startsWith("image/")) {
-      alert("Please select a valid image file (JPG, PNG, WebP).");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target.result;
-      const img = new Image();
-      img.onload = async () => {
-        try {
-          if (img.decode) await img.decode();
-        } catch {
-          // Proceed even if decode() rejects cleanly on already loaded image
-        }
-        onImageSelected({
-          file,
-          dataUrl,
-          imgElement: img,
-          width: img.naturalWidth,
-          height: img.naturalHeight,
-          name: file.name,
-          format: file.name.split(".").pop().toUpperCase(),
-          sizeMb: (file.size / (1024 * 1024)).toFixed(1)
-        });
-      };
-      img.src = dataUrl;
-    };
-    reader.readAsDataURL(file);
+    setIsDragging(false);
+    const file = e.dataTransfer?.files?.[0];
+    handleFile(file);
   };
 
   return (
-    <div className="liquid-glass rounded-2xl p-4 flex flex-col gap-2.5">
-      {/* Header bar */}
-      <div className="flex items-center justify-between">
+    <div className="m3-panel rounded-2xl p-3.5 transition-all">
+      {/* Header Row: Technical Micro-Header */}
+      <div className="flex items-center justify-between mb-2.5">
         <div className="flex items-center gap-2">
-          <span className="w-5 h-5 rounded-full bg-[#00E987] text-[#080D0B] font-bold text-[11px] flex items-center justify-center">
-            {stepNum}
-          </span>
-          <span className="text-xs font-bold text-white">{title}</span>
+          <ImageIcon className="w-3.5 h-3.5 text-[#9CA3AF]" />
+          <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF]">
+            {title}
+          </h3>
         </div>
-        {statusText && (
-          <span className="text-[11px] font-bold text-[#00E987]">
-            {statusText}
-          </span>
-        )}
+
+        <span
+          className={`text-[11px] font-mono px-2 py-0.5 rounded-md border ${
+            isAnalyzing
+              ? "bg-[#1E1E24] text-[#E2E4E9] border-white/15 animate-pulse"
+              : imageInfo
+              ? "bg-[#1E1E24] text-[#E2E4E9] border-white/[0.08]"
+              : "bg-transparent text-[#9CA3AF]/60 border-white/[0.05]"
+          }`}
+        >
+          {isAnalyzing ? "ANALYZING..." : imageInfo ? "LOADED" : "EMPTY"}
+        </span>
       </div>
 
-      {/* Main Container */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        {/* Preview / Drop Box */}
+      {/* Body Area */}
+      <div className="flex flex-col sm:flex-row gap-2.5 items-stretch">
+        {/* Dropzone / Thumbnail */}
         <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
+          onClick={() => inputRef.current?.click()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
-          onClick={() => !imageData && !disabled && fileInputRef.current?.click()}
-          className={`flex-1 h-36 sm:h-40 rounded-xl border flex items-center justify-center relative overflow-hidden transition-all ${
-            isDragOver
-              ? "border-[#00E987] bg-[#0E1C16]/90 shadow-[0_0_12px_rgba(0,233,135,0.2)]"
-              : "border-[#20352B] bg-[#090F0C]/85"
-          } ${!imageData && !disabled ? "cursor-pointer hover:border-[#00E987]/50" : ""}`}
+          className={`relative flex-1 min-h-[148px] sm:min-h-[164px] rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center overflow-hidden bg-[#0E0E11] ${
+            isDragging
+              ? "border-[#E2E4E9]/50 bg-[#1E1E24]/60"
+              : imageInfo
+              ? "border-white/[0.08] hover:border-white/20"
+              : "border-dashed border-white/[0.12] hover:border-white/25 hover:bg-[#1E1E24]/30"
+          }`}
         >
+          {imageInfo ? (
+            <img
+              src={imageInfo.dataUrl}
+              alt={title}
+              className="w-full h-[164px] object-contain p-1.5 select-none"
+            />
+          ) : (
+            <div className="flex flex-col items-center text-center p-3">
+              <div className="w-9 h-9 rounded-lg bg-[#1E1E24] border border-white/[0.08] flex items-center justify-center mb-2 text-[#E2E4E9]">
+                <Upload className="w-4 h-4" />
+              </div>
+              <p className="text-xs font-medium text-[#E2E4E9]">
+                Drop image, click to browse, or press <span className="font-mono text-[11px] bg-[#1E1E24] px-1.5 py-0.5 rounded border border-white/[0.08]">Ctrl+V</span>
+              </p>
+              <div className="flex items-center gap-2 mt-2.5">
+                <span className="text-[11px] text-[#9CA3AF]/70">JPG, PNG, WEBP</span>
+                {onTrySample && (
+                  <>
+                    <span className="text-white/15">•</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onTrySample();
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#1E1E24] hover:bg-white/15 text-[#E2E4E9] border border-white/[0.1] text-[11px] font-medium transition-colors cursor-pointer"
+                    >
+                      <Sparkles className="w-3 h-3 text-[#9CA3AF]" />
+                      Try Sample
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
           <input
-            ref={fileInputRef}
+            ref={inputRef}
             type="file"
             accept="image/*"
             className="hidden"
-            onChange={handleFileChange}
-            disabled={disabled}
+            onChange={(e) => {
+              handleFile(e.target.files?.[0]);
+              e.target.value = "";
+            }}
           />
-
-          {!imageData ? (
-            <div className="flex flex-col items-center gap-1.5 p-4 text-center">
-              <ImageIcon size={26} className="text-[#91A69A]" />
-              <span className="text-[11px] text-[#91A69A]">Drag & Drop Image Here</span>
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  fileInputRef.current?.click();
-                }}
-                className="mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#16231D] hover:bg-[#1C2C24] border border-[#20352B] hover:border-[#00E987] text-[#E8F2ED] text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50"
-              >
-                <Upload size={14} className="text-[#00E987]" />
-                Browse Image...
-              </button>
-            </div>
-          ) : (
-            <img
-              src={imageData.dataUrl}
-              alt="Preview"
-              className="w-full h-full object-contain p-1"
-            />
-          )}
         </div>
 
-        {/* Action Button Stack (Right on PC, Row on Mobile) */}
-        {imageData && (
-          <div className="flex sm:flex-col gap-2 sm:w-20">
+        {/* Action Buttons */}
+        <div className="flex sm:flex-col gap-2 sm:w-24 shrink-0">
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-[#1E1E24] hover:bg-white/10 border border-white/[0.08] text-xs font-medium text-[#E2E4E9] transition-colors cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-[#9CA3AF]" />
+            <span>{imageInfo ? "Replace" : "Browse"}</span>
+          </button>
+
+          {imageInfo ? (
             <button
               type="button"
-              disabled={disabled}
-              onClick={() => fileInputRef.current?.click()}
-              className="flex-1 sm:h-[72px] flex items-center justify-center gap-1 sm:flex-col p-2 rounded-xl bg-[#16231D]/80 hover:bg-[#1C2C24] border border-[#20352B] hover:border-[#00E987] text-[#E8F2ED] hover:text-[#00E987] text-[10px] font-bold transition-all cursor-pointer disabled:opacity-50"
+              onClick={onClearImage}
+              className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-[#1E1E24] hover:bg-red-500/15 border border-white/[0.08] hover:border-red-500/30 text-xs font-medium text-[#9CA3AF] hover:text-red-300 transition-colors cursor-pointer"
             >
-              <RefreshCw size={14} className="text-[#00E987]" />
-              Replace
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Remove</span>
             </button>
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={onImageRemoved}
-              className="flex-1 sm:h-[72px] flex items-center justify-center gap-1 sm:flex-col p-2 rounded-xl bg-[#16231D]/80 hover:bg-[#2D1919] border border-[#20352B] hover:border-[#FF5252] text-[#E8F2ED] hover:text-[#FF5252] text-[10px] font-bold transition-all cursor-pointer disabled:opacity-50"
-            >
-              <Trash2 size={14} className="text-[#FF5252]" />
-              Remove
-            </button>
-          </div>
-        )}
+          ) : (
+            onTrySample && (
+              <button
+                type="button"
+                onClick={onTrySample}
+                className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-[#1E1E24]/70 hover:bg-[#1E1E24] border border-white/[0.08] text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] transition-colors cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Sample</span>
+              </button>
+            )
+          )}
+        </div>
       </div>
 
-      {/* Metadata footer */}
-      {imageData && (
-        <div className="text-[10px] text-[#91A69A] truncate px-1">
-          {imageData.name} • <span className="font-mono">{imageData.width}×{imageData.height} px</span> • {imageData.format} • <span className="font-mono">{imageData.sizeMb} MB</span>
+      {/* File Meta Footer */}
+      {imageInfo && (
+        <div className="mt-2 pt-2 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-[#9CA3AF] font-mono truncate">
+          <span className="truncate max-w-[180px] sm:max-w-[240px] text-[#E2E4E9]/80">
+            {imageInfo.name}
+          </span>
+          <span>
+            {imageInfo.width}×{imageInfo.height} px • {imageInfo.ext} • {imageInfo.sizeMB} MB
+          </span>
         </div>
       )}
     </div>

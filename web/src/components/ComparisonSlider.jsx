@@ -1,216 +1,241 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Columns } from "lucide-react";
-
-const PREVIEW_MODES = [
-  { id: "split", label: "Split Slider" },
-  { id: "side", label: "Side by Side" },
-  { id: "result", label: "Split Result" }
-];
+import React, { useState, useRef, useEffect } from "react";
+import { Columns, MoveHorizontal, Eye } from "lucide-react";
 
 export default function ComparisonSlider({
   originalImage,
   gradedCanvasRef,
-  previewMode = "split",
-  onPreviewModeChange
+  hasImage,
+  mode = "split",
+  onModeChange,
 }) {
-  const [splitPos, setSplitPos] = useState(0.5);
+  const [splitPos, setSplitPos] = useState(50); // percentage 0..100
   const [isDragging, setIsDragging] = useState(false);
+  const [isHoldingBefore, setIsHoldingBefore] = useState(false);
   const containerRef = useRef(null);
 
-  const handleMove = useCallback((clientX) => {
+  const updatePosition = (clientX) => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    if (rect.width <= 0) return;
-    const x = clientX - rect.left;
-    const pos = Math.max(0.02, Math.min(0.98, x / rect.width));
-    setSplitPos(pos);
-  }, []);
-
-  const handleMouseDown = (e) => {
-    if (previewMode !== "split" || !originalImage) return;
-    setIsDragging(true);
-    handleMove(e.clientX);
-  };
-
-  const handleTouchStart = (e) => {
-    if (previewMode !== "split" || !originalImage) return;
-    if (e.touches && e.touches.length > 0) {
-      setIsDragging(true);
-      handleMove(e.touches[0].clientX);
-    }
+    const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
+    setSplitPos((x / rect.width) * 100);
   };
 
   useEffect(() => {
-    const handleWindowMouseMove = (e) => {
-      if (isDragging) {
-        handleMove(e.clientX);
-      }
+    const handleMouseUp = () => setIsDragging(false);
+    const handleMouseMove = (e) => {
+      if (isDragging) updatePosition(e.clientX);
     };
-    const handleWindowTouchMove = (e) => {
-      if (isDragging && e.touches && e.touches.length > 0) {
-        handleMove(e.touches[0].clientX);
+    const handleTouchMove = (e) => {
+      if (isDragging && e.touches?.[0]) {
+        updatePosition(e.touches[0].clientX);
       }
-    };
-    const handleWindowMouseUp = () => {
-      setIsDragging(false);
     };
 
-    window.addEventListener("mousemove", handleWindowMouseMove);
-    window.addEventListener("touchmove", handleWindowTouchMove);
-    window.addEventListener("mouseup", handleWindowMouseUp);
-    window.addEventListener("touchend", handleWindowMouseUp);
+    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("touchend", handleMouseUp);
+    window.addEventListener("touchmove", handleTouchMove, { passive: true });
 
     return () => {
-      window.removeEventListener("mousemove", handleWindowMouseMove);
-      window.removeEventListener("touchmove", handleWindowTouchMove);
-      window.removeEventListener("mouseup", handleWindowMouseUp);
-      window.removeEventListener("touchend", handleWindowMouseUp);
+      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("touchend", handleMouseUp);
+      window.removeEventListener("touchmove", handleTouchMove);
     };
-  }, [isDragging, handleMove]);
+  }, [isDragging]);
+
+  // Keyboard shortcut: hold '\' to peek at Before image
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "\\") {
+        setIsHoldingBefore(true);
+      }
+    };
+    const handleKeyUp = (e) => {
+      if (e.key === "\\") {
+        setIsHoldingBefore(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, []);
 
   return (
-    <div className="liquid-glass rounded-2xl p-4 flex flex-col gap-3">
-      {/* Header bar */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
+    <div className="m3-panel rounded-2xl p-3.5">
+      {/* Header Row */}
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
         <div className="flex items-center gap-2">
-          <Columns size={16} className="text-[#00E987] shrink-0" />
-          <span className="text-xs font-semibold text-white">
-            Visual Preview (Before / After Comparison)
-          </span>
+          <Columns className="w-3.5 h-3.5 text-[#9CA3AF]" />
+          <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF]">
+            VISUAL PREVIEW
+          </h3>
         </div>
 
-        {/* 3-Mode Segmented Control */}
-        <div className="flex items-center gap-1 p-0.5 rounded-lg bg-[#09100D]/90 border border-[#20352B]">
-          {PREVIEW_MODES.map((mode) => (
+        <div className="flex items-center gap-1.5">
+          {/* Hold Before Peek Button */}
+          {hasImage && (
             <button
-              key={mode.id}
               type="button"
-              onClick={() => onPreviewModeChange?.(mode.id)}
-              className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-all cursor-pointer ${
-                previewMode === mode.id
-                  ? "bg-[#00E987] text-[#080D0B] shadow-[0_0_8px_rgba(0,233,135,0.25)]"
-                  : "text-[#91A69A] hover:text-[#E8F2ED]"
+              onMouseDown={() => setIsHoldingBefore(true)}
+              onMouseUp={() => setIsHoldingBefore(false)}
+              onMouseLeave={() => setIsHoldingBefore(false)}
+              onTouchStart={() => setIsHoldingBefore(true)}
+              onTouchEnd={() => setIsHoldingBefore(false)}
+              title="Hold to peek at original ungraded image (Shortcut: Hold \)"
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors cursor-pointer select-none ${
+                isHoldingBefore
+                  ? "bg-[#E2E4E9] text-[#0E0E11] border-[#E2E4E9]"
+                  : "bg-[#1E1E24] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.08]"
               }`}
             >
-              {mode.label}
+              <Eye className="w-3.5 h-3.5" />
+              <span>Hold Before</span>
             </button>
-          ))}
+          )}
+
+          {/* Mode Selector Segmented Pill */}
+          <div className="flex items-center bg-[#0E0E11] border border-white/[0.08] rounded-lg p-0.5 text-xs">
+            {[
+              { id: "split", label: "Split Slider" },
+              { id: "side", label: "Side by Side" },
+              { id: "result", label: "Split Result" },
+            ].map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => onModeChange && onModeChange(m.id)}
+                className={`px-2.5 py-1 rounded-md font-medium transition-all cursor-pointer ${
+                  mode === m.id
+                    ? "bg-[#E2E4E9] text-[#0E0E11] font-semibold"
+                    : "text-[#9CA3AF] hover:text-[#E2E4E9]"
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Main Image Stage */}
+      {/* Preview Viewport */}
       <div
         ref={containerRef}
-        onMouseDown={handleMouseDown}
-        onTouchStart={handleTouchStart}
-        className={`relative w-full aspect-16/10 bg-[#09100D] border border-[#20352B] rounded-xl overflow-hidden select-none min-h-[200px] ${
-          originalImage && previewMode === "split" ? "cursor-ew-resize" : "cursor-default"
+        onMouseDown={(e) => {
+          if (mode === "split" && hasImage && !isHoldingBefore) {
+            setIsDragging(true);
+            updatePosition(e.clientX);
+          }
+        }}
+        onTouchStart={(e) => {
+          if (mode === "split" && hasImage && !isHoldingBefore && e.touches?.[0]) {
+            setIsDragging(true);
+            updatePosition(e.touches[0].clientX);
+          }
+        }}
+        className={`relative w-full min-h-[220px] sm:min-h-[270px] rounded-lg bg-[#0E0E11] border border-white/[0.08] overflow-hidden flex items-center justify-center select-none ${
+          mode === "split" && hasImage ? "cursor-ew-resize" : ""
         }`}
       >
-        {!originalImage ? (
-          <div className="absolute inset-0 flex items-center justify-center text-xs text-[#91A69A] font-medium text-center px-4">
-            No image loaded for visual preview
+        {!hasImage ? (
+          <div className="text-center p-6 text-[#9CA3AF]/60 text-xs">
+            Load a Reference or Target image above to inspect Before / After grading
           </div>
-        ) : previewMode === "split" ? (
-          /* Mode 1: Interactive Split Slider */
-          <div className="absolute inset-0 w-full h-full">
-            {/* Graded Image on Right (Base layer) */}
-            <canvas
-              key="canvas-split"
-              ref={gradedCanvasRef}
-              className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-            />
-
-            {/* Original Image on Left (Clipped layer) */}
-            <div
-              className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none"
-              style={{ clipPath: `inset(0 ${(1 - splitPos) * 100}% 0 0)` }}
-            >
+        ) : mode === "side" ? (
+          <div className="grid grid-cols-2 gap-1.5 w-full h-[250px] sm:h-[290px] p-2 items-center">
+            <div className="relative h-full flex items-center justify-center bg-black/40 rounded-md overflow-hidden border border-white/[0.06]">
               <img
                 src={originalImage}
                 alt="Before"
                 className="w-full h-full object-contain"
               />
+              <span className="absolute top-2 left-2 bg-[#151519]/90 backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#9CA3AF] border border-white/[0.08]">
+                BEFORE
+              </span>
             </div>
-
-            {/* Neon Green Divider Line */}
-            <div
-              className="absolute top-0 bottom-0 w-[2px] bg-[#00E987] shadow-[0_0_8px_#00E987] pointer-events-none"
-              style={{ left: `${splitPos * 100}%` }}
-            >
-              {/* Circular Handle */}
-              <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-[#111A17] border-2 border-[#00E987] flex items-center justify-center text-[10px] text-[#00E987] font-semibold shadow-lg">
-                ◂▸
-              </div>
-            </div>
-
-            {/* Badges */}
-            <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded bg-black/65 backdrop-blur-sm text-[9px] font-semibold tracking-wider text-white border border-white/10 pointer-events-none">
-              BEFORE
-            </div>
-            <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded bg-black/65 backdrop-blur-sm text-[9px] font-semibold tracking-wider text-[#00E987] border border-[#00E987]/30 pointer-events-none">
-              AFTER
+            <div className="relative h-full flex items-center justify-center bg-black/40 rounded-md overflow-hidden border border-white/[0.06]">
+              <canvas
+                ref={gradedCanvasRef}
+                className={`w-full h-full object-contain ${isHoldingBefore ? "hidden" : "block"}`}
+              />
+              {isHoldingBefore && (
+                <img
+                  src={originalImage}
+                  alt="Before Peek"
+                  className="w-full h-full object-contain"
+                />
+              )}
+              <span className="absolute top-2 right-2 bg-[#1E1E24]/90 backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#E2E4E9] border border-white/15">
+                {isHoldingBefore ? "BEFORE (PEEK)" : "AFTER"}
+              </span>
             </div>
           </div>
-        ) : previewMode === "side" ? (
-          /* Mode 2: Side by Side */
-          <div className="absolute inset-0 grid grid-cols-2 w-full h-full divide-x divide-[#20352B]">
-            <div className="relative w-full h-full min-w-0 min-h-0 overflow-hidden bg-black/30">
+        ) : mode === "result" ? (
+          <div className="relative w-full h-[250px] sm:h-[290px] flex items-center justify-center p-2">
+            <canvas
+              ref={gradedCanvasRef}
+              className={`w-full h-full object-contain rounded ${isHoldingBefore ? "hidden" : "block"}`}
+            />
+            {isHoldingBefore && (
               <img
                 src={originalImage}
-                alt="Original"
-                className="w-full h-full object-contain pointer-events-none"
+                alt="Before Peek"
+                className="w-full h-full object-contain rounded"
               />
-              <span className="absolute top-2 left-2 px-1.5 py-0.5 bg-black/65 backdrop-blur-sm rounded text-[9px] font-semibold tracking-wider text-white border border-white/10 pointer-events-none">
-                ORIGINAL
-              </span>
-            </div>
-            <div className="relative w-full h-full min-w-0 min-h-0 overflow-hidden bg-black/30">
-              <canvas
-                key="canvas-side"
-                ref={gradedCanvasRef}
-                className="w-full h-full object-contain pointer-events-none"
-              />
-              <span className="absolute top-2 left-2 px-1.5 py-0.5 bg-black/65 backdrop-blur-sm rounded text-[9px] font-semibold tracking-wider text-[#00E987] border border-[#00E987]/30 pointer-events-none">
-                GRADED
-              </span>
-            </div>
+            )}
+            <span className="absolute top-3 right-3 bg-[#1E1E24]/90 backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2.5 py-0.5 rounded text-[#E2E4E9] border border-white/15">
+              {isHoldingBefore ? "BEFORE (PEEK)" : "GRADED RESULT"}
+            </span>
           </div>
         ) : (
-          /* Mode 3: Split Result (Clean 50/50 Split Seam) */
-          <div className="absolute inset-0 w-full h-full">
-            {/* Graded Image (Right 50% Base layer) */}
+          /* Interactive Split Slider Mode */
+          <div className="relative w-full h-[250px] sm:h-[290px] flex items-center justify-center">
+            {/* Layer 1: Graded After Canvas (Full Width underneath) */}
             <canvas
-              key="canvas-result"
               ref={gradedCanvasRef}
-              className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+              className="w-full h-full object-contain pointer-events-none"
             />
 
-            {/* Original Image (Left 50% Clipped) */}
+            {/* Layer 2: Original Before Image (Clipped to left side, or 100% when holding before) */}
             <div
-              className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none"
-              style={{ clipPath: "inset(0 50% 0 0)" }}
+              className="absolute inset-0 flex items-center justify-center overflow-hidden pointer-events-none"
+              style={{
+                clipPath: `inset(0 ${isHoldingBefore ? 0 : 100 - splitPos}% 0 0)`,
+              }}
             >
               <img
                 src={originalImage}
-                alt="Original"
+                alt="Original Before"
                 className="w-full h-full object-contain"
               />
             </div>
 
-            {/* Clean Hairline Seam Divider at 50% */}
-            <div
-              className="absolute top-0 bottom-0 w-[1px] bg-[#00E987]/80 shadow-[0_0_6px_rgba(0,233,135,0.5)] pointer-events-none"
-              style={{ left: "50%" }}
-            />
+            {/* Divider Line & Handle */}
+            {!isHoldingBefore && (
+              <div
+                className="absolute top-0 bottom-0 w-0.5 bg-[#E2E4E9] shadow-[0_0_8px_rgba(0,0,0,0.8)] pointer-events-none"
+                style={{ left: `${splitPos}%` }}
+              >
+                <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-[#1E1E24] border border-[#E2E4E9] flex items-center justify-center shadow-lg">
+                  <MoveHorizontal className="w-3.5 h-3.5 text-[#E2E4E9]" />
+                </div>
+              </div>
+            )}
 
-            {/* Badges */}
-            <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded bg-black/65 backdrop-blur-sm text-[9px] font-semibold tracking-wider text-white border border-white/10 pointer-events-none">
-              BEFORE
-            </div>
-            <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded bg-black/65 backdrop-blur-sm text-[9px] font-semibold tracking-wider text-[#00E987] border border-[#00E987]/30 pointer-events-none">
-              AFTER
-            </div>
+            {/* Corner Badges */}
+            <span className="absolute top-2.5 left-2.5 bg-[#151519]/90 backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#9CA3AF] border border-white/[0.08] pointer-events-none">
+              {isHoldingBefore ? "BEFORE (HOLD PEEK)" : "BEFORE"}
+            </span>
+            {!isHoldingBefore && (
+              <span className="absolute top-2.5 right-2.5 bg-[#1E1E24]/90 backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#E2E4E9] border border-white/15 pointer-events-none">
+                GRADED
+              </span>
+            )}
           </div>
         )}
       </div>

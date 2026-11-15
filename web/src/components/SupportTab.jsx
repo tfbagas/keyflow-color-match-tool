@@ -1,214 +1,171 @@
 import React from "react";
 import {
   Heart,
-  Coffee,
-  Globe,
   ExternalLink,
+  Globe,
   Sparkles,
-  Zap,
-  Layers,
-  CheckCircle2
+  Code2,
 } from "lucide-react";
+import { TfbagasMonogram } from "./KeyflowLogo";
 
-export function YoutubeIcon({ size = 16, className = "" }) {
+function YouTubeIcon({ className }) {
   return (
     <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      className={className}
-    >
-      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-    </svg>
-  );
-}
-
-export function InstagramIcon({ size = 16, className = "" }) {
-  return (
-    <svg
-      width={size}
-      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth="1.8"
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
     >
-      <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
-      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-      <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+      <rect x="2" y="4" width="20" height="16" rx="4" />
+      <polygon points="10 9 15 12 10 15 10 9" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function InstagramIcon({ className }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <rect x="2.5" y="2.5" width="19" height="19" rx="5" />
+      <circle cx="12" cy="12" r="4" />
+      <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
     </svg>
   );
 }
 
 export default function SupportTab() {
+  const socialLinks = [
+    {
+      label: "YouTube",
+      handle: "@tfbagas",
+      url: "https://www.youtube.com/@tfbagas",
+      icon: YouTubeIcon,
+    },
+    {
+      label: "Instagram",
+      handle: "@tfbagas",
+      url: "https://www.instagram.com/tfbagas/",
+      icon: InstagramIcon,
+    },
+    {
+      label: "Portfolio & Presets",
+      handle: "tfbagas.carrd.co",
+      url: "https://tfbagas.carrd.co",
+      icon: Globe,
+    },
+  ];
+
   return (
-    <div className="flex flex-col gap-6 max-w-3xl w-full">
-      {/* ------------------------------------------------------------- */}
-      {/* CARD 1: DEVELOPER PROFILE (TFBAGAS)                          */}
-      {/* ------------------------------------------------------------- */}
-      <div className="liquid-glass rounded-2xl p-6 sm:p-7 flex flex-col gap-6 relative overflow-hidden">
-        {/* Subtle decorative glow */}
-        <div className="absolute -top-16 -right-16 w-44 h-44 bg-[#00E987]/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="max-w-2xl mx-auto space-y-4">
+      {/* 1. Developer Profile Card (TFBAGAS) */}
+      <div className="m3-panel rounded-2xl p-5 sm:p-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-5">
+          {/* Neutral Geometric Monogram */}
+          <TfbagasMonogram size={60} />
 
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 relative z-10">
-          {/* Avatar / Badge */}
-          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-[#162920] to-[#0A140F] border-2 border-[#00E987]/50 flex items-center justify-center shrink-0 shadow-[0_0_24px_rgba(0,233,135,0.25)]">
-            <span className="font-display font-bold text-2xl sm:text-3xl text-[#00E987] tracking-tight">
-              TB
-            </span>
-          </div>
-
-          <div className="flex flex-col gap-1.5 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-xl sm:text-2xl font-bold text-white font-display tracking-tight">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg sm:text-xl font-bold font-display text-[#E2E4E9] tracking-tight">
                 TFBAGAS
               </h2>
-              <span className="px-2 py-0.5 rounded-full bg-[#00E987]/15 border border-[#00E987]/30 text-[#00E987] text-[11px] font-mono font-bold">
+              <span className="text-xs font-mono px-2 py-0.5 rounded-md bg-[#1E1E24] text-[#9CA3AF] border border-white/[0.08]">
                 @tfbagas
               </span>
             </div>
-
-            <p className="text-xs sm:text-sm text-[#91A69A] leading-relaxed">
-              Editor &amp; Tool Developer — After Effects &amp; Keyflow |{" "}
-              <span className="text-[#E8F2ED] italic">Different vision, distinctive creation.</span>
+            <p className="text-xs sm:text-sm text-[#9CA3AF] leading-relaxed">
+              Editor &amp; Tool Developer — After Effects &amp; Keyflow{" "}
+              <span className="text-white/25">|</span>{" "}
+              <span className="text-[#E2E4E9] font-medium">
+                Different vision, distinctive creation.
+              </span>
             </p>
           </div>
         </div>
 
-        {/* Social Media Link Buttons */}
-        <div className="flex flex-col gap-2.5 pt-2 border-t border-[#20352B]/60">
-          <span className="text-[11px] font-bold text-[#91A69A] uppercase tracking-wider">
-            Connect &amp; Follow:
-          </span>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            {/* YouTube */}
-            <a
-              href="https://www.youtube.com/@tfbagas"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group flex items-center justify-between px-4 py-3 rounded-xl bg-[#0E1914]/85 hover:bg-[#15251E] border border-[#20352B] hover:border-[#FF0000]/60 transition-all cursor-pointer shadow-sm"
-            >
-              <div className="flex items-center gap-2.5">
-                <YoutubeIcon size={18} className="text-[#FF4D4D] group-hover:scale-110 transition-transform" />
-                <div className="flex flex-col">
-                  <span className="text-xs font-bold text-white group-hover:text-[#FF4D4D] transition-colors">
-                    YouTube
-                  </span>
-                  <span className="text-[10px] text-[#91A69A] font-mono">@tfbagas</span>
+        {/* Social Media Links */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-4 border-t border-white/[0.08]">
+          {socialLinks.map((item) => {
+            const Icon = item.icon;
+            return (
+              <a
+                key={item.label}
+                href={item.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between p-3 rounded-xl bg-[#1E1E24] border border-white/[0.08] hover:border-white/20 hover:bg-[#1E1E24]/80 transition-all group"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Icon className="w-4 h-4 text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-[#E2E4E9] truncate">
+                      {item.label}
+                    </div>
+                    <div className="text-[11px] font-mono text-[#9CA3AF] truncate">
+                      {item.handle}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <ExternalLink size={13} className="text-[#91A69A] group-hover:text-white transition-colors" />
-            </a>
-
-            {/* Instagram */}
-            <a
-              href="https://www.instagram.com/tfbagas/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group flex items-center justify-between px-4 py-3 rounded-xl bg-[#0E1914]/85 hover:bg-[#15251E] border border-[#20352B] hover:border-[#E1306C]/60 transition-all cursor-pointer shadow-sm"
-            >
-              <div className="flex items-center gap-2.5">
-                <InstagramIcon size={18} className="text-[#FF5B99] group-hover:scale-110 transition-transform" />
-                <div className="flex flex-col">
-                  <span className="text-xs font-bold text-white group-hover:text-[#FF5B99] transition-colors">
-                    Instagram
-                  </span>
-                  <span className="text-[10px] text-[#91A69A] font-mono">@tfbagas</span>
-                </div>
-              </div>
-              <ExternalLink size={13} className="text-[#91A69A] group-hover:text-white transition-colors" />
-            </a>
-
-            {/* Carrd / Portfolio */}
-            <a
-              href="https://tfbagas.carrd.co"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group flex items-center justify-between px-4 py-3 rounded-xl bg-[#0E1914]/85 hover:bg-[#15251E] border border-[#20352B] hover:border-[#00E987]/60 transition-all cursor-pointer shadow-sm"
-            >
-              <div className="flex items-center gap-2.5">
-                <Globe size={18} className="text-[#00E987] group-hover:scale-110 transition-transform" />
-                <div className="flex flex-col">
-                  <span className="text-xs font-bold text-white group-hover:text-[#00E987] transition-colors">
-                    Portfolio
-                  </span>
-                  <span className="text-[10px] text-[#91A69A] font-mono">tfbagas.carrd.co</span>
-                </div>
-              </div>
-              <ExternalLink size={13} className="text-[#91A69A] group-hover:text-white transition-colors" />
-            </a>
-          </div>
+                <ExternalLink className="w-3.5 h-3.5 text-[#9CA3AF]/60 group-hover:text-[#E2E4E9] transition-colors shrink-0 ml-2" />
+              </a>
+            );
+          })}
         </div>
       </div>
 
-      {/* ------------------------------------------------------------- */}
-      {/* CARD 2: SUPPORT & DONATION (SOCIABUZZ)                        */}
-      {/* ------------------------------------------------------------- */}
-      <div className="liquid-glass rounded-2xl p-6 sm:p-7 flex flex-col gap-6 relative overflow-hidden border-[#00E987]/40 shadow-[0_8px_32px_rgba(0,233,135,0.08)]">
-        {/* Glow backdrop */}
-        <div className="absolute -bottom-16 -left-16 w-52 h-52 bg-[#00E987]/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="flex flex-col gap-2 relative z-10">
-          <div className="flex items-center gap-2">
-            <span className="p-1.5 rounded-lg bg-[#00E987]/15 border border-[#00E987]/30 text-[#00E987]">
-              <Coffee size={18} />
-            </span>
-            <h3 className="text-lg sm:text-xl font-bold text-white font-display tracking-tight">
+      {/* 2. Support / Donation Card (SociaBuzz) */}
+      <div className="m3-panel rounded-2xl p-5 sm:p-6">
+        <div className="flex items-center gap-2.5 mb-3">
+          <div className="w-9 h-9 rounded-xl bg-[#1E1E24] border border-white/[0.08] flex items-center justify-center text-[#E2E4E9]">
+            <Heart className="w-4 h-4 text-[#6EE7B7]" />
+          </div>
+          <div>
+            <h3 className="text-base sm:text-lg font-bold font-display text-[#E2E4E9]">
               Support Development
             </h3>
-          </div>
-
-          <p className="text-xs sm:text-sm text-[#E8F2ED]/90 leading-relaxed mt-1">
-            This tool is <strong>100% free</strong> and runs directly in your browser with{" "}
-            <strong>zero ads</strong>. If it helps speed up your editing workflow, consider supporting future updates (including .cube LUT &amp; After Effects export).
-          </p>
-        </div>
-
-        {/* Feature & Roadmap highlights */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 relative z-10">
-          <div className="p-3.5 rounded-xl bg-[#09120E]/80 border border-[#20352B] flex items-start gap-2.5">
-            <CheckCircle2 size={16} className="text-[#00E987] shrink-0 mt-0.5" />
-            <div className="flex flex-col">
-              <span className="text-xs font-bold text-white">100% Free Forever</span>
-              <span className="text-[11px] text-[#91A69A]">
-                No paywalls, no limits, no locked presets.
-              </span>
-            </div>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-[#09120E]/80 border border-[#20352B] flex items-start gap-2.5">
-            <Sparkles size={16} className="text-[#00E987] shrink-0 mt-0.5" />
-            <div className="flex flex-col">
-              <span className="text-xs font-bold text-white">Upcoming Features</span>
-              <span className="text-[11px] text-[#91A69A]">
-                .cube 3D LUT export &amp; After Effects toolchain.
-              </span>
-            </div>
+            <p className="text-[11px] font-mono text-[#9CA3AF]">
+              100% Free &amp; Open Client-Side Web Tool
+            </p>
           </div>
         </div>
 
-        {/* Big Prominent CTA */}
-        <div className="flex flex-col sm:flex-row items-center gap-3 pt-2 relative z-10">
+        <p className="text-xs sm:text-sm text-[#9CA3AF] leading-relaxed mb-5">
+          This tool is 100% free with no ads or paywalls. If it helps your
+          editing workflow or saves you time, consider supporting future updates
+          and new tools!
+        </p>
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-white/[0.08]">
+          <div className="flex items-center gap-2 text-xs text-[#9CA3AF]">
+            <Sparkles className="w-4 h-4 text-[#9CA3AF] shrink-0" />
+            <span>Every contribution fuels new presets &amp; Keyflow tools</span>
+          </div>
+
           <a
-            href="https://sociabuzz.com/tfbagas/support"
+            href="https://sociabuzz.com/tfbagas/tribe"
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full sm:flex-1 h-12 rounded-xl bg-[#00E987] hover:bg-[#16FFA0] text-[#080D0B] font-bold text-sm flex items-center justify-center gap-2.5 shadow-[0_0_24px_rgba(0,233,135,0.35)] hover:shadow-[0_0_32px_rgba(0,233,135,0.5)] transition-all cursor-pointer active:scale-[0.99]"
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-xs bg-[#6EE7B7] hover:bg-[#86EFAC] active:scale-[0.99] text-[#042F1E] transition-all shrink-0"
           >
-            <Coffee size={18} className="fill-[#080D0B]" />
-            <span>Support on SociaBuzz ☕</span>
-            <ExternalLink size={15} />
+            <span>Support on SociaBuzz</span>
+            <ExternalLink className="w-3.5 h-3.5" />
           </a>
         </div>
+      </div>
 
-        <span className="text-[11px] text-[#91A69A] text-center relative z-10">
-          Supports QRIS, GoPay, OVO, DANA, ShopeePay, Bank Transfer, Credit Card, and PayPal.
-        </span>
+      {/* Footer Note */}
+      <div className="flex items-center justify-center gap-2 text-xs text-[#9CA3AF]/60 py-1">
+        <Code2 className="w-3.5 h-3.5" />
+        <span>Crafted by TFBAGAS for the Keyflow community</span>
       </div>
     </div>
   );
