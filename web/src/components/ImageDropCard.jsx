@@ -6,7 +6,14 @@ import {
   Sparkles,
   Image as ImageIcon,
   ChevronDown,
+  AlertCircle,
 } from "lucide-react";
+
+export const ALLOWED_IMAGE_MIMES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+];
 
 export default function ImageDropCard({
   title,
@@ -19,13 +26,23 @@ export default function ImageDropCard({
   isPasteTarget = false,
   onHoverChange,
   onFocusSlot,
+  errorMessage = "",
+  onFileRejected,
 }) {
   const inputRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   const handleFile = (file) => {
-    if (!file || !file.type.startsWith("image/")) return;
+    if (!file) return;
+    if (!ALLOWED_IMAGE_MIMES.includes(file.type)) {
+      if (onFileRejected) {
+        onFileRejected(
+          `Unsupported file format (${file.type || "unknown"}). Please upload JPG, PNG, or WEBP.`
+        );
+      }
+      return;
+    }
     onSelectImage(file);
   };
 
@@ -47,11 +64,10 @@ export default function ImageDropCard({
           : ""
       }`}
     >
-      {/* Hidden File Input (Always Mounted for Quick Replace even when collapsed) */}
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept="image/jpeg,image/png,image/webp"
         className="hidden"
         onChange={(e) => {
           handleFile(e.target.files?.[0]);
@@ -59,7 +75,6 @@ export default function ImageDropCard({
         }}
       />
 
-      {/* Header Row: Technical Micro-Header + Collapse Toggle */}
       <div
         onClick={() => setIsExpanded((prev) => !prev)}
         className="flex items-center justify-between cursor-pointer select-none group"
@@ -108,7 +123,13 @@ export default function ImageDropCard({
         </div>
       </div>
 
-      {/* Collapsed 1-Line Summary Bar when Image is Loaded */}
+      {errorMessage && (
+        <div className="mt-2 px-2.5 py-1.5 rounded-lg bg-red-500/10 border border-red-500/25 flex items-center gap-2 text-[11px] text-red-300">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
+
       {!isExpanded && imageInfo && (
         <div className="mt-2.5 pt-2.5 border-t border-white/[0.06] flex items-center justify-between gap-2.5 m3-tab-enter">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -142,14 +163,12 @@ export default function ImageDropCard({
         </div>
       )}
 
-      {/* Smooth Collapsible Body */}
       <div
         className={`m3-collapse-grid ${isExpanded ? "mt-2.5" : "mt-0"}`}
         data-expanded={isExpanded}
       >
         <div className="m3-collapse-inner">
           <div className="flex flex-col sm:flex-row gap-2.5 items-stretch">
-            {/* Dropzone / Thumbnail */}
             <div
               onClick={() => inputRef.current?.click()}
               onDragOver={(e) => {
@@ -187,7 +206,6 @@ export default function ImageDropCard({
               )}
             </div>
 
-            {/* Action Buttons */}
             <div className="flex sm:flex-col gap-2 sm:w-24 shrink-0">
               <button
                 type="button"
@@ -222,7 +240,6 @@ export default function ImageDropCard({
             </div>
           </div>
 
-          {/* File Meta Footer */}
           {imageInfo && (
             <div className="mt-2 pt-2 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-[#9CA3AF] font-mono truncate">
               <span className="truncate max-w-[180px] sm:max-w-[240px] text-[#E2E4E9]/80">

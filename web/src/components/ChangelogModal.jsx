@@ -1,50 +1,144 @@
-import React, { useEffect } from "react";
-import { X, Cpu, ListFilter, Columns, Fingerprint, Sparkles } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import {
+  X,
+  ShieldCheck,
+  Cpu,
+  Layers,
+  Rocket,
+  Sparkles,
+  ChevronDown,
+  History,
+} from "lucide-react";
 import KeyflowLogo from "./KeyflowLogo";
 
-export const CHANGELOG_V061_ITEMS = [
+export const CHANGELOG_HISTORY = [
   {
+    version: "v0.6.2 Beta",
+    subtitle: "Latest — Security & Integrity Hardening",
+    isLatest: true,
+    icon: ShieldCheck,
+    items: [
+      "Added Cloudflare HTTP security headers (CSP, X-Frame-Options, nosniff, Permissions-Policy) to protect against XSS and clickjacking.",
+      "Enforced strict image MIME validation on upload/paste and sanitized preset metadata prior to .kfplug packaging.",
+      "Hardened production build (sourcemap: false) and added runtime integrity protection for core Rec. 709 and .kfplug modules.",
+    ],
+  },
+  {
+    version: "v0.6.1 Beta",
+    subtitle: "Calibration, Custom Controls & Brand Identity",
+    isLatest: false,
     icon: Cpu,
-    title: "Engine & Export Calibration (Settings)",
-    description:
-      "Added synthetic Canvas/Web Worker self-calibration with cache flush recovery and .kfplug output multipliers (Tone/Contrast, White Balance, Chroma).",
+    items: [
+      "Added Engine & Export Calibration in Settings (synthetic Canvas/Web Worker self-test with cache flush and .kfplug output multipliers).",
+      "Replaced OS-native <select> dropdowns with custom Material 3 achromatic dropdown menus.",
+      "Aligned VISUAL PREVIEW height flush with EXPORT PLUGIN, removed duplicate sample buttons, and added focus/hover-aware Ctrl+V clipboard routing.",
+      "Updated browser favicons/PWA icons to achromatic dark and introduced the tfbagas• geometric wordmark.",
+    ],
   },
   {
-    icon: ListFilter,
-    title: "Custom Material 3 Dropdowns",
-    description:
-      "Replaced OS-native <select> menus with tonal achromatic dropdown controls.",
+    version: "v0.6.0 Beta",
+    subtitle: "Material 3 Achromatic UI Overhaul",
+    isLatest: false,
+    icon: Layers,
+    items: [
+      "Redesigned the interface into a color-accurate Material 3 Achromatic Dark workstation (#0E0E11–#1E1E24) with a 48px Top App Bar and segmented navigation.",
+      "Added bipolar center-zero sliders with functional Temp/Tint micro-chroma tracks, real-time RGB/Luma histogram, collapsible panels, Hold Before (\\) preview comparison, and fixed graded canvas rendering across all preview modes.",
+      "Upgraded typography (Bricolage Grotesque, Instrument Sans, IBM Plex Mono) and added the Developer & Support hub.",
+    ],
   },
   {
-    icon: Columns,
-    title: "Workstation Layout & Smart Paste",
-    description:
-      "Aligned VISUAL PREVIEW height flush with EXPORT PLUGIN, removed duplicate sample buttons, and added hover/focus-aware Ctrl+V clipboard routing.",
-  },
-  {
-    icon: Fingerprint,
-    title: "Achromatic Favicon & Brand Identity",
-    description:
-      "Updated browser favicons/PWA icons to achromatic dark and replaced the developer badge with the tfbagas• geometric wordmark.",
+    version: "v0.5.0 Beta",
+    subtitle: "Initial Web Release",
+    isLatest: false,
+    icon: Rocket,
+    items: [
+      "Launched the 100% client-side browser edition with Rec. 709 reference color matching, multithreaded Web Worker pixel analysis, real-time Before/After preview, 3-Way Color Wheels swatches, and direct .kfplug plugin export.",
+    ],
   },
 ];
 
-export function ChangelogList() {
+export function ReleaseHistoryAccordion() {
+  const [expandedMap, setExpandedMap] = useState({
+    "v0.6.2 Beta": true,
+  });
+
+  const toggleVersion = (ver) => {
+    setExpandedMap((prev) => ({
+      ...prev,
+      [ver]: !prev[ver],
+    }));
+  };
+
   return (
     <div className="space-y-2.5">
-      {CHANGELOG_V061_ITEMS.map((item) => {
-        const Icon = item.icon;
+      {CHANGELOG_HISTORY.map((release) => {
+        const Icon = release.icon;
+        const isExpanded = Boolean(expandedMap[release.version]);
+
         return (
           <div
-            key={item.title}
-            className="flex items-start gap-3 p-3 rounded-xl bg-[#1E1E24] border border-white/[0.08] hover:border-white/15 transition-colors"
+            key={release.version}
+            className={`rounded-xl border transition-colors ${
+              release.isLatest
+                ? "bg-[#1E1E24] border-white/15"
+                : "bg-[#1E1E24]/70 border-white/[0.08] hover:border-white/15"
+            }`}
           >
-            <div className="w-7 h-7 rounded-lg bg-[#151519] border border-white/[0.08] flex items-center justify-center text-[#E2E4E9] shrink-0 mt-0.5">
-              <Icon className="w-3.5 h-3.5 text-[#9CA3AF]" />
-            </div>
-            <div className="space-y-0.5 text-xs">
-              <div className="font-semibold text-[#E2E4E9]">{item.title}</div>
-              <p className="text-[#9CA3AF] leading-relaxed">{item.description}</p>
+            <button
+              type="button"
+              onClick={() => toggleVersion(release.version)}
+              aria-expanded={isExpanded}
+              className="w-full flex items-center justify-between gap-3 p-3.5 text-left cursor-pointer select-none"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-[#151519] border border-white/[0.08] flex items-center justify-center text-[#E2E4E9] shrink-0">
+                  <Icon
+                    className={`w-4 h-4 ${
+                      release.isLatest ? "text-[#6EE7B7]" : "text-[#9CA3AF]"
+                    }`}
+                  />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold font-mono text-[#E2E4E9]">
+                      {release.version}
+                    </span>
+                    {release.isLatest && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#151519] text-[#6EE7B7] border border-[#6EE7B7]/30">
+                        <Sparkles className="w-2.5 h-2.5" />
+                        Latest
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-[#9CA3AF] truncate mt-0.5">
+                    {release.subtitle}
+                  </div>
+                </div>
+              </div>
+
+              <ChevronDown
+                className={`w-4 h-4 text-[#9CA3AF] shrink-0 transition-transform duration-300 ${
+                  isExpanded ? "rotate-180 text-[#E2E4E9]" : "rotate-0"
+                }`}
+              />
+            </button>
+
+            <div
+              className="m3-collapse-grid"
+              data-expanded={isExpanded}
+            >
+              <div className="m3-collapse-inner">
+                <div className="px-3.5 pb-3.5 pt-1 border-t border-white/[0.06]">
+                  <ul className="space-y-2 text-xs text-[#9CA3AF] leading-relaxed pt-2">
+                    {release.items.map((point, idx) => (
+                      <li key={idx} className="flex items-start gap-2.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#9CA3AF]/60 mt-1.5 shrink-0" />
+                        <span>{point}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
             </div>
           </div>
         );
@@ -53,7 +147,9 @@ export function ChangelogList() {
   );
 }
 
-export default function ChangelogModal({ open, onClose }) {
+export default function ChangelogModal({ open, onClose, onViewFullHistory }) {
+  const latestRelease = CHANGELOG_HISTORY[0];
+
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (e) => {
@@ -77,7 +173,6 @@ export default function ChangelogModal({ open, onClose }) {
         aria-labelledby="changelog-modal-title"
         className="m3-panel m3-modal-enter w-full max-w-lg rounded-2xl p-5 sm:p-6 shadow-[0_24px_60px_rgba(0,0,0,0.85)] bg-[#151519]"
       >
-        {/* Modal Header */}
         <div className="flex items-start justify-between gap-3 pb-4 border-b border-white/[0.08]">
           <div className="flex items-center gap-3">
             <KeyflowLogo size={38} />
@@ -87,7 +182,7 @@ export default function ChangelogModal({ open, onClose }) {
                   id="changelog-modal-title"
                   className="text-base sm:text-lg font-bold font-display text-[#E2E4E9]"
                 >
-                  What&apos;s New in v0.6.1 Beta
+                  What&apos;s New in {latestRelease.version}
                 </h2>
                 <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#1E1E24] text-[#6EE7B7] border border-white/10">
                   <Sparkles className="w-2.5 h-2.5" />
@@ -95,7 +190,7 @@ export default function ChangelogModal({ open, onClose }) {
                 </span>
               </div>
               <p className="text-xs text-[#9CA3AF] mt-0.5">
-                Color Match for Keyflow — Release Notes &amp; Technical Updates
+                {latestRelease.subtitle}
               </p>
             </div>
           </div>
@@ -110,20 +205,45 @@ export default function ChangelogModal({ open, onClose }) {
           </button>
         </div>
 
-        {/* Changelog Items */}
-        <div className="my-4 max-h-[60vh] overflow-y-auto pr-1">
-          <ChangelogList />
+        <div className="my-4 space-y-2.5">
+          {latestRelease.items.map((point, idx) => (
+            <div
+              key={idx}
+              className="flex items-start gap-3 p-3 rounded-xl bg-[#1E1E24] border border-white/[0.08]"
+            >
+              <div className="w-6 h-6 rounded-lg bg-[#151519] border border-white/[0.08] flex items-center justify-center text-[#6EE7B7] shrink-0 mt-0.5">
+                <ShieldCheck className="w-3.5 h-3.5" />
+              </div>
+              <p className="text-xs text-[#E2E4E9]/90 leading-relaxed">
+                {point}
+              </p>
+            </div>
+          ))}
         </div>
 
-        {/* Modal Footer */}
-        <div className="pt-3 border-t border-white/[0.08] flex items-center justify-between gap-3">
-          <span className="text-[11px] font-mono text-[#9CA3AF]">
-            Build v0.6.1-beta • 100% Client-Side
-          </span>
+        <div className="pt-3 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-3">
+          {onViewFullHistory ? (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onViewFullHistory();
+              }}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] transition-colors cursor-pointer"
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>View Full Release History (v0.5 – v0.6.2)</span>
+            </button>
+          ) : (
+            <span className="text-[11px] font-mono text-[#9CA3AF]">
+              Build v0.6.2-beta • 100% Client-Side
+            </span>
+          )}
+
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-semibold bg-[#E2E4E9] hover:bg-white text-[#0E0E11] transition-all cursor-pointer"
+            className="px-4 py-2 rounded-xl text-xs font-semibold bg-[#E2E4E9] hover:bg-white text-[#0E0E11] transition-all cursor-pointer ml-auto"
           >
             Got It
           </button>

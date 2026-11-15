@@ -19,9 +19,10 @@ import {
   Cpu,
   CheckCircle2,
   RefreshCw,
+  History,
 } from "lucide-react";
 
-import ImageDropCard from "./components/ImageDropCard";
+import ImageDropCard, { ALLOWED_IMAGE_MIMES } from "./components/ImageDropCard";
 import ComparisonSlider from "./components/ComparisonSlider";
 import ParameterControl from "./components/ParameterControl";
 import ColorSwatchCard from "./components/ColorSwatchCard";
@@ -30,10 +31,16 @@ import SupportTab from "./components/SupportTab";
 import SupportBanner from "./components/SupportBanner";
 import SupportToast from "./components/SupportToast";
 import KeyflowLogo, { TfbagasWordmark } from "./components/KeyflowLogo";
-import ChangelogModal, { ChangelogList } from "./components/ChangelogModal";
+import ChangelogModal, {
+  ReleaseHistoryAccordion,
+} from "./components/ChangelogModal";
 import M3Select from "./components/M3Select";
 import { DEFAULT_PARAMS, simulateGradePixels } from "./utils/colorGrading";
-import { generateKfplug, downloadBlob } from "./utils/kfplugPackager";
+import {
+  generateKfplug,
+  downloadBlob,
+  sanitizeMetadataText,
+} from "./utils/kfplugPackager";
 
 const PARAM_CONTROLS = [
   { key: "exposure", label: "Exposure (EV)", min: -2.0, max: 2.0, step: 0.01, icon: Sun, isBipolar: true },
@@ -48,6 +55,7 @@ const PARAM_CONTROLS = [
 ];
 
 const CALIBRATION_STORAGE_KEY = "kf_export_calibration_v1";
+const SEEN_UPDATE_STORAGE_KEY = "kf_seen_update_v062";
 const DEFAULT_CALIBRATION = {
   toneScale: 1.0,
   wbScale: 1.0,
@@ -62,7 +70,6 @@ function round2(v) {
   return Math.round(v * 100) / 100;
 }
 
-// Applies user-configured .kfplug Output Calibration Multipliers at export time
 function applyCalibrationToParams(params, cal) {
   const tS = cal?.toneScale ?? 1.0;
   const wS = cal?.wbScale ?? 1.0;
@@ -70,7 +77,6 @@ function applyCalibrationToParams(params, cal) {
 
   return {
     ...params,
-    // Tone & Contrast scale
     exposure: round2(clampVal((params.exposure ?? 0) * tS, -2.0, 2.0)),
     contrast: round2(clampVal(1.0 + ((params.contrast ?? 1.0) - 1.0) * tS, 0.2, 2.0)),
     shadows: round2(clampVal((params.shadows ?? 0) * tS, -0.5, 0.5)),
@@ -84,16 +90,13 @@ function applyCalibrationToParams(params, cal) {
     gainR: round2(clampVal(0.5 + ((params.gainR ?? 0.5) - 0.5) * tS, 0.0, 1.0)),
     gainG: round2(clampVal(0.5 + ((params.gainG ?? 0.5) - 0.5) * tS, 0.0, 1.0)),
     gainB: round2(clampVal(0.5 + ((params.gainB ?? 0.5) - 0.5) * tS, 0.0, 1.0)),
-    // White Balance scale
     temp: round2(clampVal((params.temp ?? 0) * wS, -1.0, 1.0)),
     tint: round2(clampVal((params.tint ?? 0) * wS, -1.0, 1.0)),
-    // Chroma scale
     sat: round2(clampVal(1.0 + ((params.sat ?? 1.0) - 1.0) * cS, 0.0, 2.0)),
     vib: round2(clampVal((params.vib ?? 0) * cS, -0.8, 0.8)),
   };
 }
 
-// Helper to draw real-time RGB + Rec.709 Luma histogram onto the telemetry canvas
 function drawHistogram(canvas, imageData) {
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
@@ -101,7 +104,6 @@ function drawHistogram(canvas, imageData) {
   const h = canvas.height;
   ctx.clearRect(0, 0, w, h);
 
-  // Subtle background grid lines (25%, 50%, 75%)
   ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
   ctx.lineWidth = 1;
   [0.25, 0.5, 0.75].forEach((p) => {
@@ -122,7 +124,6 @@ function drawHistogram(canvas, imageData) {
   const bHist = new Uint32Array(256);
   const yHist = new Uint32Array(256);
 
-  // Sample every 2nd pixel for instant 60fps telemetry
   const step = 8;
   for (let i = 0; i < data.length; i += step) {
     const r = data[i];
@@ -135,7 +136,6 @@ function drawHistogram(canvas, imageData) {
     yHist[y]++;
   }
 
-  // Find peak (ignoring extreme clipping bins 0 and 255 so midtones stay readable)
   let maxCount = 1;
   for (let i = 2; i < 254; i++) {
     if (rHist[i] > maxCount) maxCount = rHist[i];
@@ -187,36 +187,37 @@ function toRgbCss(r = 0.5, g = 0.5, b = 0.5) {
 export default function App() {
   const [activeTab, setActiveTab] = useState("home");
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+  const [hasUnreadUpdate, setHasUnreadUpdate] = useState(() => {
+    try {
+      return localStorage.getItem(SEEN_UPDATE_STORAGE_KEY) !== "true";
+    } catch {
+      return true;
+    }
+  });
   const [isWheelsExpanded, setIsWheelsExpanded] = useState(true);
 
-  // Image states
   const [referenceImage, setReferenceImage] = useState(null);
   const [targetImage, setTargetImage] = useState(null);
+  const [referenceError, setReferenceError] = useState("");
+  const [targetError, setTargetError] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [statusText, setStatusText] = useState("Ready");
 
-  // Deterministic Ctrl+V paste target tracking (hover or last clicked card)
   const [hoveredSlot, setHoveredSlot] = useState(null);
   const [focusedSlot, setFocusedSlot] = useState(null);
 
-  // Grading parameter state
   const [gradingParams, setGradingParams] = useState({ ...DEFAULT_PARAMS });
-
-  // Preview mode state lifted so mode switches always trigger canvas re-render
   const [previewMode, setPreviewMode] = useState("split");
 
-  // Export metadata
   const [presetName, setPresetName] = useState("");
   const [authorName, setAuthorName] = useState("TFBAGAS");
   const [description, setDescription] = useState("");
   const [isExporting, setIsExporting] = useState(false);
   const [exportToast, setExportToast] = useState({ visible: false, filename: "" });
 
-  // Settings state
   const [analysisMaxDim, setAnalysisMaxDim] = useState(1280);
   const [previewMaxDim, setPreviewMaxDim] = useState(960);
 
-  // Engine & Export Calibration state (persisted in localStorage)
   const [calibration, setCalibration] = useState(() => {
     try {
       const saved = localStorage.getItem(CALIBRATION_STORAGE_KEY);
@@ -255,7 +256,6 @@ export default function App() {
     Math.abs(calibration.wbScale - 1.0) > 0.004 ||
     Math.abs(calibration.chromaScale - 1.0) > 0.004;
 
-  // Refs for Web Worker and Preview / Histogram Canvas
   const workerRef = useRef(null);
   const gradedCanvasRef = useRef(null);
   const histogramCanvasRef = useRef(null);
@@ -263,7 +263,16 @@ export default function App() {
   const lastRenderedImgRef = useRef(null);
   const rafRef = useRef(null);
 
-  // Initialize / Re-initialize Web Worker
+  const handleOpenChangelog = () => {
+    setIsChangelogOpen(true);
+    setHasUnreadUpdate(false);
+    try {
+      localStorage.setItem(SEEN_UPDATE_STORAGE_KEY, "true");
+    } catch {
+      // ignore storage errors
+    }
+  };
+
   const initWorker = useCallback(() => {
     if (workerRef.current) {
       workerRef.current.terminate();
@@ -284,7 +293,7 @@ export default function App() {
         setStatusText("Matched");
       } else if (type === "error") {
         setIsAnalyzing(false);
-        console.error("Worker error:", error);
+        setReferenceError(error || "Failed to analyze image.");
         setStatusText("Error");
       }
     };
@@ -298,20 +307,59 @@ export default function App() {
     return () => worker.terminate();
   }, [initWorker]);
 
-  // Helper to read image file and extract downscaled ImageData
+  const setSlotError = useCallback((slot, msg) => {
+    if (slot === "reference") {
+      setReferenceError(msg);
+    } else {
+      setTargetError(msg);
+    }
+  }, []);
+
+  // Strict MIME validation + image decode integrity check
   const loadImageFile = useCallback(
     (file, type) => {
+      if (!file || !ALLOWED_IMAGE_MIMES.includes(file.type)) {
+        setSlotError(
+          type,
+          `Unsupported file format (${file?.type || "unknown"}). Allowed: JPG, PNG, WEBP.`
+        );
+        setStatusText("Invalid File");
+        return;
+      }
+
+      setSlotError(type, "");
+
       const reader = new FileReader();
+      reader.onerror = () => {
+        setSlotError(type, "Failed to read image file.");
+        setStatusText("Read Error");
+      };
+
       reader.onload = (e) => {
         const dataUrl = e.target.result;
         const img = new Image();
+
+        img.onerror = () => {
+          setSlotError(
+            type,
+            "Corrupted or invalid image data. Please choose a valid JPG, PNG, or WEBP image."
+          );
+          setStatusText("Invalid Image");
+        };
+
         img.onload = () => {
+          if (img.naturalWidth < 1 || img.naturalHeight < 1) {
+            setSlotError(type, "Invalid image dimensions.");
+            return;
+          }
+
           const ext = file.name.split(".").pop()?.toUpperCase() || "IMG";
           const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-          const baseName = file.name.replace(/\.[^/.]+$/, "");
+          const rawBaseName = file.name.replace(/\.[^/.]+$/, "");
+          const baseName = sanitizeMetadataText(rawBaseName, "Reference", 48);
 
           const info = {
-            name: file.name,
+            name: sanitizeMetadataText(file.name, "image.png", 80),
             baseName,
             width: img.naturalWidth,
             height: img.naturalHeight,
@@ -324,9 +372,10 @@ export default function App() {
           if (type === "reference") {
             setReferenceImage(info);
             setPresetName(baseName.slice(0, 28));
-            setDescription(`Grading preset matched from reference '${baseName}'.`);
+            setDescription(
+              `Grading preset matched from reference '${baseName}'.`
+            );
 
-            // Downscale for Web Worker analysis
             setIsAnalyzing(true);
             setStatusText("Analyzing...");
 
@@ -357,10 +406,9 @@ export default function App() {
       };
       reader.readAsDataURL(file);
     },
-    [analysisMaxDim]
+    [analysisMaxDim, setSlotError]
   );
 
-  // Generate a procedural sample image so users can test immediately
   const handleTrySample = useCallback(
     (type) => {
       const w = 960;
@@ -371,7 +419,6 @@ export default function App() {
       const ctx = canvas.getContext("2d");
 
       if (type === "reference") {
-        // Cinematic Teal & Amber Sunset Film Frame
         const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.68);
         skyGrad.addColorStop(0, "#0b2434");
         skyGrad.addColorStop(0.45, "#194a5a");
@@ -380,7 +427,6 @@ export default function App() {
         ctx.fillStyle = skyGrad;
         ctx.fillRect(0, 0, w, h);
 
-        // Warm sun glow
         const sunGrad = ctx.createRadialGradient(w * 0.62, h * 0.52, 10, w * 0.62, h * 0.52, 220);
         sunGrad.addColorStop(0, "rgba(255, 220, 145, 0.95)");
         sunGrad.addColorStop(0.4, "rgba(240, 135, 60, 0.45)");
@@ -388,7 +434,6 @@ export default function App() {
         ctx.fillStyle = sunGrad;
         ctx.fillRect(0, 0, w, h);
 
-        // Deep teal ocean / horizon reflection
         const seaGrad = ctx.createLinearGradient(0, h * 0.65, 0, h);
         seaGrad.addColorStop(0, "#143542");
         seaGrad.addColorStop(0.5, "#0d2530");
@@ -396,7 +441,6 @@ export default function App() {
         ctx.fillStyle = seaGrad;
         ctx.fillRect(0, h * 0.65, w, h * 0.35);
 
-        // City skyline silhouettes
         ctx.fillStyle = "#091820";
         const blocks = [
           [60, 270, 55, 90],
@@ -410,7 +454,6 @@ export default function App() {
         ];
         blocks.forEach(([bx, by, bw, bh]) => ctx.fillRect(bx, by, bw, bh));
       } else {
-        // Neutral Daylight Scene for Target Preview
         const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.62);
         skyGrad.addColorStop(0, "#4b79a1");
         skyGrad.addColorStop(0.6, "#7fa6c9");
@@ -418,7 +461,6 @@ export default function App() {
         ctx.fillStyle = skyGrad;
         ctx.fillRect(0, 0, w, h);
 
-        // Soft mountains
         ctx.fillStyle = "#4d5d6c";
         ctx.beginPath();
         ctx.moveTo(0, h * 0.62);
@@ -430,7 +472,6 @@ export default function App() {
         ctx.closePath();
         ctx.fill();
 
-        // Neutral foreground foliage & ground
         const groundGrad = ctx.createLinearGradient(0, h * 0.62, 0, h);
         groundGrad.addColorStop(0, "#5c7457");
         groundGrad.addColorStop(0.5, "#3f533d");
@@ -438,7 +479,6 @@ export default function App() {
         ctx.fillStyle = groundGrad;
         ctx.fillRect(0, h * 0.62, w, h * 0.38);
 
-        // Mini color reference patches in corner
         const patches = ["#d14949", "#d98a3c", "#e0c341", "#4ba366", "#457ec4", "#e5e7eb", "#6b7280", "#1f2937"];
         patches.forEach((col, idx) => {
           ctx.fillStyle = col;
@@ -459,24 +499,32 @@ export default function App() {
     [loadImageFile]
   );
 
-  // Deterministic Global Clipboard Paste (Ctrl+V / Cmd+V) routing:
-  // 1. Hovered card ("reference" or "target")
-  // 2. Last focused/clicked card ("reference" or "target")
-  // 3. Fallback: "reference" if empty, otherwise "target"
   const activePasteTarget =
     hoveredSlot || focusedSlot || (!referenceImage ? "reference" : "target");
 
   useEffect(() => {
     const handlePaste = (e) => {
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+
       const items = e.clipboardData?.items;
       if (!items) return;
+
       for (let i = 0; i < items.length; i++) {
-        if (items[i].type.startsWith("image/")) {
+        const mime = items[i].type;
+        if (mime.startsWith("image/")) {
+          if (!ALLOWED_IMAGE_MIMES.includes(mime)) {
+            setSlotError(
+              activePasteTarget,
+              `Unsupported clipboard image format (${mime}). Allowed: JPG, PNG, WEBP.`
+            );
+            return;
+          }
           const blob = items[i].getAsFile();
           if (blob) {
-            const ext = blob.type.split("/")[1] || "png";
+            const ext = mime.split("/")[1] || "png";
             const file = new File([blob], `Clipboard_Image.${ext}`, {
-              type: blob.type,
+              type: mime,
             });
             loadImageFile(file, activePasteTarget);
             break;
@@ -486,9 +534,8 @@ export default function App() {
     };
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
-  }, [activePasteTarget, loadImageFile]);
+  }, [activePasteTarget, loadImageFile, setSlotError]);
 
-  // Core function that draws graded pixels onto the active preview canvas and updates histogram
   const updatePreviewSimulation = useCallback(() => {
     const srcData = previewSourceImageDataRef.current;
     const canvas = gradedCanvasRef.current;
@@ -503,7 +550,6 @@ export default function App() {
     drawHistogram(histogramCanvasRef.current, targetImgData);
   }, [gradingParams]);
 
-  // Prepare base preview ImageData and render whenever target/reference image, previewMode, calibrationTick, or gradingParams change
   useEffect(() => {
     const activeImg = targetImage?.imgElement || referenceImage?.imgElement;
     const canvas = gradedCanvasRef.current;
@@ -561,7 +607,6 @@ export default function App() {
     updatePreviewSimulation,
   ]);
 
-  // Run synthetic Web Pipeline Self-Calibration & Cache Flush Recovery
   const handleRunPipelineCalibration = () => {
     setCalibrationStatus((prev) => ({
       ...prev,
@@ -571,7 +616,6 @@ export default function App() {
 
     const t0 = performance.now();
 
-    // 1. Synthesize 64x64 neutral gray ramp + RGB primary reference buffer
     const size = 64;
     const numPixels = size * size;
     const srcBuf = new Uint8ClampedArray(numPixels * 4);
@@ -586,7 +630,6 @@ export default function App() {
       srcBuf[idx + 3] = 255;
     }
 
-    // 2. Verify identity pass-through accuracy on simulateGradePixels
     simulateGradePixels(srcBuf, outBuf, DEFAULT_PARAMS);
 
     let totalDiff = 0;
@@ -598,7 +641,6 @@ export default function App() {
     }
     const avgDeltaE = (totalDiff / numPixels).toFixed(2);
 
-    // 3. Re-initialize Web Worker & flush cached preview buffers
     initWorker();
     previewSourceImageDataRef.current = null;
     lastRenderedImgRef.current = null;
@@ -651,17 +693,24 @@ export default function App() {
         gradingParams,
         calibration
       );
+      const safePreset = sanitizeMetadataText(
+        presetName,
+        referenceImage.baseName || "Custom Look",
+        64
+      );
+      const safeAuthor = sanitizeMetadataText(authorName, "TFBAGAS", 64);
+      const safeDesc = sanitizeMetadataText(description, "", 200);
+
       const { blob, fileName } = await generateKfplug(
         calibratedParams,
-        presetName || referenceImage.baseName || "Custom Look",
-        authorName || "TFBAGAS",
-        description
+        safePreset,
+        safeAuthor,
+        safeDesc
       );
       downloadBlob(blob, fileName);
       setStatusText("Exported!");
       setExportToast({ visible: true, filename: fileName });
-    } catch (err) {
-      console.error("Failed to package .kfplug:", err);
+    } catch {
       setStatusText("Export Error");
     } finally {
       setIsExporting(false);
@@ -687,7 +736,7 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-[#0E0E11] text-[#E2E4E9]">
       {/* Compact 48px Top App Bar (Material 3 Workstation Header) */}
       <header className="sticky top-0 z-40 min-h-12 px-3 sm:px-5 py-1.5 bg-[#151519]/95 backdrop-blur-md border-b border-white/[0.08] flex flex-wrap items-center justify-between gap-2">
-        {/* Left: Achromatic Keyflow Logo + Brand Title + Interactive v0.6.1 Beta Changelog Button */}
+        {/* Left: Achromatic Keyflow Logo + Brand Title + Interactive v0.6.2 Beta Changelog Button */}
         <div className="flex items-center gap-2.5">
           <KeyflowLogo size={28} />
           <div className="flex items-center gap-2">
@@ -696,12 +745,14 @@ export default function App() {
             </h1>
             <button
               type="button"
-              onClick={() => setIsChangelogOpen(true)}
-              title="View What's New in v0.6.1 Beta"
+              onClick={handleOpenChangelog}
+              title="View What's New in v0.6.2 Beta"
               className="inline-flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded-md bg-[#1E1E24] hover:bg-white/10 text-[#E2E4E9] border border-white/[0.1] hover:border-white/25 transition-all cursor-pointer active:scale-95"
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-[#6EE7B7]" />
-              <span>v0.6.1 Beta</span>
+              {hasUnreadUpdate && (
+                <span className="w-1.5 h-1.5 rounded-full bg-[#6EE7B7] animate-pulse" />
+              )}
+              <span>v0.6.2 Beta</span>
             </button>
           </div>
         </div>
@@ -712,7 +763,6 @@ export default function App() {
             aria-label="Primary Navigation"
             className="relative grid grid-cols-4 items-center bg-[#0E0E11] border border-white/[0.08] rounded-xl p-0.5"
           >
-            {/* Smooth Sliding Active Pill Indicator */}
             <div
               aria-hidden="true"
               className="pointer-events-none absolute top-0.5 bottom-0.5 left-0.5 rounded-lg bg-[#E2E4E9] transition-transform duration-300"
@@ -743,7 +793,6 @@ export default function App() {
             })}
           </nav>
 
-          {/* Status Indicator */}
           <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1E1E24] border border-white/[0.08] text-[11px] font-mono text-[#E2E4E9]">
             <span
               className={`w-1.5 h-1.5 rounded-full ${
@@ -763,18 +812,17 @@ export default function App() {
 
       {/* Main Content Container */}
       <main className="flex-1 max-w-[1440px] w-full mx-auto px-3 sm:px-5 py-3.5">
-        {/* WORKSPACE TAB (Kept mounted so canvas & state never reset when switching tabs) */}
+        {/* WORKSPACE TAB */}
         <div
           className={
             activeTab === "home" ? "space-y-3 m3-tab-enter" : "hidden"
           }
         >
-          {/* Subtle Support Banner */}
           <SupportBanner onOpenSupport={() => setActiveTab("support")} />
 
           {/* 2-Column Workstation Grid (items-stretch aligns bottom edges of both columns) */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
-            {/* LEFT COLUMN: Reference, Target, and Visual Preview (7 Cols, flex-col stretches Visual Preview flush with Export Plugin) */}
+            {/* LEFT COLUMN */}
             <div className="lg:col-span-7 flex flex-col gap-3">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3">
                 <ImageDropCard
@@ -783,6 +831,7 @@ export default function App() {
                   onSelectImage={(file) => loadImageFile(file, "reference")}
                   onClearImage={() => {
                     setReferenceImage(null);
+                    setReferenceError("");
                     setStatusText("Ready");
                   }}
                   onTrySample={() => handleTrySample("reference")}
@@ -795,13 +844,18 @@ export default function App() {
                     setHoveredSlot(hovered ? "reference" : null)
                   }
                   onFocusSlot={() => setFocusedSlot("reference")}
+                  errorMessage={referenceError}
+                  onFileRejected={(msg) => setReferenceError(msg)}
                 />
 
                 <ImageDropCard
                   title="TARGET IMAGE"
                   imageInfo={targetImage}
                   onSelectImage={(file) => loadImageFile(file, "target")}
-                  onClearImage={() => setTargetImage(null)}
+                  onClearImage={() => {
+                    setTargetImage(null);
+                    setTargetError("");
+                  }}
                   onTrySample={() => handleTrySample("target")}
                   isPasteTarget={
                     hoveredSlot === "target" ||
@@ -811,6 +865,8 @@ export default function App() {
                     setHoveredSlot(hovered ? "target" : null)
                   }
                   onFocusSlot={() => setFocusedSlot("target")}
+                  errorMessage={targetError}
+                  onFileRejected={(msg) => setTargetError(msg)}
                 />
               </div>
 
@@ -823,11 +879,9 @@ export default function App() {
               />
             </div>
 
-            {/* RIGHT COLUMN: Telemetry Histogram + Detected Parameters + Export (5 Cols) */}
+            {/* RIGHT COLUMN */}
             <div className="lg:col-span-5 flex flex-col gap-3">
-              {/* Detected Parameters Card */}
               <div className="m3-panel rounded-2xl p-3.5">
-                {/* Header */}
                 <div className="flex items-center justify-between mb-2.5">
                   <div className="flex items-center gap-2">
                     <Sliders className="w-3.5 h-3.5 text-[#9CA3AF]" />
@@ -909,7 +963,6 @@ export default function App() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {/* Mini inline swatch preview dots when collapsed */}
                       {!isWheelsExpanded && (
                         <div className="flex items-center gap-1.5 mr-1">
                           <span
@@ -1005,7 +1058,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Collapsible Export Card */}
               <ExportCard
                 presetName={presetName}
                 setPresetName={setPresetName}
@@ -1026,7 +1078,6 @@ export default function App() {
         {/* SETTINGS TAB */}
         {activeTab === "settings" && (
           <div className="max-w-2xl mx-auto space-y-4 m3-tab-enter">
-            {/* 1. Performance & Processing Settings Card (with Custom M3 Dropdowns) */}
             <div className="m3-panel rounded-2xl p-5 sm:p-6 space-y-5">
               <div className="flex items-center gap-2.5 border-b border-white/[0.08] pb-3.5">
                 <Settings className="w-4 h-4 text-[#E2E4E9]" />
@@ -1076,7 +1127,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* 2. Engine & Export Calibration Card */}
             <div className="m3-panel rounded-2xl p-5 sm:p-6 space-y-5">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.08] pb-3.5">
                 <div className="flex items-center gap-2.5">
@@ -1102,7 +1152,6 @@ export default function App() {
                 </button>
               </div>
 
-              {/* A. Web Pipeline Self-Calibration & Recovery */}
               <div className="bg-[#1E1E24] border border-white/[0.08] rounded-xl p-4 space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="space-y-1">
@@ -1129,7 +1178,6 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Telemetry Readout Bar */}
                 <div className="pt-2.5 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
                   <div className="flex items-center gap-2 text-[#E2E4E9]">
                     <CheckCircle2 className="w-3.5 h-3.5 text-[#6EE7B7] shrink-0" />
@@ -1147,7 +1195,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* B. Keyflow .kfplug Output Calibration Multipliers */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-[#E2E4E9]">
@@ -1217,10 +1264,10 @@ export default function App() {
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-lg font-bold font-display text-[#E2E4E9]">
-                        Color Match for Keyflow V.0.6.1 Beta
+                        Color Match for Keyflow V.0.6.2 Beta
                       </h2>
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#1E1E24] text-[#6EE7B7] border border-white/[0.08]">
-                        v0.6.1 Beta
+                        v0.6.2 Beta
                       </span>
                     </div>
                     <p className="text-xs text-[#9CA3AF] mt-0.5">
@@ -1229,7 +1276,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Developer Brand Wordmark Credit */}
                 <button
                   type="button"
                   onClick={() => setActiveTab("support")}
@@ -1256,21 +1302,21 @@ export default function App() {
               </div>
             </div>
 
-            {/* What's New in v0.6.1 Beta Changelog Card inside About Tab */}
+            {/* Permanent Release History / Changelog Accordion (v0.5.0 Beta -> v0.6.2 Beta) */}
             <div className="m3-panel rounded-2xl p-5 sm:p-6 space-y-3.5">
               <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-[#6EE7B7]" />
+                  <History className="w-4 h-4 text-[#6EE7B7]" />
                   <h3 className="text-sm sm:text-base font-bold font-display text-[#E2E4E9]">
-                    What&apos;s New in v0.6.1 Beta
+                    Release History / Changelog
                   </h3>
                 </div>
                 <span className="text-[11px] font-mono text-[#9CA3AF]">
-                  Changelog
+                  v0.5.0 – v0.6.2 Beta
                 </span>
               </div>
 
-              <ChangelogList />
+              <ReleaseHistoryAccordion />
             </div>
           </div>
         )}
@@ -1283,10 +1329,11 @@ export default function App() {
         )}
       </main>
 
-      {/* Interactive "What's New in v0.6.1 Beta" Modal Dialog */}
+      {/* Interactive "What's New in v0.6.2 Beta" Modal Dialog */}
       <ChangelogModal
         open={isChangelogOpen}
         onClose={() => setIsChangelogOpen(false)}
+        onViewFullHistory={() => setActiveTab("about")}
       />
 
       {/* Post-Export Support Toast */}

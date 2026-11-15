@@ -6,12 +6,9 @@ precision highp float;
 precision mediump float;
 #endif
 
-// Built-in Keyflow Engine Uniforms
 uniform sampler2D uTexture;
 varying vec2 vTex;
 
-// Parameters (otomatis diinjeksi oleh engine Keyflow sesuai schema effect.json)
-// Format penamaan Keyflow: u<CapitalizedId> (Alphanumeric only, tanpa underscore)
 uniform float uGradeMix;
 uniform float uExposure;
 uniform float uContrast;
@@ -23,7 +20,6 @@ uniform float uTint;
 uniform float uSat;
 uniform float uVib;
 
-// 3-Way Split Toning (Lift = Shadows, Gamma = Midtones, Gain = Highlights)
 uniform float uLiftR;
 uniform float uLiftG;
 uniform float uLiftB;
@@ -44,28 +40,22 @@ void main() {
         return;
     }
 
-    // 1. Un-premultiply alpha (Standar Pipeline Keyflow)
     vec3 origRgb = c.rgb / a;
     vec3 rgb = origRgb;
 
-    // 2. Exposure adjustment (Exposure Value EV dalam skala 2^EV)
     rgb *= pow(2.0, uExposure);
 
-    // 3. White Balance (Temperature: Kelvin warm/cool & Tint: Magenta/Green)
     rgb.r += uTemp * 0.12 + uTint * 0.06;
     rgb.g -= uTint * 0.12;
     rgb.b -= uTemp * 0.12 - uTint * 0.06;
     rgb = max(rgb, vec3(0.0));
 
-    // 4. Hitung luminansi perceptual (Rec. 709)
     float lum = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
 
-    // 5. 3-Way Color Wheels (Lift, Gamma, Gain)
     vec3 liftDelta  = (vec3(uLiftR, uLiftG, uLiftB) - 0.5) * 2.0;
     vec3 gammaDelta = (vec3(uGammaR, uGammaG, uGammaB) - 0.5) * 2.0;
     vec3 gainDelta  = (vec3(uGainR, uGainG, uGainB) - 0.5) * 2.0;
 
-    // Bobot zona tonal halus (smooth tonal rolloff)
     float wShadow = clamp(1.0 - lum * 2.5, 0.0, 1.0);
     float wHigh   = clamp((lum - 0.5) * 2.0, 0.0, 1.0);
     float wMid    = clamp(1.0 - abs(lum - 0.45) * 2.5, 0.0, 1.0);
@@ -74,14 +64,11 @@ void main() {
     rgb += gammaDelta * wMid * 0.35;
     rgb += gainDelta * wHigh * 0.35;
 
-    // Koreksi tone level (Shadows crush/lift & Highlights roll/boost)
     rgb += vec3(uShadows) * wShadow * 0.25;
     rgb += vec3(uHighlights) * wHigh * 0.25;
 
-    // 6. Kontras dengan titik tumpu (Pivot-centered Contrast)
     rgb = (rgb - uPivot) * uContrast + uPivot;
 
-    // 7. Saturation & Smart Vibrance
     float lumaPost = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
     float maxC = max(rgb.r, max(rgb.g, rgb.b));
     float minC = min(rgb.r, min(rgb.g, rgb.b));
@@ -91,7 +78,6 @@ void main() {
     float satTotal = clamp(uSat + vibBonus, 0.0, 3.0);
     rgb = mix(vec3(lumaPost), rgb, satTotal);
 
-    // 8. Re-premultiply alpha & Blend Grade Mix
     rgb = clamp(rgb, 0.0, 1.0);
     vec3 finalRgb = mix(origRgb, rgb, clamp(uGradeMix, 0.0, 1.0));
     gl_FragColor = vec4(finalRgb * a, a);
@@ -149,8 +135,48 @@ const PRESETS = [
   }
 ];
 
+function checkAllowedHost() {
+  const host = (
+    typeof self !== "undefined" && self.location
+      ? self.location.hostname
+      : typeof window !== "undefined" && window.location
+      ? window.location.hostname
+      : ""
+  ).toLowerCase();
+
+  if (!host) return true;
+  return (
+    host === "keyflow-color-match-tool.pages.dev" ||
+    host.endsWith(".keyflow-color-match-tool.pages.dev") ||
+    host === "localhost" ||
+    host === "127.0.0.1"
+  );
+}
+
+export function sanitizeMetadataText(raw, fallback = "", maxLen = 160) {
+  if (typeof raw !== "string") return fallback;
+  let out = "";
+  for (let i = 0; i < raw.length; i++) {
+    const code = raw.charCodeAt(i);
+    const ch = raw[i];
+    if (code <= 0x1f || code === 0x7f) continue;
+    if (ch === "<" || ch === ">" || ch === '"') continue;
+    out += ch;
+  }
+  const trimmed = out.trim().slice(0, maxLen);
+  return trimmed || fallback;
+}
+
 export async function generateKfplug(params, presetName, author, description) {
-  const cleanName = (presetName || "Custom Grade").trim();
+  if (!checkAllowedHost()) {
+    throw new Error("Export is restricted to the official domain.");
+  }
+
+  const cleanName = sanitizeMetadataText(presetName, "Custom Grade", 64);
+  const cleanAuthor = sanitizeMetadataText(author, "TFBAGAS", 64);
+  const defaultDesc = `Grading preset matched from reference '${cleanName}'.`;
+  const cleanDescription = sanitizeMetadataText(description, defaultDesc, 200);
+
   const cleanSlug = cleanName.replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(0, 16) || "grade";
   const pkgId = `com.keyflow.matchgrade.${cleanSlug}`;
   const effectId = `matchgrade_${cleanSlug}`;
@@ -187,8 +213,8 @@ export async function generateKfplug(params, presetName, author, description) {
     name: displayName,
     version: "1.0.0",
     versionCode: 1,
-    author: (author || "TFBAGAS").trim(),
-    description: (description || `Grading preset matched from reference '${cleanName}'.`).trim(),
+    author: cleanAuthor,
+    description: cleanDescription,
     license: "MIT",
     effects: [effectId]
   };
@@ -199,7 +225,7 @@ export async function generateKfplug(params, presetName, author, description) {
   zip.file(`effects/${effectId}/pass0.frag`, SHADER_PASS0);
 
   const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
-  const safeFileName = cleanName.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const safeFileName = cleanName.replace(/[^a-zA-Z0-9_-]/g, "_") || "Grade";
   const fileName = `Match_Grade_${safeFileName}.kfplug`;
 
   return { blob, fileName, displayName };
