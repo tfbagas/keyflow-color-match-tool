@@ -34,10 +34,8 @@ function round2(val) {
 
 function checkRuntimeHost() {
   const host = (
-    typeof self !== "undefined" && self.location
+    typeof self !== "undefined" && self.location && self.location.hostname
       ? self.location.hostname
-      : typeof window !== "undefined" && window.location
-      ? window.location.hostname
       : ""
   ).toLowerCase();
 

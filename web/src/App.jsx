@@ -35,7 +35,11 @@ import ChangelogModal, {
   ReleaseHistoryAccordion,
 } from "./components/ChangelogModal";
 import M3Select from "./components/M3Select";
-import { DEFAULT_PARAMS, simulateGradePixels } from "./utils/colorGrading";
+import {
+  DEFAULT_PARAMS,
+  analyzeImagePixels,
+  simulateGradePixels,
+} from "./utils/colorGrading";
 import {
   generateKfplug,
   downloadBlob,
@@ -257,11 +261,51 @@ export default function App() {
     Math.abs(calibration.chromaScale - 1.0) > 0.004;
 
   const workerRef = useRef(null);
+  const analysisTimeoutRef = useRef(null);
+  const pendingAnalysisRef = useRef(null);
   const gradedCanvasRef = useRef(null);
   const histogramCanvasRef = useRef(null);
   const previewSourceImageDataRef = useRef(null);
   const lastRenderedImgRef = useRef(null);
   const rafRef = useRef(null);
+
+  const clearAnalysisTimeout = useCallback(() => {
+    if (analysisTimeoutRef.current) {
+      clearTimeout(analysisTimeoutRef.current);
+      analysisTimeoutRef.current = null;
+    }
+  }, []);
+
+  const runFallbackAnalysisOrReset = useCallback(
+    (reasonMsg) => {
+      clearAnalysisTimeout();
+      const pending = pendingAnalysisRef.current;
+      pendingAnalysisRef.current = null;
+
+      if (pending && pending.rgbaData && pending.numPixels > 0) {
+        try {
+          const fallbackParams = analyzeImagePixels(
+            pending.rgbaData,
+            pending.numPixels
+          );
+          setIsAnalyzing(false);
+          setGradingParams(fallbackParams);
+          setStatusText("Matched");
+          return;
+        } catch (err) {
+          setReferenceError(
+            (err && err.message) || reasonMsg || "Failed to analyze reference image."
+          );
+        }
+      } else if (reasonMsg) {
+        setReferenceError(reasonMsg);
+      }
+
+      setIsAnalyzing(false);
+      setStatusText("Error");
+    },
+    [clearAnalysisTimeout]
+  );
 
   const handleOpenChangelog = () => {
     setIsChangelogOpen(true);
@@ -284,28 +328,50 @@ export default function App() {
     );
 
     worker.onmessage = (e) => {
-      const { type, params, stage, error } = e.data;
+      const { type, params, stage, error } = e.data || {};
       if (type === "stage") {
         setStatusText(stage || "Analyzing...");
       } else if (type === "success" && params) {
+        clearAnalysisTimeout();
+        pendingAnalysisRef.current = null;
         setIsAnalyzing(false);
         setGradingParams(params);
         setStatusText("Matched");
       } else if (type === "error") {
+        clearAnalysisTimeout();
+        pendingAnalysisRef.current = null;
         setIsAnalyzing(false);
         setReferenceError(error || "Failed to analyze image.");
         setStatusText("Error");
       }
     };
 
+    worker.onerror = (err) => {
+      if (err && typeof err.preventDefault === "function") {
+        err.preventDefault();
+      }
+      runFallbackAnalysisOrReset(
+        "Background worker encountered an error; recovered on main thread."
+      );
+    };
+
+    worker.onmessageerror = () => {
+      runFallbackAnalysisOrReset(
+        "Worker message serialization error; recovered on main thread."
+      );
+    };
+
     workerRef.current = worker;
     return worker;
-  }, []);
+  }, [clearAnalysisTimeout, runFallbackAnalysisOrReset]);
 
   useEffect(() => {
     const worker = initWorker();
-    return () => worker.terminate();
-  }, [initWorker]);
+    return () => {
+      clearAnalysisTimeout();
+      worker.terminate();
+    };
+  }, [initWorker, clearAnalysisTimeout]);
 
   const setSlotError = useCallback((slot, msg) => {
     if (slot === "reference") {
@@ -393,11 +459,29 @@ export default function App() {
             ctx.drawImage(img, 0, 0, w, h);
             const imgData = ctx.getImageData(0, 0, w, h);
 
-            workerRef.current?.postMessage({
-              type: "analyze",
+            pendingAnalysisRef.current = {
               rgbaData: imgData.data,
               numPixels: w * h,
-            });
+            };
+
+            clearAnalysisTimeout();
+            analysisTimeoutRef.current = setTimeout(() => {
+              runFallbackAnalysisOrReset(
+                "Worker analysis timed out; recovered on main thread."
+              );
+            }, 3500);
+
+            try {
+              workerRef.current?.postMessage({
+                type: "analyze",
+                rgbaData: imgData.data,
+                numPixels: w * h,
+              });
+            } catch {
+              runFallbackAnalysisOrReset(
+                "Worker unavailable; analyzed on main thread."
+              );
+            }
           } else {
             setTargetImage(info);
           }
@@ -406,7 +490,7 @@ export default function App() {
       };
       reader.readAsDataURL(file);
     },
-    [analysisMaxDim, setSlotError]
+    [analysisMaxDim, setSlotError, clearAnalysisTimeout, runFallbackAnalysisOrReset]
   );
 
   const handleTrySample = useCallback(
