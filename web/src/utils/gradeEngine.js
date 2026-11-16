@@ -1,50 +1,30 @@
 // Single source of truth for the Color Match Engine v2 grading equation (CPU side).
 // The GLSL twin lives in gradeShader.js and must stay 1:1 with gradeRGB().
+import { DEFAULT_PARAMS, PARAM_LIMITS } from "./paramSchema.js";
 
-export const DEFAULT_PARAMS = {
-  gradeMix: 1.0,
-  exposure: 0.0,
-  contrast: 1.0,
-  pivot: 0.435,
-  shadows: 0.0,
-  highlights: 0.0,
-  temp: 0.0,
-  tint: 0.0,
-  sat: 1.0,
-  vib: 0.0,
-  liftR: 0.5,
-  liftG: 0.5,
-  liftB: 0.5,
-  gammaR: 0.5,
-  gammaG: 0.5,
-  gammaB: 0.5,
-  gainR: 0.5,
-  gainG: 0.5,
-  gainB: 0.5,
+export { DEFAULT_PARAMS, PARAM_LIMITS };
+
+export const WB_COEFFS = {
+  tempRB: 0.28,
+  tintRB: 0.14,
+  tintG: 0.24,
+  minGain: 0.25,
 };
 
-// Safe slider ranges used by Keyflow Mobile.
-export const PARAM_LIMITS = {
-  gradeMix: [0.0, 1.0],
-  exposure: [-2.0, 2.0],
-  contrast: [0.5, 2.0],
-  pivot: [0.1, 0.9],
-  shadows: [-1.0, 1.0],
-  highlights: [-1.0, 1.0],
-  temp: [-1.0, 1.0],
-  tint: [-1.0, 1.0],
-  sat: [0.0, 2.0],
-  vib: [-1.0, 1.0],
-  liftR: [0.0, 1.0],
-  liftG: [0.0, 1.0],
-  liftB: [0.0, 1.0],
-  gammaR: [0.0, 1.0],
-  gammaG: [0.0, 1.0],
-  gammaB: [0.0, 1.0],
-  gainR: [0.0, 1.0],
-  gainG: [0.0, 1.0],
-  gainB: [0.0, 1.0],
+export const TONE_COEFFS = {
+  shadowSlope: 2.5,
+  highlightOffset: 0.48,
+  highlightSlope: 2.0,
+  strength: 0.30,
 };
+
+export function computeWBGains(temp, tint) {
+  return [
+    Math.max(1.0 + temp * WB_COEFFS.tempRB + tint * WB_COEFFS.tintRB, WB_COEFFS.minGain),
+    Math.max(1.0 - tint * WB_COEFFS.tintG, WB_COEFFS.minGain),
+    Math.max(1.0 - temp * WB_COEFFS.tempRB + tint * WB_COEFFS.tintRB, WB_COEFFS.minGain),
+  ];
+}
 
 export const ROLLOFF_KNEE = 0.82;
 export const ROLLOFF_ROOM = 1.0 - ROLLOFF_KNEE; // 0.18
@@ -93,9 +73,7 @@ export function scaleParamsByStrength(params, strengthPct = 100) {
 export function prepareGrade(params) {
   const p = sanitizeParams(params);
   const m = Math.pow(2.0, p.exposure);
-  const wbR = Math.max(1.0 + p.temp * 0.28 + p.tint * 0.14, 0.25);
-  const wbG = Math.max(1.0 - p.tint * 0.24, 0.25);
-  const wbB = Math.max(1.0 - p.temp * 0.28 + p.tint * 0.14, 0.25);
+  const wb = computeWBGains(p.temp, p.tint);
   const shoulderMix = clamp(
     Math.max(m - 1.0, 0.0) * 1.6 +
       Math.max(p.contrast - 1.0, 0.0) * 1.2 +
@@ -106,7 +84,7 @@ export function prepareGrade(params) {
   return {
     p,
     m,
-    wb: [wbR, wbG, wbB],
+    wb,
     shoulderMix,
     lift: [(p.liftR - 0.5) * 2.0, (p.liftG - 0.5) * 2.0, (p.liftB - 0.5) * 2.0],
     gamma: [
@@ -151,10 +129,10 @@ export function gradeRGB(G, origR, origG, origB, out) {
   const shadowFloorMask = smoothstep(0.04, 0.32, lum);
   const contrastBlackMask = smoothstep(0.0, 0.35, lum);
 
-  const wShadow = clamp(1.0 - lum * 2.5, 0.0, 1.0);
+  const wShadow = clamp(1.0 - lum * TONE_COEFFS.shadowSlope, 0.0, 1.0);
   const wShadowChroma = wShadow * shadowFloorMask * chromaMask;
   const wMid = clamp(1.0 - Math.abs(lum - 0.45) * 2.2, 0.0, 1.0) * chromaMask;
-  const wHigh = clamp((lum - 0.48) * 2.0, 0.0, 1.0);
+  const wHigh = clamp((lum - TONE_COEFFS.highlightOffset) * TONE_COEFFS.highlightSlope, 0.0, 1.0);
   const wHighChroma = wHigh * chromaMask;
 
   r += G.lift[0] * wShadowChroma * 0.48 + G.gamma[0] * wMid * 0.52 + G.gain[0] * wHighChroma * 0.48;
@@ -162,7 +140,9 @@ export function gradeRGB(G, origR, origG, origB, out) {
   b += G.lift[2] * wShadowChroma * 0.48 + G.gamma[2] * wMid * 0.52 + G.gain[2] * wHighChroma * 0.48;
 
   const shadowsEff = p.shadows > 0.0 ? p.shadows * shadowFloorMask : p.shadows;
-  const tone = shadowsEff * wShadow * 0.30 + p.highlights * wHigh * 0.30;
+  const tone =
+    shadowsEff * wShadow * TONE_COEFFS.strength +
+    p.highlights * wHigh * TONE_COEFFS.strength;
   r += tone;
   g += tone;
   b += tone;
@@ -218,4 +198,24 @@ export function applyLogInputRGB(r, g, b, out) {
   out[0] = clamp(toe + Math.pow(dr, 0.84) * 0.88, 0.0, 0.92);
   out[1] = clamp(toe + Math.pow(dg, 0.84) * 0.88, 0.0, 0.92);
   out[2] = clamp(toe + Math.pow(db, 0.84) * 0.88, 0.0, 0.92);
+}
+
+// Evaluates gradeRGB() with 1:1 shadow blackProtect (smoothstep(0.0, 0.06, srcLuma)).
+// Matches PREVIEW_FRAGMENT and KFPLUG_FRAGMENT identically.
+export function evaluateGradeRGB(G, rawR, rawG, rawB, out, simulateLogInput = false) {
+  const srcLuma = 0.2126 * rawR + 0.7152 * rawG + 0.0722 * rawB;
+  let inR = rawR;
+  let inG = rawG;
+  let inB = rawB;
+  if (simulateLogInput) {
+    applyLogInputRGB(rawR, rawG, rawB, out);
+    inR = out[0];
+    inG = out[1];
+    inB = out[2];
+  }
+  gradeRGB(G, inR, inG, inB, out);
+  const blackProtect = smoothstep(0.0, 0.06, srcLuma);
+  out[0] = rawR * (1.0 - blackProtect) + out[0] * blackProtect;
+  out[1] = rawG * (1.0 - blackProtect) + out[1] * blackProtect;
+  out[2] = rawB * (1.0 - blackProtect) + out[2] * blackProtect;
 }

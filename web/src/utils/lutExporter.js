@@ -1,5 +1,5 @@
-import { prepareGrade, gradeRGB, sanitizeParams } from "./gradeEngine.js";
-import { checkAllowedHost, sanitizeMetadataText } from "./kfplugPackager.js";
+import { prepareGrade, evaluateGradeRGB, sanitizeParams } from "./gradeEngine.js";
+import { checkAllowedHost, sanitizeMetadataText } from "./hostGuard.js";
 
 export const LUT_SIZE = 33;
 
@@ -26,7 +26,7 @@ export function generateLutText(params, title = "Match Grade", size = LUT_SIZE) 
   for (let b = 0; b < size; b++) {
     for (let g = 0; g < size; g++) {
       for (let r = 0; r < size; r++) {
-        gradeRGB(G, r / denom, g / denom, b / denom, out);
+        evaluateGradeRGB(G, r / denom, g / denom, b / denom, out, false);
         lines.push(`${fmt(out[0])} ${fmt(out[1])} ${fmt(out[2])}`);
       }
     }

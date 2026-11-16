@@ -1,30 +1,17 @@
 import { simulateGradePixels } from "./previewRenderer.js";
 import {
   DEFAULT_PARAMS,
-  sanitizeParams,
+  TONE_COEFFS,
+  computeWBGains,
   clamp,
+  sanitizeParams,
 } from "./gradeEngine.js";
+import { checkAllowedHost } from "./hostGuard.js";
 
 export { simulateGradePixels, DEFAULT_PARAMS };
 
 function round2(val) {
   return Math.round(val * 100) / 100;
-}
-
-function checkRuntimeHost() {
-  const host = (
-    typeof self !== "undefined" && self.location && self.location.hostname
-      ? self.location.hostname
-      : ""
-  ).toLowerCase();
-
-  if (!host) return true;
-  return (
-    host === "keyflow-color-match-tool.pages.dev" ||
-    host.endsWith(".keyflow-color-match-tool.pages.dev") ||
-    host === "localhost" ||
-    host === "127.0.0.1"
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -170,9 +157,7 @@ const WB_J = (() => {
     let sa = 0;
     let sb = 0;
     const levels = [0.35, 0.45, 0.55, 0.65];
-    const wbR = Math.max(1.0 + temp * 0.28 + tint * 0.14, 0.25);
-    const wbG = Math.max(1.0 - tint * 0.24, 0.25);
-    const wbB = Math.max(1.0 - temp * 0.28 + tint * 0.14, 0.25);
+    const [wbR, wbG, wbB] = computeWBGains(temp, tint);
     for (const y of levels) {
       oklabAB(
         lin(clamp(y * wbR, 0, 1)),
@@ -257,8 +242,8 @@ export function matchLooks(ref, tgt, mediaType = "image") {
   // Black floor (P10) via Shadows and highlight ceiling (P90) via Highlights.
   const isDarkTarget = tgt.hasTarget && tgt.p50 < 0.25;
   const d10 = ref.p10 - post(tgt.p10);
-  const w10 = clamp(1 - tgt.p10 * m * 2.5, 0.25, 1);
-  const shadowsRaw = d10 / (0.3 * w10 * contrast);
+  const w10 = clamp(1 - tgt.p10 * m * TONE_COEFFS.shadowSlope, 0.25, 1);
+  const shadowsRaw = d10 / (TONE_COEFFS.strength * w10 * contrast);
   let shadows;
   if (isImage) {
     const deepRef = ref.p25 < tgt.p25 || ref.p10 < 0.12;
@@ -273,8 +258,12 @@ export function matchLooks(ref, tgt, mediaType = "image") {
   }
 
   const d90 = ref.p90 - post(tgt.p90);
-  const w90 = clamp((tgt.p90 * m - 0.48) * 2, 0.25, 1);
-  const highlightsRaw = d90 / (0.3 * w90 * contrast);
+  const w90 = clamp(
+    (tgt.p90 * m - TONE_COEFFS.highlightOffset) * TONE_COEFFS.highlightSlope,
+    0.25,
+    1
+  );
+  const highlightsRaw = d90 / (TONE_COEFFS.strength * w90 * contrast);
   const highlights = isFlat
     ? clamp(highlightsRaw, -0.42, -0.22)
     : clamp(highlightsRaw, -0.45, 0.2);
@@ -370,7 +359,7 @@ export function analyzeImagePixels(
   targetNumPixels = 0,
   mediaType = "image"
 ) {
-  if (!checkRuntimeHost()) {
+  if (!checkAllowedHost()) {
     throw new Error("Unauthorized host environment.");
   }
 

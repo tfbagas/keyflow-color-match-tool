@@ -1,28 +1,9 @@
 // GLSL ES 1.00 twin of gradeEngine.js gradeRGB(). Used verbatim by both the
 // .kfplug pass0.frag and the WebGL video preview so output is 1:1.
 // Every division / pow() is wrapped with max(..., 1e-5) and results clamped.
+import { UNIFORM_MAP } from "./paramSchema.js";
 
-export const UNIFORM_MAP = [
-  ["gradeMix", "uGradeMix"],
-  ["exposure", "uExposure"],
-  ["contrast", "uContrast"],
-  ["pivot", "uPivot"],
-  ["shadows", "uShadows"],
-  ["highlights", "uHighlights"],
-  ["temp", "uTemp"],
-  ["tint", "uTint"],
-  ["sat", "uSat"],
-  ["vib", "uVib"],
-  ["liftR", "uLiftR"],
-  ["liftG", "uLiftG"],
-  ["liftB", "uLiftB"],
-  ["gammaR", "uGammaR"],
-  ["gammaG", "uGammaG"],
-  ["gammaB", "uGammaB"],
-  ["gainR", "uGainR"],
-  ["gainG", "uGainG"],
-  ["gainB", "uGainB"],
-];
+export { UNIFORM_MAP };
 
 export const PRECISION_HEADER = `#ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
@@ -141,7 +122,9 @@ void main() {
     }
 
     vec3 origRgb = clamp(c.rgb / max(a, 1e-5), 0.0, 1.0);
-    vec3 graded = kfGrade(origRgb);
+    float srcLuma = dot(origRgb, vec3(0.2126, 0.7152, 0.0722));
+    float blackProtect = smoothstep(0.0, 0.06, srcLuma);
+    vec3 graded = mix(origRgb, kfGrade(origRgb), blackProtect);
     gl_FragColor = vec4(graded * a, a);
 }
 `;
@@ -161,6 +144,18 @@ varying vec2 vTex;
 void main() {
     vec2 a_texCoord = aPos * 0.5 + 0.5;
     vTex = vec2(a_texCoord.x, 1.0 - a_texCoord.y);
+    gl_Position = vec4(aPos, 0.0, 1.0);
+}
+`;
+
+// Unified vertex shader supporting both photo (uFlipY = 1.0) and video (uFlipY = 0.0)
+// without recompiling the shader program when switching media types.
+export const UNIFIED_PREVIEW_VERTEX = `attribute vec2 aPos;
+uniform float uFlipY;
+varying vec2 vTex;
+void main() {
+    vec2 uv = aPos * 0.5 + 0.5;
+    vTex = vec2(uv.x, uFlipY > 0.5 ? 1.0 - uv.y : uv.y);
     gl_Position = vec4(aPos, 0.0, 1.0);
 }
 `;

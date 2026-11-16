@@ -1,30 +1,13 @@
 import JSZip from "jszip";
 import { KFPLUG_FRAGMENT } from "./gradeShader.js";
 import { sanitizeParams } from "./gradeEngine.js";
+import { KFPLUG_BASE_PARAMS } from "./paramSchema.js";
+import { checkAllowedHost, sanitizeMetadataText } from "./hostGuard.js";
+
+export { checkAllowedHost, sanitizeMetadataText };
 
 const SHADER_PASS0 = KFPLUG_FRAGMENT;
-
-const BASE_PARAMS = [
-  { id: "gradeMix", label: "Grade Mix / Blend", type: "scalar", default: 1.0, min: 0.0, max: 1.0, displayScale: 100.0, decimals: 0, group: "Master" },
-  { id: "exposure", label: "Exposure (EV)", type: "scalar", default: 0.0, min: -2.0, max: 2.0, displayScale: 1.0, decimals: 2, group: "Tone & Contrast" },
-  { id: "contrast", label: "Contrast", type: "scalar", default: 1.0, min: 0.5, max: 2.0, displayScale: 1.0, decimals: 2, group: "Tone & Contrast" },
-  { id: "pivot", label: "Contrast Pivot", type: "scalar", default: 0.435, min: 0.1, max: 0.9, displayScale: 1.0, decimals: 2, group: "Tone & Contrast" },
-  { id: "shadows", label: "Shadows Lift/Crush", type: "scalar", default: 0.0, min: -1.0, max: 1.0, displayScale: 100.0, decimals: 0, group: "Tone & Contrast" },
-  { id: "highlights", label: "Highlights Boost/Roll", type: "scalar", default: 0.0, min: -1.0, max: 1.0, displayScale: 100.0, decimals: 0, group: "Tone & Contrast" },
-  { id: "temp", label: "Color Temperature", type: "scalar", default: 0.0, min: -1.0, max: 1.0, displayScale: 100.0, decimals: 0, group: "White Balance" },
-  { id: "tint", label: "Color Tint", type: "scalar", default: 0.0, min: -1.0, max: 1.0, displayScale: 100.0, decimals: 0, group: "White Balance" },
-  { id: "sat", label: "Saturation", type: "scalar", default: 1.0, min: 0.0, max: 2.0, displayScale: 100.0, decimals: 0, group: "Color Balance" },
-  { id: "vib", label: "Vibrance", type: "scalar", default: 0.0, min: -1.0, max: 1.0, displayScale: 100.0, decimals: 0, group: "Color Balance" },
-  { id: "liftR", label: "Shadows Red", type: "scalar", default: 0.5, min: 0.0, max: 1.0, displayScale: 1.0, decimals: 2, group: "3-Way Toning" },
-  { id: "liftG", label: "Shadows Green", type: "scalar", default: 0.5, min: 0.0, max: 1.0, displayScale: 1.0, decimals: 2, group: "3-Way Toning" },
-  { id: "liftB", label: "Shadows Blue", type: "scalar", default: 0.5, min: 0.0, max: 1.0, displayScale: 1.0, decimals: 2, group: "3-Way Toning" },
-  { id: "gammaR", label: "Midtones Red", type: "scalar", default: 0.5, min: 0.0, max: 1.0, displayScale: 1.0, decimals: 2, group: "3-Way Toning" },
-  { id: "gammaG", label: "Midtones Green", type: "scalar", default: 0.5, min: 0.0, max: 1.0, displayScale: 1.0, decimals: 2, group: "3-Way Toning" },
-  { id: "gammaB", label: "Midtones Blue", type: "scalar", default: 0.5, min: 0.0, max: 1.0, displayScale: 1.0, decimals: 2, group: "3-Way Toning" },
-  { id: "gainR", label: "Highlights Red", type: "scalar", default: 0.5, min: 0.0, max: 1.0, displayScale: 1.0, decimals: 2, group: "3-Way Toning" },
-  { id: "gainG", label: "Highlights Green", type: "scalar", default: 0.5, min: 0.0, max: 1.0, displayScale: 1.0, decimals: 2, group: "3-Way Toning" },
-  { id: "gainB", label: "Highlights Blue", type: "scalar", default: 0.5, min: 0.0, max: 1.0, displayScale: 1.0, decimals: 2, group: "3-Way Toning" },
-];
+const BASE_PARAMS = KFPLUG_BASE_PARAMS;
 
 const BASE_COLORS = [
   { label: "Shadows Tint", r: "liftR", g: "liftG", b: "liftB" },
@@ -54,38 +37,6 @@ const PRESETS = [
     values: { contrast: 1.3, exposure: 0.1, sat: 1.3, temp: -0.2, tint: 0.3, liftR: 0.38, liftG: 0.48, liftB: 0.68, gainR: 0.68, gainG: 0.38, gainB: 0.58 }
   }
 ];
-
-export function checkAllowedHost() {
-  const host = (
-    typeof self !== "undefined" && self.location
-      ? self.location.hostname
-      : typeof window !== "undefined" && window.location
-      ? window.location.hostname
-      : ""
-  ).toLowerCase();
-
-  if (!host) return true;
-  return (
-    host === "keyflow-color-match-tool.pages.dev" ||
-    host.endsWith(".keyflow-color-match-tool.pages.dev") ||
-    host === "localhost" ||
-    host === "127.0.0.1"
-  );
-}
-
-export function sanitizeMetadataText(raw, fallback = "", maxLen = 160) {
-  if (typeof raw !== "string") return fallback;
-  let out = "";
-  for (let i = 0; i < raw.length; i++) {
-    const code = raw.charCodeAt(i);
-    const ch = raw[i];
-    if (code <= 0x1f || code === 0x7f) continue;
-    if (ch === "<" || ch === ">" || ch === '"') continue;
-    out += ch;
-  }
-  const trimmed = out.trim().slice(0, maxLen);
-  return trimmed || fallback;
-}
 
 export async function generateKfplug(params, presetName, author, description) {
   if (!checkAllowedHost()) {

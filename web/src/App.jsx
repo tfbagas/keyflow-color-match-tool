@@ -50,26 +50,37 @@ import { scaleParamsByStrength } from "./utils/gradeEngine";
 import {
   generateKfplug,
   downloadBlob,
-  sanitizeMetadataText,
 } from "./utils/kfplugPackager";
-import { inspectFile, prepareImageBlob } from "./utils/rawDecoder";
+import { sanitizeMetadataText } from "./utils/hostGuard";
+import { SLIDER_PARAM_SPECS, applyCalibrationToParams } from "./utils/paramSchema";
 import { generateLutFile } from "./utils/lutExporter";
 import { exportGradedImage } from "./utils/imageExporter";
-import { importLutFile, importKfplugFile } from "./utils/presetImporter";
+import { importKfplugFile, parseLutText, fitParamsToLut } from "./utils/presetImporter";
 import { SAMPLE_LOOKS, renderLookSample, drawNeutralScene } from "./utils/sampleLooks";
 import VideoTransportBar from "./components/VideoTransportBar";
+import { useMediaLoader, revokeMediaUrls } from "./hooks/useMediaLoader";
 
-const PARAM_CONTROLS = [
-  { key: "exposure", label: "Exposure (EV)", min: -2.0, max: 2.0, step: 0.02, icon: Sun, isBipolar: true },
-  { key: "contrast", label: "Contrast", min: 0.5, max: 2.0, step: 0.02, icon: Contrast, isBipolar: true },
-  { key: "pivot", label: "Contrast Pivot", min: 0.1, max: 0.9, step: 0.02, icon: SlidersHorizontal, isBipolar: false },
-  { key: "shadows", label: "Shadows Tint/Level", min: -0.5, max: 0.5, step: 0.02, icon: Droplet, isBipolar: true },
-  { key: "highlights", label: "Highlights Tint/Level", min: -0.5, max: 0.5, step: 0.02, icon: Sparkles, isBipolar: true },
-  { key: "temp", label: "Color Temperature", min: -1.0, max: 1.0, step: 0.02, icon: Thermometer, isBipolar: true },
-  { key: "tint", label: "Color Tint", min: -1.0, max: 1.0, step: 0.02, icon: Palette, isBipolar: true },
-  { key: "sat", label: "Saturation", min: 0.0, max: 2.0, step: 0.02, icon: Droplet, isBipolar: true },
-  { key: "vib", label: "Vibrance", min: -0.8, max: 0.8, step: 0.02, icon: Activity, isBipolar: true },
-];
+const SLIDER_ICON_MAP = {
+  exposure: Sun,
+  contrast: Contrast,
+  pivot: SlidersHorizontal,
+  shadows: Droplet,
+  highlights: Sparkles,
+  temp: Thermometer,
+  tint: Palette,
+  sat: Droplet,
+  vib: Activity,
+};
+
+const PARAM_CONTROLS = SLIDER_PARAM_SPECS.map((spec) => ({
+  key: spec.key,
+  label: spec.label,
+  min: spec.uiMin,
+  max: spec.uiMax,
+  step: spec.step,
+  icon: SLIDER_ICON_MAP[spec.key] || Sliders,
+  isBipolar: spec.isBipolar,
+}));
 
 const CALIBRATION_STORAGE_KEY = "kf_export_calibration_v1";
 const SEEN_UPDATE_STORAGE_KEY = "kf_seen_update_v081";
@@ -79,41 +90,6 @@ const DEFAULT_CALIBRATION = {
   wbScale: 1.0,
   chromaScale: 1.0,
 };
-
-function clampVal(v, min, max) {
-  return Math.max(min, Math.min(max, v));
-}
-
-function round2(v) {
-  return Math.round(v * 100) / 100;
-}
-
-function applyCalibrationToParams(params, cal) {
-  const tS = cal?.toneScale ?? 1.0;
-  const wS = cal?.wbScale ?? 1.0;
-  const cS = cal?.chromaScale ?? 1.0;
-
-  return {
-    ...params,
-    exposure: round2(clampVal((params.exposure ?? 0) * tS, -2.0, 2.0)),
-    contrast: round2(clampVal(1.0 + ((params.contrast ?? 1.0) - 1.0) * tS, 0.5, 2.0)),
-    shadows: round2(clampVal((params.shadows ?? 0) * tS, -0.5, 0.5)),
-    highlights: round2(clampVal((params.highlights ?? 0) * tS, -0.5, 0.5)),
-    liftR: round2(clampVal(0.5 + ((params.liftR ?? 0.5) - 0.5) * tS, 0.0, 1.0)),
-    liftG: round2(clampVal(0.5 + ((params.liftG ?? 0.5) - 0.5) * tS, 0.0, 1.0)),
-    liftB: round2(clampVal(0.5 + ((params.liftB ?? 0.5) - 0.5) * tS, 0.0, 1.0)),
-    gammaR: round2(clampVal(0.5 + ((params.gammaR ?? 0.5) - 0.5) * tS, 0.0, 1.0)),
-    gammaG: round2(clampVal(0.5 + ((params.gammaG ?? 0.5) - 0.5) * tS, 0.0, 1.0)),
-    gammaB: round2(clampVal(0.5 + ((params.gammaB ?? 0.5) - 0.5) * tS, 0.0, 1.0)),
-    gainR: round2(clampVal(0.5 + ((params.gainR ?? 0.5) - 0.5) * tS, 0.0, 1.0)),
-    gainG: round2(clampVal(0.5 + ((params.gainG ?? 0.5) - 0.5) * tS, 0.0, 1.0)),
-    gainB: round2(clampVal(0.5 + ((params.gainB ?? 0.5) - 0.5) * tS, 0.0, 1.0)),
-    temp: round2(clampVal((params.temp ?? 0) * wS, -1.0, 1.0)),
-    tint: round2(clampVal((params.tint ?? 0) * wS, -1.0, 1.0)),
-    sat: round2(clampVal(1.0 + ((params.sat ?? 1.0) - 1.0) * cS, 0.0, 2.0)),
-    vib: round2(clampVal((params.vib ?? 0) * cS, -0.8, 0.8)),
-  };
-}
 
 function toRgbCss(r = 0.5, g = 0.5, b = 0.5) {
   const cb = (v) => Math.max(0, Math.min(255, Math.round((v ?? 0.5) * 255)));
@@ -271,6 +247,7 @@ export default function App() {
   const analysisTimeoutRef = useRef(null);
   const analysisJobIdRef = useRef(0);
   const pendingAnalysisRef = useRef(null);
+  const pendingLutFitRef = useRef(null);
   const gradedCanvasRef = useRef(null);
   const previewSourceImageDataRef = useRef(null);
   const lastRenderedImgRef = useRef(null);
@@ -424,12 +401,19 @@ export default function App() {
     );
 
     worker.onmessage = (e) => {
-      const { type, jobId, params, stage, error } = e.data || {};
+      const { type, jobId, params, stage, error, rms, kind, title } = e.data || {};
       if (jobId !== undefined && jobId !== analysisJobIdRef.current) {
         return;
       }
       if (type === "stage") {
         setStatusText(stage || "Analyzing...");
+      } else if (type === "fitLutSuccess" && params) {
+        const pendingLut = pendingLutFitRef.current;
+        if (pendingLut && pendingLut.jobId === jobId) {
+          clearTimeout(pendingLut.timer);
+          pendingLutFitRef.current = null;
+          pendingLut.resolve({ params, rms, kind, title });
+        }
       } else if (type === "success" && params) {
         clearAnalysisTimeout();
         pendingAnalysisRef.current = null;
@@ -438,6 +422,13 @@ export default function App() {
         setLastMatchedParams({ ...params });
         setStatusText("Matched");
       } else if (type === "error") {
+        const pendingLut = pendingLutFitRef.current;
+        if (pendingLut && pendingLut.jobId === jobId) {
+          clearTimeout(pendingLut.timer);
+          pendingLutFitRef.current = null;
+          pendingLut.reject(new Error(error || "Failed to fit LUT."));
+          return;
+        }
         clearAnalysisTimeout();
         pendingAnalysisRef.current = null;
         setIsAnalyzing(false);
@@ -450,12 +441,24 @@ export default function App() {
       if (err && typeof err.preventDefault === "function") {
         err.preventDefault();
       }
+      const pendingLut = pendingLutFitRef.current;
+      if (pendingLut) {
+        clearTimeout(pendingLut.timer);
+        pendingLutFitRef.current = null;
+        pendingLut.fallback();
+      }
       runFallbackAnalysisOrReset(
         "Background worker encountered an error; recovered on main thread."
       );
     };
 
     worker.onmessageerror = () => {
+      const pendingLut = pendingLutFitRef.current;
+      if (pendingLut) {
+        clearTimeout(pendingLut.timer);
+        pendingLutFitRef.current = null;
+        pendingLut.fallback();
+      }
       runFallbackAnalysisOrReset(
         "Worker message serialization error; recovered on main thread."
       );
@@ -689,331 +692,127 @@ export default function App() {
     if (r && r.imgElement) triggerReferenceAnalysis(r.imgElement);
   };
 
-  const createThumbnailUrl = useCallback(async (source, maxDim = 512) => {
-    const sw = source.videoWidth || source.naturalWidth || 0;
-    const sh = source.videoHeight || source.naturalHeight || 0;
-    if (!sw || !sh) return "";
-    const scale = Math.min(1, maxDim / Math.max(sw, sh));
-    const w = Math.max(1, Math.round(sw * scale));
-    const h = Math.max(1, Math.round(sh * scale));
-    const tc = document.createElement("canvas");
-    tc.width = w;
-    tc.height = h;
-    const tctx = tc.getContext("2d");
-    if (!tctx) return "";
-    tctx.drawImage(source, 0, 0, w, h);
-    const blob = await new Promise((res) => tc.toBlob(res, "image/jpeg", 0.82));
-    tc.width = 0;
-    tc.height = 0;
-    return blob ? URL.createObjectURL(blob) : "";
-  }, []);
-
-  const revokeMediaUrls = useCallback((item) => {
-    if (!item) return;
-    if (item.thumbUrl && item.thumbUrl !== item.objectUrl && item.thumbUrl.startsWith("blob:")) {
-      try {
-        URL.revokeObjectURL(item.thumbUrl);
-      } catch {
-        // ignore
-      }
-    }
-    if (item.objectUrl) {
-      try {
-        URL.revokeObjectURL(item.objectUrl);
-      } catch {
-        // ignore
-      }
-    }
-    if (item.videoUrl) {
-      try {
-        URL.revokeObjectURL(item.videoUrl);
-      } catch {
-        // ignore
-      }
-    }
-  }, []);
-
-  const replaceReference = useCallback(
-    (next) => {
-      revokeMediaUrls(referenceRef.current);
-      referenceRef.current = next;
-      setReferenceImage(next);
-    },
-    [revokeMediaUrls]
-  );
-
-  const replaceTarget = useCallback(
-    (next) => {
-      const prev = targetRef.current;
-      if (prev && prev.kind === "video") {
-        try {
-          prev.videoEl.pause();
-          prev.videoEl.removeAttribute("src");
-          prev.videoEl.load();
-        } catch {
-          // ignore teardown errors
-        }
-      }
-      revokeMediaUrls(prev);
-      targetRef.current = next;
-      setTargetImage(next);
-    },
-    [revokeMediaUrls]
-  );
-
-  const loadVideoFile = useCallback(
-    (file, meta) => {
-      setTargetError("");
-      setStatusText("Loading video...");
-      const url = URL.createObjectURL(file);
-      const v = document.createElement("video");
-      v.muted = true;
-      v.loop = true;
-      v.playsInline = true;
-      v.preload = "auto";
-
-      let settled = false;
-      const fail = (msg) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        try {
-          v.removeAttribute("src");
-          v.load();
-        } catch {
-          // ignore
-        }
-        URL.revokeObjectURL(url);
-        setTargetError(msg);
-        setStatusText("Video Error");
-      };
-
-      const timer = setTimeout(
-        () => fail(`Could not load this ${meta.label} video (timed out). The codec may not be supported by this browser.`),
-        20000
-      );
-
-      v.onerror = () =>
-        fail(
-          `This ${meta.label} video uses a codec or container this browser cannot play. Try MP4 (H.264) or WEBM (VP9).`
-        );
-
-      v.onloadeddata = async () => {
-        if (settled) return;
-        if (!v.videoWidth || !v.videoHeight) {
-          fail("This video has no decodable picture track (audio-only or unsupported codec).");
-          return;
-        }
-        settled = true;
-        clearTimeout(timer);
-        v.onerror = () => setTargetError("Video playback error.");
-
-        let poster = "";
-        try {
-          const pw = Math.min(512, v.videoWidth);
-          const ph = Math.max(1, Math.round((pw * v.videoHeight) / v.videoWidth));
-          const pc = document.createElement("canvas");
-          pc.width = pw;
-          pc.height = ph;
-          const pctx = pc.getContext("2d", { willReadFrequently: true });
-          pctx.drawImage(v, 0, 0, pw, ph);
-          let luma = computeFrameMeanLuma(pctx.getImageData(0, 0, pw, ph).data);
-
-          const dur = Number.isFinite(v.duration) ? v.duration : 0;
-          if (luma < 0.08 && dur > 0.25) {
-            const seekTargets = [Math.min(dur * 0.25, 2.0), dur * 0.5].filter(
-              (ts) => ts > 0.05 && ts < dur - 0.05
-            );
-            for (const ts of seekTargets) {
-              await new Promise((resolve) => {
-                const t = setTimeout(resolve, 1000);
-                const onSeek = () => {
-                  v.removeEventListener("seeked", onSeek);
-                  clearTimeout(t);
-                  requestAnimationFrame(() => resolve());
-                };
-                v.addEventListener("seeked", onSeek);
-                v.currentTime = ts;
-              });
-              pctx.drawImage(v, 0, 0, pw, ph);
-              luma = computeFrameMeanLuma(pctx.getImageData(0, 0, pw, ph).data);
-              if (luma >= 0.08) break;
-            }
-          }
-          const thumbBlob = await new Promise((res) => pc.toBlob(res, "image/jpeg", 0.82));
-          pc.width = 0;
-          pc.height = 0;
-          poster = thumbBlob ? URL.createObjectURL(thumbBlob) : "";
-          if (v.currentTime > 0.05) {
-            v.currentTime = 0;
-          }
-        } catch {
-          poster = "";
+  const fitLutInWorker = useCallback(
+    (lutText) =>
+      new Promise((resolve, reject) => {
+        if (pendingLutFitRef.current) {
+          clearTimeout(pendingLutFitRef.current.timer);
+          pendingLutFitRef.current.reject(new Error("Superseded by a newer LUT import."));
+          pendingLutFitRef.current = null;
         }
 
-        const rawBase = file.name.replace(/\.[^/.]+$/, "");
-        replaceTarget({
-          kind: "video",
-          name: sanitizeMetadataText(file.name, "video", 80),
-          baseName: sanitizeMetadataText(rawBase, "Target", 48),
-          width: v.videoWidth,
-          height: v.videoHeight,
-          ext: meta.ext.toUpperCase(),
-          formatBadge: `VIDEO (${meta.ext.toUpperCase()})`,
-          sizeMB: (file.size / (1024 * 1024)).toFixed(1),
-          dataUrl: poster,
-          thumbUrl: poster,
-          imgElement: null,
-          videoEl: v,
-          videoUrl: url,
-        });
-        setStatusText("Video Ready");
-        v.play().catch(() => {});
-      };
-
-      v.src = url;
-      v.load();
-    },
-    [replaceTarget, computeFrameMeanLuma]
-  );
-
-  const handleImportPreset = useCallback(async (file, meta) => {
-    setReferenceError("");
-    setStatusText(`Importing ${meta.label}...`);
-    try {
-      const result =
-        meta.ext === "kfplug"
-          ? await importKfplugFile(file)
-          : await importLutFile(file);
-      setGradingParams({ ...result.params });
-      setLastMatchedParams({ ...result.params });
-      setImportedLook({ kind: result.kind, name: result.name, rms: result.rms });
-      setPresetName(result.name.slice(0, 28));
-      if (result.author) setAuthorName(result.author);
-      setDescription(
-        result.description || `Imported from ${meta.label}: ${result.name}.`
-      );
-      setStatusText("Imported");
-    } catch (err) {
-      setReferenceError((err && err.message) || "Failed to import this file.");
-      setStatusText("Import Error");
-    }
-  }, []);
-
-  // Extension + magic byte validation, RAW / TIFF / HEIC decoding, video and LUT routing
-  const loadImageFile = useCallback(
-    async (file, type) => {
-      if (!file) return;
-      setSlotError(type, "");
-
-      const meta = await inspectFile(file);
-
-      if (meta.category === "preset") {
-        if (type === "reference") {
-          await handleImportPreset(file, meta);
-        } else {
-          setSlotError(type, "LUT and plugin files can only be imported into the REFERENCE slot.");
-        }
-        return;
-      }
-
-      if (meta.category === "video") {
-        if (type === "target") {
-          loadVideoFile(file, meta);
-        } else {
-          setSlotError(type, "Video files are supported in the TARGET slot only.");
-        }
-        return;
-      }
-
-      if (meta.category !== "image") {
-        setSlotError(type, meta.error || "Unsupported file format.");
-        setStatusText("Invalid File");
-        return;
-      }
-
-      setStatusText(`Decoding ${meta.label}...`);
-      let prepared;
-      try {
-        prepared = await prepareImageBlob(file, meta);
-      } catch (err) {
-        setSlotError(type, (err && err.message) || "Failed to decode this image.");
-        setStatusText("Decode Error");
-        return;
-      }
-
-      const objectUrl = URL.createObjectURL(prepared.blob);
-      const img = new Image();
-
-      img.onerror = () => {
-        URL.revokeObjectURL(objectUrl);
-        setSlotError(
-          type,
-          `This ${meta.label} image could not be decoded by the browser. Try exporting it as JPG or PNG.`
-        );
-        setStatusText("Invalid Image");
-      };
-
-      img.onload = async () => {
-        if (img.naturalWidth < 1 || img.naturalHeight < 1) {
-          URL.revokeObjectURL(objectUrl);
-          setSlotError(type, "Invalid image dimensions.");
-          return;
-        }
-
-        const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-        const rawBaseName = file.name.replace(/\.[^/.]+$/, "");
-        const baseName = sanitizeMetadataText(rawBaseName, "Reference", 48);
-
-        let thumbUrl = "";
-        if (Math.max(img.naturalWidth, img.naturalHeight) > 512) {
+        const jobId = ++analysisJobIdRef.current;
+        const runMainThreadFallback = () => {
           try {
-            thumbUrl = await createThumbnailUrl(img, 512);
-          } catch {
-            thumbUrl = "";
+            const lut = parseLutText(lutText);
+            const { params, rms } = fitParamsToLut(lut);
+            resolve({
+              params,
+              rms,
+              kind: lut.kind === "3d" ? `3D LUT ${lut.size}^3` : `1D LUT ${lut.size}`,
+              title: lut.title,
+            });
+          } catch (err) {
+            reject(err);
           }
-        }
-
-        const info = {
-          kind: "image",
-          name: sanitizeMetadataText(file.name, "image.png", 80),
-          baseName,
-          width: img.naturalWidth,
-          height: img.naturalHeight,
-          ext: meta.ext.toUpperCase(),
-          formatBadge: meta.label,
-          sizeMB,
-          dataUrl: objectUrl,
-          thumbUrl: thumbUrl || objectUrl,
-          objectUrl,
-          imgElement: img,
         };
 
-        if (type === "reference") {
-          setImportedLook(null);
-          replaceReference(info);
-          setPresetName(baseName.slice(0, 28));
-          setDescription(
-            `Grading preset matched from reference '${baseName}'.`
-          );
-          triggerReferenceAnalysis(img);
-        } else {
-          replaceTarget(info);
+        const timer = setTimeout(() => {
+          if (pendingLutFitRef.current?.jobId === jobId) {
+            pendingLutFitRef.current = null;
+            runMainThreadFallback();
+          }
+        }, 15000);
+
+        pendingLutFitRef.current = {
+          jobId,
+          timer,
+          resolve,
+          reject,
+          fallback: runMainThreadFallback,
+        };
+
+        try {
+          if (!workerRef.current) {
+            clearTimeout(timer);
+            pendingLutFitRef.current = null;
+            runMainThreadFallback();
+            return;
+          }
+          workerRef.current.postMessage({ type: "fitLut", jobId, lutText });
+        } catch {
+          clearTimeout(timer);
+          pendingLutFitRef.current = null;
+          runMainThreadFallback();
         }
-        setStatusText(type === "reference" ? "Analyzing..." : "Target Ready");
-      };
-      img.src = objectUrl;
-    },
-    [
-      setSlotError,
-      triggerReferenceAnalysis,
-      replaceReference,
-      replaceTarget,
-      createThumbnailUrl,
-      loadVideoFile,
-      handleImportPreset,
-    ]
+      }),
+    []
   );
+
+  const handleImportPreset = useCallback(
+    async (file, meta) => {
+      setReferenceError("");
+      setStatusText(`Importing ${meta.label}...`);
+      try {
+        let result;
+        if (meta.ext === "kfplug") {
+          result = await importKfplugFile(file);
+        } else {
+          if (file.size > 40 * 1024 * 1024) {
+            throw new Error("LUT file is too large (limit 40 MB).");
+          }
+          const text = await file.text();
+          const fitted = await fitLutInWorker(text);
+          const baseName = file.name.replace(/\.[^/.]+$/, "");
+          result = {
+            kind: fitted.kind,
+            name: fitted.title || sanitizeMetadataText(baseName, "Imported LUT", 48),
+            author: "",
+            description: "",
+            params: fitted.params,
+            rms: fitted.rms,
+          };
+        }
+        setGradingParams({ ...result.params });
+        setLastMatchedParams({ ...result.params });
+        setImportedLook({ kind: result.kind, name: result.name, rms: result.rms });
+        setPresetName(result.name.slice(0, 28));
+        if (result.author) setAuthorName(result.author);
+        setDescription(
+          result.description || `Imported from ${meta.label}: ${result.name}.`
+        );
+        setStatusText("Imported");
+      } catch (err) {
+        if (err && err.message === "Superseded by a newer LUT import.") return;
+        setReferenceError((err && err.message) || "Failed to import this file.");
+        setStatusText("Import Error");
+      }
+    },
+    [fitLutInWorker]
+  );
+
+  const handleReferenceLoaded = useCallback(
+    (info) => {
+      setImportedLook(null);
+      setPresetName(info.baseName.slice(0, 28));
+      setDescription(`Grading preset matched from reference '${info.baseName}'.`);
+      triggerReferenceAnalysis(info.imgElement);
+      setStatusText("Analyzing...");
+    },
+    [triggerReferenceAnalysis]
+  );
+
+  const { loadImageFile, replaceReference, replaceTarget, cancelSlotLoad } = useMediaLoader({
+    referenceRef,
+    targetRef,
+    setReferenceImage,
+    setTargetImage,
+    setSlotError,
+    setStatusText,
+    computeFrameMeanLuma,
+    onImportPreset: handleImportPreset,
+    onReferenceLoaded: handleReferenceLoaded,
+  });
 
   const handleTrySample = useCallback(
     (type, id) => {
@@ -1423,7 +1222,7 @@ export default function App() {
       revokeMediaUrls(t);
       revokeMediaUrls(referenceRef.current);
     },
-    [revokeMediaUrls]
+    []
   );
 
   const handleRunPipelineCalibration = () => {
@@ -1750,11 +1549,12 @@ export default function App() {
     [loadImageFile]
   );
   const handleClearReference = useCallback(() => {
+    cancelSlotLoad("reference");
     replaceReference(null);
     if (!importedLook) setLastMatchedParams(null);
     setReferenceError("");
     setStatusText("Ready");
-  }, [replaceReference, importedLook]);
+  }, [cancelSlotLoad, replaceReference, importedLook]);
   const handleTryReferenceSample = useCallback(
     (id) => handleTrySample("reference", id),
     [handleTrySample]
@@ -1774,9 +1574,10 @@ export default function App() {
     [loadImageFile]
   );
   const handleClearTarget = useCallback(() => {
+    cancelSlotLoad("target");
     replaceTarget(null);
     setTargetError("");
-  }, [replaceTarget]);
+  }, [cancelSlotLoad, replaceTarget]);
   const handleTryTargetSample = useCallback(
     () => handleTrySample("target"),
     [handleTrySample]

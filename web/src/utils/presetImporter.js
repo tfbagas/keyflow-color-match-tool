@@ -7,7 +7,8 @@ import {
   sanitizeParams,
   clamp,
 } from "./gradeEngine.js";
-import { sanitizeMetadataText } from "./kfplugPackager.js";
+import { UI_PARAM_LIMITS } from "./paramSchema.js";
+import { sanitizeMetadataText } from "./hostGuard.js";
 
 // ---------------------------------------------------------------------------
 // .cube / .lut parsing
@@ -135,20 +136,9 @@ function makeLutSampler(lut) {
 }
 
 // UI ranges used while fitting (keeps fitted values inside slider ranges).
-const FIT_LIMITS = {
-  exposure: [-2, 2],
-  contrast: [0.5, 2],
-  pivot: [0.2, 0.8],
-  shadows: [-0.5, 0.5],
-  highlights: [-0.5, 0.5],
-  temp: [-1, 1],
-  tint: [-1, 1],
-  sat: [0, 2],
-  vib: [-0.8, 0.8],
-  liftR: [0, 1], liftG: [0, 1], liftB: [0, 1],
-  gammaR: [0, 1], gammaG: [0, 1], gammaB: [0, 1],
-  gainR: [0, 1], gainG: [0, 1], gainB: [0, 1],
-};
+const FIT_LIMITS = Object.fromEntries(
+  Object.entries(UI_PARAM_LIMITS).filter(([k]) => k !== "gradeMix")
+);
 
 // Extracts tone curve + grading parameters from a LUT by least-squares fit of
 // the Color Match Engine v2 equation (coordinate descent over a sample grid).
