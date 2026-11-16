@@ -261,14 +261,16 @@ export default function App() {
   const [isSavingFrame, setIsSavingFrame] = useState(false);
   const [simulateLogInput, setSimulateLogInput] = useState(false);
   const [scopeImageData, setScopeImageData] = useState(null);
-  const [isScopesCollapsed, setIsScopesCollapsed] = useState(false);
+  const [isScopesCollapsed, setIsScopesCollapsed] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < 1024 : false
+  );
   const [isScopeFrozen, setIsScopeFrozen] = useState(false);
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [webglPhotoError, setWebglPhotoError] = useState(false);
   const [lastMatchedParams, setLastMatchedParams] = useState(null);
   const [reloadedFeedback, setReloadedFeedback] = useState(false);
 
-  const isScopesCollapsedRef = useRef(false);
+  const isScopesCollapsedRef = useRef(isScopesCollapsed);
   isScopesCollapsedRef.current = isScopesCollapsed;
   const isControlDraggingRef = useRef(false);
   const isScopeFrozenRef = useRef(false);
@@ -276,11 +278,24 @@ export default function App() {
   const scopeIdleTimerRef = useRef(null);
   const scopePhotoSrcRef = useRef(null);
   const refreshScopesOnceRef = useRef(() => {});
+  const glPreviewRef = useRef(null);
+  const liveParamsRef = useRef({ ...DEFAULT_PARAMS });
+  const liveStrengthRef = useRef(100);
+  const commitTimerRef = useRef(0);
+  const lastCommitAtRef = useRef(0);
 
   const effectiveParams = useMemo(
     () => scaleParamsByStrength(gradingParams, matchStrength),
     [gradingParams, matchStrength]
   );
+
+  // Keep live refs aligned whenever state commits from non-drag actions (analysis, presets, slots, reset).
+  useEffect(() => {
+    if (!isControlDraggingRef.current) {
+      liveParamsRef.current = gradingParams;
+      liveStrengthRef.current = matchStrength;
+    }
+  }, [gradingParams, matchStrength]);
 
   const [previewMode, setPreviewMode] = useState("split");
 
@@ -1283,6 +1298,29 @@ export default function App() {
     };
   }, [videoEl, activeTab, getScopeDims, refreshPhotoScope]);
 
+  const flushParamCommit = useCallback(() => {
+    if (commitTimerRef.current) {
+      clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = 0;
+    }
+    lastCommitAtRef.current = performance.now();
+    setGradingParams({ ...liveParamsRef.current });
+    setMatchStrength(liveStrengthRef.current);
+  }, []);
+
+  const scheduleParamCommit = useCallback(() => {
+    const now = performance.now();
+    const elapsed = now - lastCommitAtRef.current;
+    if (elapsed >= 80) {
+      flushParamCommit();
+    } else if (!commitTimerRef.current) {
+      commitTimerRef.current = setTimeout(() => {
+        commitTimerRef.current = 0;
+        flushParamCommit();
+      }, 80 - elapsed);
+    }
+  }, [flushParamCommit]);
+
   // Freeze ProScopes while dragging sliders/wheels/split-bar; flush once on release or 120ms idle.
   const handleControlDragChange = useCallback((dragging) => {
     if (scopeIdleTimerRef.current) {
@@ -1295,11 +1333,12 @@ export default function App() {
       setIsScopeFrozen(true);
     } else {
       isControlDraggingRef.current = false;
+      flushParamCommit();
       isScopeFrozenRef.current = false;
       setIsScopeFrozen(false);
       refreshScopesOnceRef.current();
     }
-  }, []);
+  }, [flushParamCommit]);
 
   useEffect(() => {
     if (isControlDraggingRef.current) {
@@ -1329,6 +1368,7 @@ export default function App() {
   useEffect(
     () => () => {
       if (scopeIdleTimerRef.current) clearTimeout(scopeIdleTimerRef.current);
+      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
       const t = targetRef.current;
       if (t && t.kind === "video") {
         try {
@@ -1404,10 +1444,27 @@ export default function App() {
   };
 
   const handleParamChange = (key, value) => {
-    setGradingParams((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
+    const next = { ...liveParamsRef.current, [key]: value };
+    liveParamsRef.current = next;
+    const eff = scaleParamsByStrength(next, liveStrengthRef.current);
+    glPreviewRef.current?.setParams?.(eff);
+    if (isControlDraggingRef.current) {
+      scheduleParamCommit();
+    } else {
+      setGradingParams(next);
+    }
+  };
+
+  const handleMatchStrengthChange = (_, val) => {
+    const nextStrength = Math.round(val);
+    liveStrengthRef.current = nextStrength;
+    const eff = scaleParamsByStrength(liveParamsRef.current, nextStrength);
+    glPreviewRef.current?.setParams?.(eff);
+    if (isControlDraggingRef.current) {
+      scheduleParamCommit();
+    } else {
+      setMatchStrength(nextStrength);
+    }
   };
 
   const handleCalibrationChange = (key, value) => {
@@ -1425,12 +1482,20 @@ export default function App() {
   };
 
   const handleWheelChange = (prefix, [r, g, b]) => {
-    setGradingParams((prev) => ({
-      ...prev,
+    const next = {
+      ...liveParamsRef.current,
       [`${prefix}R`]: r,
       [`${prefix}G`]: g,
       [`${prefix}B`]: b,
-    }));
+    };
+    liveParamsRef.current = next;
+    const eff = scaleParamsByStrength(next, liveStrengthRef.current);
+    glPreviewRef.current?.setParams?.(eff);
+    if (isControlDraggingRef.current) {
+      scheduleParamCommit();
+    } else {
+      setGradingParams(next);
+    }
   };
 
   const handleWheelReset = (prefix) => {
@@ -1641,7 +1706,7 @@ export default function App() {
       >
       {/* 1. Compact 48px Top App Bar (delay: 0ms fast spring down) */}
       <header
-        className={`sticky top-0 z-40 min-h-12 px-3 sm:px-5 py-1.5 bg-[#0E0E12]/80 backdrop-blur-md border-b border-white/[0.12] flex flex-wrap items-center justify-between gap-2 ${
+        className={`sticky top-0 z-40 min-h-12 px-3 sm:px-5 py-1.5 bg-[#0E0E12] lg:bg-[#0E0E12]/80 lg:backdrop-blur-md border-b border-white/[0.12] flex flex-wrap items-center justify-between gap-2 ${
           workspacePhase === "morphing-in" ? "m3-morph-topbar" : ""
         }`}
       >
@@ -1852,6 +1917,7 @@ export default function App() {
                   originalImage={activePreviewImageUrl}
                   imageEl={activePreviewImgElement}
                   gradedCanvasRef={gradedCanvasRef}
+                  glPreviewRef={glPreviewRef}
                   useWebGLPhoto={!webglPhotoError}
                   previewMaxDim={previewMaxDim}
                   onWebGLPhotoError={() => setWebglPhotoError(true)}
@@ -1973,7 +2039,7 @@ export default function App() {
                     defaultValue={100}
                     isBipolar={false}
                     valueSuffix="%"
-                    onChange={(_, val) => setMatchStrength(Math.round(val))}
+                    onChange={handleMatchStrengthChange}
                     onDragChange={handleControlDragChange}
                     icon={Gauge}
                   />

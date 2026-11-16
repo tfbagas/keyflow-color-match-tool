@@ -15,6 +15,7 @@ export default function ComparisonSlider({
   originalImage,
   imageEl = null,
   gradedCanvasRef,
+  glPreviewRef = null,
   useWebGLPhoto = false,
   previewMaxDim = 960,
   onWebGLPhotoError,
@@ -37,7 +38,6 @@ export default function ComparisonSlider({
   footer = null,
 }) {
   const [splitPos, setSplitPos] = useState(50); // percentage 0..100
-  const [isDragging, setIsDragging] = useState(false);
   const [isHoldingBefore, setIsHoldingBefore] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState("png");
@@ -53,6 +53,13 @@ export default function ComparisonSlider({
   const sampleBufferRef = useRef({ data: null, w: 0, h: 0 });
   const splitRafRef = useRef(0);
   const pendingSplitXRef = useRef(null);
+  const isDraggingSplitRef = useRef(false);
+  const splitPosRef = useRef(50);
+  const splitLineWrapperRef = useRef(null);
+  const splitHandleRef = useRef(null);
+  const cpuClipRef = useRef(null);
+  const internalGLRef = useRef(null);
+  const activeGLRef = glPreviewRef || internalGLRef;
   const onSplitDragChangeRef = useRef(onSplitDragChange);
   onSplitDragChangeRef.current = onSplitDragChange;
 
@@ -149,16 +156,24 @@ export default function ComparisonSlider({
     return () => ro.disconnect();
   }, [nativeWidth, nativeHeight, isPinned, mode]);
 
-  const updatePosition = (clientX) => {
+  const applySplitPositionDirect = (clientX) => {
     const targetEl = (mode === "split" && mediaBoxRef.current) || containerRef.current;
     if (!targetEl) return;
     const rect = targetEl.getBoundingClientRect();
+    if (rect.width <= 0) return;
     const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
     let pct = (x / rect.width) * 100;
     if (pct >= 48.2 && pct <= 51.8) {
       pct = 50;
     }
-    setSplitPos(pct);
+    splitPosRef.current = pct;
+    if (splitLineWrapperRef.current) {
+      splitLineWrapperRef.current.style.transform = `translate3d(${pct}%, 0, 0)`;
+    }
+    if (cpuClipRef.current) {
+      cpuClipRef.current.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
+    }
+    activeGLRef.current?.setSplitPos?.(pct);
   };
 
   const handlePointerSample = (clientX, clientY) => {
@@ -226,69 +241,82 @@ export default function ComparisonSlider({
     setPixelReadout({ r, g, b, beforeIre, gr, gg, gb, gradedIre });
   };
 
-  useEffect(() => {
-    if (!isDragging) return undefined;
-
-    const handleEnd = () => {
+  useEffect(
+    () => () => {
       if (splitRafRef.current) {
         cancelAnimationFrame(splitRafRef.current);
         splitRafRef.current = 0;
       }
-      if (pendingSplitXRef.current !== null) {
-        const x = pendingSplitXRef.current;
-        pendingSplitXRef.current = null;
-        updatePosition(x);
+      if (isDraggingSplitRef.current) {
+        isDraggingSplitRef.current = false;
+        onSplitDragChangeRef.current?.(false);
       }
-      setIsDragging(false);
-      onSplitDragChangeRef.current?.(false);
-    };
+    },
+    []
+  );
 
-    const schedulePosition = (clientX) => {
-      pendingSplitXRef.current = clientX;
+  const handleSplitPointerDown = (e) => {
+    if (mode !== "split" || !hasImage || isHoldingBefore) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.preventDefault();
+    isDraggingSplitRef.current = true;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore if pointer capture is unavailable
+    }
+    if (splitHandleRef.current) {
+      splitHandleRef.current.style.transform = "translate(-50%, -50%) scale(1.1)";
+    }
+    onSplitDragChangeRef.current?.(true);
+    applySplitPositionDirect(e.clientX);
+  };
+
+  const handleSplitPointerMove = (e) => {
+    if (isDraggingSplitRef.current) {
+      pendingSplitXRef.current = e.clientX;
       if (!splitRafRef.current) {
         splitRafRef.current = requestAnimationFrame(() => {
           splitRafRef.current = 0;
           if (pendingSplitXRef.current !== null) {
             const x = pendingSplitXRef.current;
             pendingSplitXRef.current = null;
-            updatePosition(x);
+            applySplitPositionDirect(x);
           }
         });
       }
-    };
+      return;
+    }
+    if (e.pointerType === "mouse") {
+      handlePointerSample(e.clientX, e.clientY);
+    }
+  };
 
-    const handleMouseMove = (e) => {
-      schedulePosition(e.clientX);
-    };
-    const handleTouchMove = (e) => {
-      if (e.touches?.[0]) {
-        schedulePosition(e.touches[0].clientX);
+  const handleSplitPointerEnd = (e) => {
+    if (!isDraggingSplitRef.current) return;
+    if (splitRafRef.current) {
+      cancelAnimationFrame(splitRafRef.current);
+      splitRafRef.current = 0;
+    }
+    if (pendingSplitXRef.current !== null) {
+      const x = pendingSplitXRef.current;
+      pendingSplitXRef.current = null;
+      applySplitPositionDirect(x);
+    }
+    isDraggingSplitRef.current = false;
+    try {
+      if (e?.currentTarget?.hasPointerCapture?.(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
       }
-    };
-
-    window.addEventListener("pointerup", handleEnd);
-    window.addEventListener("pointercancel", handleEnd);
-    window.addEventListener("mouseup", handleEnd);
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("touchend", handleEnd);
-    window.addEventListener("touchcancel", handleEnd);
-    window.addEventListener("touchmove", handleTouchMove, { passive: true });
-
-    return () => {
-      if (splitRafRef.current) {
-        cancelAnimationFrame(splitRafRef.current);
-        splitRafRef.current = 0;
-      }
-      window.removeEventListener("pointerup", handleEnd);
-      window.removeEventListener("pointercancel", handleEnd);
-      window.removeEventListener("mouseup", handleEnd);
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("touchend", handleEnd);
-      window.removeEventListener("touchcancel", handleEnd);
-      window.removeEventListener("touchmove", handleTouchMove);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDragging]);
+    } catch {
+      // Ignore
+    }
+    if (splitHandleRef.current) {
+      splitHandleRef.current.style.transform = "translate(-50%, -50%) scale(1)";
+    }
+    setSplitPos(splitPosRef.current);
+    onSplitDragChangeRef.current?.(false);
+  };
 
   // Keyboard shortcut: hold '\' to peek at Before image
   useEffect(() => {
@@ -604,26 +632,16 @@ export default function ComparisonSlider({
       {/* Preview Viewport (Stretches to align bottom edge flush with right column) */}
       <div
         ref={containerRef}
-        onMouseDown={(e) => {
-          if (mode === "split" && hasImage && !isHoldingBefore) {
-            setIsDragging(true);
-            onSplitDragChangeRef.current?.(true);
-            updatePosition(e.clientX);
-          }
-        }}
-        onMouseMove={(e) => handlePointerSample(e.clientX, e.clientY)}
-        onMouseLeave={() => setPixelReadout(null)}
-        onTouchStart={(e) => {
-          if (mode === "split" && hasImage && !isHoldingBefore && e.touches?.[0]) {
-            setIsDragging(true);
-            onSplitDragChangeRef.current?.(true);
-            updatePosition(e.touches[0].clientX);
-          }
-        }}
+        onPointerDown={handleSplitPointerDown}
+        onPointerMove={handleSplitPointerMove}
+        onPointerUp={handleSplitPointerEnd}
+        onPointerCancel={handleSplitPointerEnd}
+        onPointerLeave={() => setPixelReadout(null)}
+        style={mode === "split" && hasImage ? { touchAction: "none", userSelect: "none" } : undefined}
         className={`relative w-full flex-1 ${
           isPinned ? "h-[30vh] min-h-[200px] max-h-[245px]" : "min-h-[210px]"
         } lg:h-auto lg:min-h-[300px] lg:max-h-none rounded-lg bg-[#0A0A0D]/38 border border-white/[0.09] overflow-hidden flex items-center justify-center select-none ${
-          mode === "split" && hasImage ? "cursor-ew-resize" : ""
+          mode === "split" && hasImage ? "cursor-ew-resize touch-none" : ""
         }`}
       >
         {!hasImage ? (
@@ -652,6 +670,7 @@ export default function ComparisonSlider({
                   splitPos={splitPos}
                   hold={isHoldingBefore}
                   simulateLogInput={simulateLogInput}
+                  previewRef={activeGLRef}
                   onError={onVideoError}
                   className="w-full h-full object-contain pointer-events-none"
                 />
@@ -664,6 +683,7 @@ export default function ComparisonSlider({
                   hold={isHoldingBefore}
                   simulateLogInput={simulateLogInput}
                   maxSide={previewMaxDim}
+                  previewRef={activeGLRef}
                   onError={onWebGLPhotoError}
                   className="w-full h-full object-contain pointer-events-none"
                 />
@@ -671,15 +691,18 @@ export default function ComparisonSlider({
 
               {mode === "split" && !isHoldingBefore && (
                 <div
-                  className="absolute top-0 bottom-0 w-0.5 bg-[#E2E4E9] shadow-[0_0_8px_rgba(0,0,0,0.8)] pointer-events-none"
-                  style={{ left: `${splitPos}%` }}
+                  ref={splitLineWrapperRef}
+                  className="pointer-events-none absolute inset-0 overflow-visible touch-none select-none"
+                  style={{ transform: `translate3d(${splitPos}%, 0, 0)` }}
                 >
-                  <div
-                    className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-[#1E1E24] border border-[#E2E4E9] flex items-center justify-center shadow-lg transition-transform duration-100 ${
-                      isDragging ? "scale-110" : "scale-100"
-                    }`}
-                  >
-                    <MoveHorizontal className="w-3.5 h-3.5 text-[#E2E4E9]" />
+                  <div className="absolute top-0 bottom-0 left-0 w-0.5 -translate-x-1/2 bg-[#E2E4E9] shadow-[0_0_8px_rgba(0,0,0,0.8)]">
+                    <div
+                      ref={splitHandleRef}
+                      className="absolute top-1/2 left-1/2 w-7 h-7 rounded-full bg-[#1E1E24] border border-[#E2E4E9] flex items-center justify-center shadow-lg transition-transform duration-100"
+                      style={{ transform: "translate(-50%, -50%) scale(1)" }}
+                    >
+                      <MoveHorizontal className="w-3.5 h-3.5 text-[#E2E4E9]" />
+                    </div>
                   </div>
                 </div>
               )}
@@ -704,7 +727,7 @@ export default function ComparisonSlider({
                 alt="Before"
                 className="w-full h-full max-h-[360px] object-contain"
               />
-              <span className="absolute top-2 left-2 bg-[#151519]/90 backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#9CA3AF] border border-white/[0.08]">
+              <span className="absolute top-2 left-2 bg-[#151519]/90 lg:backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#9CA3AF] border border-white/[0.08]">
                 BEFORE
               </span>
             </div>
@@ -722,7 +745,7 @@ export default function ComparisonSlider({
                   className="w-full h-full max-h-[360px] object-contain"
                 />
               )}
-              <span className="absolute top-2 right-2 bg-[#1E1E24]/90 backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#E2E4E9] border border-white/15">
+              <span className="absolute top-2 right-2 bg-[#1E1E24]/90 lg:backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#E2E4E9] border border-white/15">
                 {isHoldingBefore ? "BEFORE (PEEK)" : "AFTER"}
               </span>
             </div>
@@ -742,7 +765,7 @@ export default function ComparisonSlider({
                 className="w-full h-full max-h-[360px] object-contain rounded"
               />
             )}
-            <span className="absolute top-3 right-3 bg-[#1E1E24]/90 backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2.5 py-0.5 rounded text-[#E2E4E9] border border-white/15">
+            <span className="absolute top-3 right-3 bg-[#1E1E24]/90 lg:backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2.5 py-0.5 rounded text-[#E2E4E9] border border-white/15">
               {isHoldingBefore ? "BEFORE (PEEK)" : "GRADED RESULT"}
             </span>
           </div>
@@ -768,6 +791,7 @@ export default function ComparisonSlider({
 
               {/* Layer 2: Original Before Image (Clipped to left side, or 100% when holding before) */}
               <div
+                ref={cpuClipRef}
                 className="absolute inset-0 flex items-center justify-center overflow-hidden pointer-events-none"
                 style={{
                   clipPath: `inset(0 ${isHoldingBefore ? 0 : 100 - splitPos}% 0 0)`,
@@ -783,25 +807,28 @@ export default function ComparisonSlider({
               {/* Divider Line & Handle */}
               {!isHoldingBefore && (
                 <div
-                  className="absolute top-0 bottom-0 w-0.5 bg-[#E2E4E9] shadow-[0_0_8px_rgba(0,0,0,0.8)] pointer-events-none"
-                  style={{ left: `${splitPos}%` }}
+                  ref={splitLineWrapperRef}
+                  className="pointer-events-none absolute inset-0 overflow-visible touch-none select-none"
+                  style={{ transform: `translate3d(${splitPos}%, 0, 0)` }}
                 >
-                  <div
-                    className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-[#1E1E24] border border-[#E2E4E9] flex items-center justify-center shadow-lg transition-transform duration-100 ${
-                      isDragging ? "scale-110" : "scale-100"
-                    }`}
-                  >
-                    <MoveHorizontal className="w-3.5 h-3.5 text-[#E2E4E9]" />
+                  <div className="absolute top-0 bottom-0 left-0 w-0.5 -translate-x-1/2 bg-[#E2E4E9] shadow-[0_0_8px_rgba(0,0,0,0.8)]">
+                    <div
+                      ref={splitHandleRef}
+                      className="absolute top-1/2 left-1/2 w-7 h-7 rounded-full bg-[#1E1E24] border border-[#E2E4E9] flex items-center justify-center shadow-lg transition-transform duration-100"
+                      style={{ transform: "translate(-50%, -50%) scale(1)" }}
+                    >
+                      <MoveHorizontal className="w-3.5 h-3.5 text-[#E2E4E9]" />
+                    </div>
                   </div>
                 </div>
               )}
 
               {/* Corner Badges */}
-              <span className="absolute top-2.5 left-2.5 bg-[#151519]/90 backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#9CA3AF] border border-white/[0.08] pointer-events-none">
+              <span className="absolute top-2.5 left-2.5 bg-[#151519]/90 lg:backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#9CA3AF] border border-white/[0.08] pointer-events-none">
                 {isHoldingBefore ? "BEFORE (HOLD PEEK)" : "BEFORE"}
               </span>
               {!isHoldingBefore && (
-                <span className="absolute top-2.5 right-2.5 bg-[#1E1E24]/90 backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#E2E4E9] border border-white/15 pointer-events-none">
+                <span className="absolute top-2.5 right-2.5 bg-[#1E1E24]/90 lg:backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#E2E4E9] border border-white/15 pointer-events-none">
                   GRADED
                 </span>
               )}

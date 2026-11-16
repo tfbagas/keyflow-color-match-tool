@@ -38,6 +38,7 @@ export default function ImageGLCanvas({
   hold = false,
   simulateLogInput = false,
   maxSide = 0,
+  previewRef = null,
   onError,
   className = "",
 }) {
@@ -219,6 +220,19 @@ export default function ImageGLCanvas({
     };
     scheduleDrawRef.current = scheduleDraw;
 
+    if (previewRef) {
+      previewRef.current = {
+        setParams: (nextParams) => {
+          stateRef.current.params = nextParams;
+          scheduleDraw();
+        },
+        setSplitPos: (nextSplit) => {
+          stateRef.current.splitPos = nextSplit;
+          scheduleDraw();
+        },
+      };
+    }
+
     const iw = imageEl.naturalWidth || imageEl.width || 0;
     const ih = imageEl.naturalHeight || imageEl.height || 0;
     if (iw > 0 && ih > 0) {
@@ -290,6 +304,7 @@ export default function ImageGLCanvas({
     return () => {
       disposed = true;
       scheduleDrawRef.current = () => {};
+      if (previewRef) previewRef.current = null;
       if (pendingDrawRaf) cancelAnimationFrame(pendingDrawRaf);
       ro.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);

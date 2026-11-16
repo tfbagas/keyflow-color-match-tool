@@ -21,10 +21,48 @@ export default function ParameterControl({
   const draggingRef = useRef(false);
   const rafRef = useRef(0);
   const pendingValRef = useRef(null);
+  const inputRef = useRef(null);
+  const fillRef = useRef(null);
+  const thumbRef = useRef(null);
+  const readoutRef = useRef(null);
   const onChangeRef = useRef(onChange);
   const onDragChangeRef = useRef(onDragChange);
   onChangeRef.current = onChange;
   onDragChangeRef.current = onDragChange;
+
+  const range = max - min || 1;
+  const defaultPct = Math.max(0, Math.min(100, ((defaultValue - min) / range) * 100));
+
+  const formatReadout = (v) =>
+    v >= 0 && min < 0
+      ? `+${v.toFixed(2)}${valueSuffix}`
+      : `${v.toFixed(2)}${valueSuffix}`;
+
+  const syncDomVisuals = (v) => {
+    const pct = Math.max(0, Math.min(100, ((v - min) / range) * 100));
+    const left = isBipolar ? Math.min(pct, defaultPct) : 0;
+    const width = isBipolar ? Math.abs(pct - defaultPct) : pct;
+    if (fillRef.current) {
+      fillRef.current.style.left = `${left}%`;
+      fillRef.current.style.width = `${width}%`;
+    }
+    if (thumbRef.current) {
+      thumbRef.current.style.left = `${pct}%`;
+    }
+    if (readoutRef.current) {
+      readoutRef.current.textContent = formatReadout(v);
+    }
+  };
+
+  useEffect(() => {
+    if (!draggingRef.current) {
+      if (inputRef.current) {
+        inputRef.current.value = String(value);
+      }
+      syncDomVisuals(value);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, min, max, defaultValue, isBipolar, valueSuffix]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -103,7 +141,6 @@ export default function ParameterControl({
   const effectiveStep = shiftHeld ? 0.01 : step;
 
   const clamp = (val) => Math.max(min, Math.min(max, val));
-  const range = max - min || 1;
 
   const handleSliderChange = (e) => {
     let nextVal = parseFloat(e.target.value);
@@ -112,6 +149,8 @@ export default function ParameterControl({
     if (isBipolar && Math.abs(nextVal - defaultValue) <= range * 0.016) {
       nextVal = defaultValue;
     }
+
+    syncDomVisuals(nextVal);
 
     if (draggingRef.current) {
       pendingValRef.current = nextVal;
@@ -140,16 +179,12 @@ export default function ParameterControl({
   };
 
   const valPct = Math.max(0, Math.min(100, ((value - min) / range) * 100));
-  const defaultPct = Math.max(0, Math.min(100, ((defaultValue - min) / range) * 100));
-
   const isModified = Math.abs(value - defaultValue) > 0.004;
   const isActive = isHovered || isDragging;
 
-  // Calculate active fill start and width
   const fillLeft = isBipolar ? Math.min(valPct, defaultPct) : 0;
   const fillWidth = isBipolar ? Math.abs(valPct - defaultPct) : valPct;
 
-  // Track background style (micro-chroma gradient for temp and tint)
   let trackBgStyle = { backgroundColor: "rgba(10, 10, 13, 0.45)" };
   if (paramKey === "temp") {
     trackBgStyle = {
@@ -204,6 +239,7 @@ export default function ParameterControl({
         >
           {/* Active Fill Bar (no transition on left/width for 0-lag 60fps drag) */}
           <div
+            ref={fillRef}
             className={`absolute top-0 bottom-0 transition-colors duration-150 ${
               isDragging
                 ? "bg-white"
@@ -226,8 +262,9 @@ export default function ParameterControl({
           style={{ left: `calc(${defaultPct}% - 0.75px)` }}
         />
 
-        {/* Tactile Vertical Bar Thumb: morphs thicker + monochrome glass glow on drag, springs back cleanly; left stays instant for 0 lag */}
+        {/* Tactile Vertical Bar Thumb */}
         <div
+          ref={thumbRef}
           className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full ring-2 ring-[#0E0E12]/90 pointer-events-none z-20 transition-[width,height,box-shadow,background-color] duration-200 ${
             isDragging
               ? "w-2 h-5 bg-white shadow-[0_0_14px_rgba(255,255,255,0.58),0_0_0_3px_rgba(255,255,255,0.16)]"
@@ -243,11 +280,12 @@ export default function ParameterControl({
 
         {/* Native Range Input Overlay for Full Mouse/Touch Accessibility */}
         <input
+          ref={inputRef}
           type="range"
           min={min}
           max={max}
           step={effectiveStep}
-          value={value}
+          defaultValue={value}
           onChange={handleSliderChange}
           onPointerDown={(e) => {
             startDrag();
@@ -263,7 +301,7 @@ export default function ParameterControl({
           onTouchCancel={endDrag}
           onDoubleClick={handleReset}
           aria-label={label}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-30 m-0"
+          className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-30 m-0 touch-none"
         />
       </div>
 
@@ -278,10 +316,11 @@ export default function ParameterControl({
             : "border-white/[0.09]"
         }`}
       >
-        <span className="w-13 text-right px-1.5 py-1 text-[11px] font-mono tabular-nums text-[#E2E4E9]">
-          {value >= 0 && min < 0
-            ? `+${value.toFixed(2)}${valueSuffix}`
-            : `${value.toFixed(2)}${valueSuffix}`}
+        <span
+          ref={readoutRef}
+          className="w-13 text-right px-1.5 py-1 text-[11px] font-mono tabular-nums text-[#E2E4E9]"
+        >
+          {formatReadout(value)}
         </span>
         <div className="flex flex-col border-l border-white/[0.08]">
           <button

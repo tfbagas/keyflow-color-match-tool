@@ -39,6 +39,7 @@ export default function VideoGLCanvas({
   hold = false,
   simulateLogInput = false,
   maxSide = 0,
+  previewRef = null,
   onError,
   className = "",
 }) {
@@ -301,6 +302,19 @@ export default function VideoGLCanvas({
     };
     scheduleDrawRef.current = scheduleDraw;
 
+    if (previewRef) {
+      previewRef.current = {
+        setParams: (nextParams) => {
+          stateRef.current.params = nextParams;
+          scheduleDraw();
+        },
+        setSplitPos: (nextSplit) => {
+          stateRef.current.splitPos = nextSplit;
+          scheduleDraw();
+        },
+      };
+    }
+
     // Upload static photo texture once (downscaled if larger than GPU / preview texture cap).
     if (!videoEl && imageEl) {
       const iw = imageEl.naturalWidth || imageEl.width || 0;
@@ -373,8 +387,9 @@ export default function VideoGLCanvas({
 
     const useVfc = videoEl && typeof videoEl.requestVideoFrameCallback === "function";
     const loopVfc = (_now, metadata) => {
-      if (disposed) return;
-      if (!document.hidden && !videoEl.paused && !videoEl.ended) {
+      vfcId = 0;
+      if (disposed || videoEl.paused || videoEl.ended) return;
+      if (!document.hidden) {
         const pf = metadata?.presentedFrames;
         if (pf === undefined || pf !== lastPresentedFrames) {
           if (pf !== undefined) lastPresentedFrames = pf;
@@ -390,8 +405,9 @@ export default function VideoGLCanvas({
     };
 
     const loopRaf = () => {
-      if (disposed) return;
-      if (!document.hidden && !videoEl.paused && !videoEl.ended) {
+      rafId = 0;
+      if (disposed || videoEl.paused || videoEl.ended) return;
+      if (!document.hidden) {
         if (videoEl.currentTime !== lastUploadedTime) {
           needsFrameUpload = true;
           if (pendingDrawRaf) {
@@ -404,6 +420,34 @@ export default function VideoGLCanvas({
       rafId = requestAnimationFrame(loopRaf);
     };
 
+    const stopLoop = () => {
+      if (vfcId && videoEl?.cancelVideoFrameCallback) {
+        videoEl.cancelVideoFrameCallback(vfcId);
+      }
+      vfcId = 0;
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+    };
+
+    const startLoop = () => {
+      if (disposed || !videoEl || videoEl.paused || videoEl.ended) return;
+      if (useVfc) {
+        if (!vfcId) vfcId = videoEl.requestVideoFrameCallback(loopVfc);
+      } else {
+        if (!rafId) rafId = requestAnimationFrame(loopRaf);
+      }
+    };
+
+    const onPlay = () => {
+      startLoop();
+    };
+    const onPauseOrEnd = () => {
+      stopLoop();
+      onFrameEvent();
+    };
+
     if (videoEl) {
       if (videoEl.readyState >= 1) {
         allocateVideoTexture();
@@ -412,15 +456,15 @@ export default function VideoGLCanvas({
         needsFrameUpload = true;
         draw(true);
       }
-      if (useVfc) {
-        vfcId = videoEl.requestVideoFrameCallback(loopVfc);
-      } else {
-        rafId = requestAnimationFrame(loopRaf);
+      if (!videoEl.paused && !videoEl.ended) {
+        startLoop();
       }
       videoEl.addEventListener("loadedmetadata", onMeta);
       videoEl.addEventListener("loadeddata", onFrameEvent);
       videoEl.addEventListener("seeked", onFrameEvent);
-      videoEl.addEventListener("pause", onFrameEvent);
+      videoEl.addEventListener("play", onPlay);
+      videoEl.addEventListener("pause", onPauseOrEnd);
+      videoEl.addEventListener("ended", onPauseOrEnd);
     }
 
     const ro = new ResizeObserver(() => {
@@ -442,10 +486,8 @@ export default function VideoGLCanvas({
     return () => {
       disposed = true;
       scheduleDrawRef.current = () => {};
-      if (vfcId && videoEl?.cancelVideoFrameCallback) {
-        videoEl.cancelVideoFrameCallback(vfcId);
-      }
-      if (rafId) cancelAnimationFrame(rafId);
+      if (previewRef) previewRef.current = null;
+      stopLoop();
       if (pendingDrawRaf) cancelAnimationFrame(pendingDrawRaf);
       ro.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);
@@ -453,7 +495,9 @@ export default function VideoGLCanvas({
         videoEl.removeEventListener("loadedmetadata", onMeta);
         videoEl.removeEventListener("loadeddata", onFrameEvent);
         videoEl.removeEventListener("seeked", onFrameEvent);
-        videoEl.removeEventListener("pause", onFrameEvent);
+        videoEl.removeEventListener("play", onPlay);
+        videoEl.removeEventListener("pause", onPauseOrEnd);
+        videoEl.removeEventListener("ended", onPauseOrEnd);
       }
       canvas.removeEventListener("webglcontextlost", onLost);
       try {
