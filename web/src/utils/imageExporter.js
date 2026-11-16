@@ -79,9 +79,13 @@ function renderViaWebGL(source, width, height, params, layout, splitPos, simulat
 
     gl.uniform1i(gl.getUniformLocation(program, "uTexture"), 0);
     gl.uniform1f(
-      gl.getUniformLocation(program, "uMode"),
-      layout === "split" ? 1.0 : 0.0
+      gl.getUniformLocation(program, "u_viewMode"),
+      layout === "split" ? 0.0 : 2.0
     );
+    const uResolution = gl.getUniformLocation(program, "u_resolution");
+    if (uResolution !== null) {
+      gl.uniform2f(uResolution, width, height);
+    }
     gl.uniform1f(
       gl.getUniformLocation(program, "uSplit"),
       Math.max(0, Math.min(1, splitPos / 100))

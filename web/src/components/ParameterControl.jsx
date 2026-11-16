@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ChevronUp, ChevronDown } from "lucide-react";
 
 export default function ParameterControl({
@@ -12,11 +12,19 @@ export default function ParameterControl({
   isBipolar = true,
   valueSuffix = "",
   onChange,
+  onDragChange,
   icon: Icon,
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [shiftHeld, setShiftHeld] = useState(false);
+  const draggingRef = useRef(false);
+  const rafRef = useRef(0);
+  const pendingValRef = useRef(null);
+  const onChangeRef = useRef(onChange);
+  const onDragChangeRef = useRef(onDragChange);
+  onChangeRef.current = onChange;
+  onDragChangeRef.current = onDragChange;
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -36,6 +44,62 @@ export default function ParameterControl({
     };
   }, []);
 
+  const flushPending = () => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    }
+    if (pendingValRef.current !== null) {
+      const next = pendingValRef.current;
+      pendingValRef.current = null;
+      onChangeRef.current(paramKey, next);
+    }
+  };
+
+  const endDrag = () => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    setIsDragging(false);
+    flushPending();
+    onDragChangeRef.current?.(false);
+  };
+
+  const startDrag = () => {
+    if (draggingRef.current) return;
+    draggingRef.current = true;
+    setIsDragging(true);
+    onDragChangeRef.current?.(true);
+  };
+
+  useEffect(() => {
+    if (!isDragging) return undefined;
+    const handleEnd = () => endDrag();
+    window.addEventListener("pointerup", handleEnd);
+    window.addEventListener("pointercancel", handleEnd);
+    window.addEventListener("touchend", handleEnd);
+    window.addEventListener("touchcancel", handleEnd);
+    window.addEventListener("mouseup", handleEnd);
+    return () => {
+      window.removeEventListener("pointerup", handleEnd);
+      window.removeEventListener("pointercancel", handleEnd);
+      window.removeEventListener("touchend", handleEnd);
+      window.removeEventListener("touchcancel", handleEnd);
+      window.removeEventListener("mouseup", handleEnd);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDragging]);
+
+  useEffect(
+    () => () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (draggingRef.current) {
+        draggingRef.current = false;
+        onDragChangeRef.current?.(false);
+      }
+    },
+    []
+  );
+
   const effectiveStep = shiftHeld ? 0.01 : step;
 
   const clamp = (val) => Math.max(min, Math.min(max, val));
@@ -49,7 +113,21 @@ export default function ParameterControl({
       nextVal = defaultValue;
     }
 
-    onChange(paramKey, nextVal);
+    if (draggingRef.current) {
+      pendingValRef.current = nextVal;
+      if (!rafRef.current) {
+        rafRef.current = requestAnimationFrame(() => {
+          rafRef.current = 0;
+          if (pendingValRef.current !== null) {
+            const val = pendingValRef.current;
+            pendingValRef.current = null;
+            onChangeRef.current(paramKey, val);
+          }
+        });
+      }
+    } else {
+      onChangeRef.current(paramKey, nextVal);
+    }
   };
 
   const handleStep = (delta) => {
@@ -89,10 +167,7 @@ export default function ParameterControl({
     <div
       onDoubleClick={handleReset}
       onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => {
-        setIsHovered(false);
-        setIsDragging(false);
-      }}
+      onMouseLeave={() => setIsHovered(false)}
       title="Double-click to reset parameter to default"
       className="flex items-center gap-2.5 py-[3px] px-2 rounded-lg hover:bg-white/[0.035] transition-colors group select-none"
     >
@@ -174,16 +249,18 @@ export default function ParameterControl({
           step={effectiveStep}
           value={value}
           onChange={handleSliderChange}
-          onMouseDown={(e) => {
-            setIsDragging(true);
+          onPointerDown={(e) => {
+            startDrag();
             setShiftHeld(Boolean(e.shiftKey));
           }}
-          onMouseMove={(e) => {
-            if (isDragging) setShiftHeld(Boolean(e.shiftKey));
+          onPointerMove={(e) => {
+            if (draggingRef.current) setShiftHeld(Boolean(e.shiftKey));
           }}
-          onMouseUp={() => setIsDragging(false)}
-          onTouchStart={() => setIsDragging(true)}
-          onTouchEnd={() => setIsDragging(false)}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onTouchStart={startDrag}
+          onTouchEnd={endDrag}
+          onTouchCancel={endDrag}
           onDoubleClick={handleReset}
           aria-label={label}
           className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-30 m-0"

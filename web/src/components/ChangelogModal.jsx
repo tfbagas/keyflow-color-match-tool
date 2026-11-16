@@ -14,9 +14,21 @@ import KeyflowLogo from "./KeyflowLogo";
 
 export const CHANGELOG_HISTORY = [
   {
-    version: "v0.8.0 Beta",
-    subtitle: "Latest: Color Match Engine v2, RAW & Video Support, Mobile Sticky Preview, Pro Scopes & Multi-Format Export",
+    version: "v0.8.1 Beta",
+    subtitle: "Latest: Mobile 60fps Video & Pro Scopes Performance Hotfix",
     isLatest: true,
+    icon: Sparkles,
+    items: [
+      "Optimized Pro Scopes (Luma/RGB, RGB Parade, Vectorscope) by locking 2D canvas backing to 1x DPR, deferring calculations during slider drags, downsampling to 96x54 integer math, throttling video scope updates to 6fps, and adding a collapsible toggle.",
+      "Streamlined WebGL video playback using requestVideoFrameCallback with single-allocation texSubImage2D uploads and zero-rerender DOM transport scrubber updates.",
+      "Rebuilt Side by Side comparison into a single-pass WebGL shader view using a single media source, eliminating dual-video sync lag on mobile browsers.",
+      "Capped mobile live preview canvas pixel ratio and buffer dimensions with coalesced requestAnimationFrame slider updates while keeping full native resolution for Save Image exports.",
+    ],
+  },
+  {
+    version: "v0.8.0 Beta",
+    subtitle: "Color Match Engine v2, RAW & Video Support, Mobile Sticky Preview, Pro Scopes & Multi-Format Export",
+    isLatest: false,
     icon: Sparkles,
     items: [
       "Rebuilt the color matching engine with dynamic range spread detection for flat and Log-like references, OKLab residual split-toning, soft highlight roll-off, and strict Keyflow-safe GLSL clamping.",
@@ -102,7 +114,7 @@ export const CHANGELOG_HISTORY = [
 
 export function ReleaseHistoryAccordion() {
   const [expandedMap, setExpandedMap] = useState({
-    "v0.8.0 Beta": true,
+    "v0.8.1 Beta": true,
   });
 
   const toggleVersion = (ver) => {
@@ -276,11 +288,11 @@ export default function ChangelogModal({ open, onClose, onViewFullHistory }) {
               className="inline-flex items-center gap-1.5 text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] transition-colors cursor-pointer"
             >
               <History className="w-3.5 h-3.5" />
-              <span>View Full Release History (v0.5 - v0.8.0)</span>
+              <span>View Full Release History (v0.5 - v0.8.1)</span>
             </button>
           ) : (
             <span className="text-[11px] font-mono text-[#9CA3AF]">
-              Build v0.8.0-beta • 100% Client-Side
+              Build v0.8.1-beta • 100% Client-Side
             </span>
           )}
 

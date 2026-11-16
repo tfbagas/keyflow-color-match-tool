@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Check } from "lucide-react";
 
 const WHEEL_SCALE = 0.42;
@@ -46,10 +46,18 @@ export default function ColorSwatchCard({
   rgb = [0.5, 0.5, 0.5],
   onChange,
   onReset,
+  onDragChange,
 }) {
   const [copied, setCopied] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const wheelRef = useRef(null);
+  const draggingRef = useRef(false);
+  const rafRef = useRef(0);
+  const pendingCoordsRef = useRef(null);
+  const onChangeRef = useRef(onChange);
+  const onDragChangeRef = useRef(onDragChange);
+  onChangeRef.current = onChange;
+  onDragChangeRef.current = onDragChange;
 
   const safeRgb =
     Array.isArray(rgb) && rgb.length >= 3 ? rgb : [0.5, 0.5, 0.5];
@@ -66,20 +74,36 @@ export default function ColorSwatchCard({
   const { x: puckX, y: puckY } = rgbToWheelXY(safeRgb);
 
   const updateFromPointer = (clientX, clientY) => {
-    if (!wheelRef.current || typeof onChange !== "function") return;
+    if (!wheelRef.current || typeof onChangeRef.current !== "function") return;
     const rect = wheelRef.current.getBoundingClientRect();
     const radius = rect.width / 2;
     if (radius <= 0) return;
     const dx = (clientX - (rect.left + radius)) / radius;
     const dy = (clientY - (rect.top + radius)) / radius;
     const nextRgb = wheelXYToRgb(dx, dy);
-    onChange(nextRgb);
+    onChangeRef.current(nextRgb);
+  };
+
+  const flushPending = () => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    }
+    if (pendingCoordsRef.current) {
+      const { x, y } = pendingCoordsRef.current;
+      pendingCoordsRef.current = null;
+      updateFromPointer(x, y);
+    }
   };
 
   const handlePointerDown = (e) => {
     if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
-    setIsDragging(true);
+    if (!draggingRef.current) {
+      draggingRef.current = true;
+      setIsDragging(true);
+      onDragChangeRef.current?.(true);
+    }
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
@@ -89,19 +113,43 @@ export default function ColorSwatchCard({
   };
 
   const handlePointerMove = (e) => {
-    if (!isDragging) return;
-    updateFromPointer(e.clientX, e.clientY);
+    if (!draggingRef.current) return;
+    pendingCoordsRef.current = { x: e.clientX, y: e.clientY };
+    if (!rafRef.current) {
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = 0;
+        if (pendingCoordsRef.current) {
+          const { x, y } = pendingCoordsRef.current;
+          pendingCoordsRef.current = null;
+          updateFromPointer(x, y);
+        }
+      });
+    }
   };
 
   const handlePointerUp = (e) => {
-    if (!isDragging) return;
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
     setIsDragging(false);
+    flushPending();
+    onDragChangeRef.current?.(false);
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
       // Ignore
     }
   };
+
+  useEffect(
+    () => () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (draggingRef.current) {
+        draggingRef.current = false;
+        onDragChangeRef.current?.(false);
+      }
+    },
+    []
+  );
 
   const handleDoubleClick = () => {
     if (typeof onReset === "function") {

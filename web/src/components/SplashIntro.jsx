@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react";
 import KeyflowLogo from "./KeyflowLogo";
 
 /**
- * Architectural Spatial Liquid-Morph Glass Intro (v0.8.0 Beta)
+ * Architectural Spatial Liquid-Morph Glass Intro (v0.8.1 Beta)
  * - #0A0A0D obsidian calibration stage with 1px Rec. 709 grid & 0.0 -> 1.0 scale
  * - Static backdrop-filter: blur(20px) monolith + organic liquid-morph membrane behind
  * - 3 floating peripheral telemetry pills + cursor-tracking specular sheen (GPU transform only)
@@ -197,7 +197,7 @@ export default function SplashIntro({ onStartExit, onComplete }) {
               style={{ animationDelay: "100ms" }}
             >
               <span className="w-1.5 h-1.5 rounded-full bg-[#6EE7B7]" />
-              <span>v0.8.0 BETA</span>
+              <span>v0.8.1 BETA</span>
             </div>
 
             <h1

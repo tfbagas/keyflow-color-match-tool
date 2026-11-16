@@ -8,15 +8,15 @@ function fmt(t) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-// Minimalist achromatic transport bar bound to the target <video>.
+// Minimalist achromatic transport bar bound to the target <video> (zero React re-renders during playback).
 export default function VideoTransportBar({ videoEl, resolution }) {
   const [playing, setPlaying] = useState(false);
-  const [duration, setDuration] = useState(0);
   const [loop, setLoop] = useState(true);
   const [muted, setMuted] = useState(true);
-  const [scrubbing, setScrubbing] = useState(false);
   const rangeRef = useRef(null);
   const timeTextRef = useRef(null);
+  const scrubbingRef = useRef(false);
+  const durationRef = useRef(0);
   const lastUiSyncRef = useRef(0);
 
   useEffect(() => {
@@ -25,15 +25,23 @@ export default function VideoTransportBar({ videoEl, resolution }) {
     videoEl.muted = true;
     setLoop(true);
     setMuted(true);
-    const dur = videoEl.duration || 0;
-    setDuration(dur);
     setPlaying(!videoEl.paused);
 
     const syncDomTime = (t, d) => {
-      if (rangeRef.current) rangeRef.current.value = String(Math.min(t, d || 0));
-      if (timeTextRef.current) timeTextRef.current.textContent = `${fmt(t)} / ${fmt(d)}`;
+      const safeDur = Number.isFinite(d) && d > 0 ? d : 0;
+      durationRef.current = safeDur;
+      if (rangeRef.current) {
+        rangeRef.current.max = String(safeDur);
+        if (!scrubbingRef.current) {
+          rangeRef.current.value = String(Math.min(t, safeDur));
+        }
+      }
+      if (timeTextRef.current) {
+        timeTextRef.current.textContent = `${fmt(t)} / ${fmt(safeDur)}`;
+      }
     };
-    syncDomTime(videoEl.currentTime || 0, dur);
+
+    syncDomTime(videoEl.currentTime || 0, videoEl.duration || 0);
 
     const onPlay = () => setPlaying(true);
     const onPause = () => {
@@ -41,16 +49,16 @@ export default function VideoTransportBar({ videoEl, resolution }) {
       syncDomTime(videoEl.currentTime || 0, videoEl.duration || 0);
     };
     const onMeta = () => {
-      const d = videoEl.duration || 0;
-      setDuration(d);
-      syncDomTime(videoEl.currentTime || 0, d);
+      syncDomTime(videoEl.currentTime || 0, videoEl.duration || 0);
     };
     const onTime = () => {
+      if (scrubbingRef.current) return;
       const now = performance.now();
       if (now - lastUiSyncRef.current < 150) return;
       lastUiSyncRef.current = now;
       syncDomTime(videoEl.currentTime || 0, videoEl.duration || 0);
     };
+
     videoEl.addEventListener("play", onPlay);
     videoEl.addEventListener("pause", onPause);
     videoEl.addEventListener("durationchange", onMeta);
@@ -72,6 +80,10 @@ export default function VideoTransportBar({ videoEl, resolution }) {
     else videoEl.pause();
   };
 
+  const endScrub = () => {
+    scrubbingRef.current = false;
+  };
+
   const btn =
     "m3-btn-morph inline-flex items-center justify-center w-7 h-7 rounded-lg border cursor-pointer";
 
@@ -90,30 +102,34 @@ export default function VideoTransportBar({ videoEl, resolution }) {
         ref={rangeRef}
         type="range"
         min={0}
-        max={duration || 0}
+        max={0}
         step={0.01}
         defaultValue={0}
-        onMouseDown={() => setScrubbing(true)}
-        onMouseUp={() => setScrubbing(false)}
-        onTouchStart={() => setScrubbing(true)}
-        onTouchEnd={() => setScrubbing(false)}
+        onPointerDown={() => {
+          scrubbingRef.current = true;
+        }}
+        onPointerUp={endScrub}
+        onPointerCancel={endScrub}
+        onTouchStart={() => {
+          scrubbingRef.current = true;
+        }}
+        onTouchEnd={endScrub}
         onChange={(e) => {
           const v = Number(e.target.value);
           videoEl.currentTime = v;
           if (timeTextRef.current) {
-            timeTextRef.current.textContent = `${fmt(v)} / ${fmt(duration)}`;
+            timeTextRef.current.textContent = `${fmt(v)} / ${fmt(durationRef.current)}`;
           }
         }}
         aria-label="Video timeline"
         className="flex-1 min-w-[60px] h-1 accent-[#E2E4E9] cursor-pointer"
-        data-scrubbing={scrubbing}
       />
 
       <span
         ref={timeTextRef}
         className="text-[11px] font-mono text-[#9CA3AF] tabular-nums whitespace-nowrap"
       >
-        00:00 / {fmt(duration)}
+        00:00 / 00:00
       </span>
 
       <button

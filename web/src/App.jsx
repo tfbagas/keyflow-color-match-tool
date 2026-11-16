@@ -72,8 +72,8 @@ const PARAM_CONTROLS = [
 ];
 
 const CALIBRATION_STORAGE_KEY = "kf_export_calibration_v1";
-const SEEN_UPDATE_STORAGE_KEY = "kf_seen_update_v080";
-const SPLASH_SESSION_KEY = "kf_splash_seen_v080";
+const SEEN_UPDATE_STORAGE_KEY = "kf_seen_update_v081";
+const SPLASH_SESSION_KEY = "kf_splash_seen_v081";
 const DEFAULT_CALIBRATION = {
   toneScale: 1.0,
   wbScale: 1.0,
@@ -261,8 +261,21 @@ export default function App() {
   const [isSavingFrame, setIsSavingFrame] = useState(false);
   const [simulateLogInput, setSimulateLogInput] = useState(false);
   const [scopeImageData, setScopeImageData] = useState(null);
+  const [isScopesCollapsed, setIsScopesCollapsed] = useState(false);
+  const [isScopeFrozen, setIsScopeFrozen] = useState(false);
+  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+  const [webglPhotoError, setWebglPhotoError] = useState(false);
   const [lastMatchedParams, setLastMatchedParams] = useState(null);
   const [reloadedFeedback, setReloadedFeedback] = useState(false);
+
+  const isScopesCollapsedRef = useRef(false);
+  isScopesCollapsedRef.current = isScopesCollapsed;
+  const isControlDraggingRef = useRef(false);
+  const isScopeFrozenRef = useRef(false);
+  isScopeFrozenRef.current = isScopeFrozen;
+  const scopeIdleTimerRef = useRef(null);
+  const scopePhotoSrcRef = useRef(null);
+  const refreshScopesOnceRef = useRef(() => {});
 
   const effectiveParams = useMemo(
     () => scaleParamsByStrength(gradingParams, matchStrength),
@@ -678,6 +691,19 @@ export default function App() {
     if (r && r.imgElement) triggerReferenceAnalysis(r.imgElement);
   };
 
+  const replaceReference = useCallback((next) => {
+    const prev = referenceRef.current;
+    if (prev && prev.objectUrl) {
+      try {
+        URL.revokeObjectURL(prev.objectUrl);
+      } catch {
+        // ignore revoke errors
+      }
+    }
+    referenceRef.current = next;
+    setReferenceImage(next);
+  }, []);
+
   const replaceTarget = useCallback((next) => {
     const prev = targetRef.current;
     if (prev && prev.kind === "video") {
@@ -689,6 +715,12 @@ export default function App() {
         // ignore teardown errors
       }
       if (prev.videoUrl) URL.revokeObjectURL(prev.videoUrl);
+    } else if (prev && prev.objectUrl) {
+      try {
+        URL.revokeObjectURL(prev.objectUrl);
+      } catch {
+        // ignore revoke errors
+      }
     }
     targetRef.current = next;
     setTargetImage(next);
@@ -871,68 +903,62 @@ export default function App() {
         return;
       }
 
-      const reader = new FileReader();
-      reader.onerror = () => {
-        setSlotError(type, "Failed to read image file.");
-        setStatusText("Read Error");
+      const objectUrl = URL.createObjectURL(prepared.blob);
+      const img = new Image();
+
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        setSlotError(
+          type,
+          `This ${meta.label} image could not be decoded by the browser. Try exporting it as JPG or PNG.`
+        );
+        setStatusText("Invalid Image");
       };
 
-      reader.onload = (e) => {
-        const dataUrl = e.target.result;
-        const img = new Image();
+      img.onload = () => {
+        if (img.naturalWidth < 1 || img.naturalHeight < 1) {
+          URL.revokeObjectURL(objectUrl);
+          setSlotError(type, "Invalid image dimensions.");
+          return;
+        }
 
-        img.onerror = () => {
-          setSlotError(
-            type,
-            `This ${meta.label} image could not be decoded by the browser. Try exporting it as JPG or PNG.`
+        const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+        const rawBaseName = file.name.replace(/\.[^/.]+$/, "");
+        const baseName = sanitizeMetadataText(rawBaseName, "Reference", 48);
+
+        const info = {
+          kind: "image",
+          name: sanitizeMetadataText(file.name, "image.png", 80),
+          baseName,
+          width: img.naturalWidth,
+          height: img.naturalHeight,
+          ext: meta.ext.toUpperCase(),
+          formatBadge: meta.label,
+          sizeMB,
+          dataUrl: objectUrl,
+          objectUrl,
+          imgElement: img,
+        };
+
+        if (type === "reference") {
+          setImportedLook(null);
+          replaceReference(info);
+          setPresetName(baseName.slice(0, 28));
+          setDescription(
+            `Grading preset matched from reference '${baseName}'.`
           );
-          setStatusText("Invalid Image");
-        };
-
-        img.onload = () => {
-          if (img.naturalWidth < 1 || img.naturalHeight < 1) {
-            setSlotError(type, "Invalid image dimensions.");
-            return;
-          }
-
-          const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-          const rawBaseName = file.name.replace(/\.[^/.]+$/, "");
-          const baseName = sanitizeMetadataText(rawBaseName, "Reference", 48);
-
-          const info = {
-            kind: "image",
-            name: sanitizeMetadataText(file.name, "image.png", 80),
-            baseName,
-            width: img.naturalWidth,
-            height: img.naturalHeight,
-            ext: meta.ext.toUpperCase(),
-            formatBadge: meta.label,
-            sizeMB,
-            dataUrl,
-            imgElement: img,
-          };
-
-          if (type === "reference") {
-            setImportedLook(null);
-            setReferenceImage(info);
-            referenceRef.current = info;
-            setPresetName(baseName.slice(0, 28));
-            setDescription(
-              `Grading preset matched from reference '${baseName}'.`
-            );
-            triggerReferenceAnalysis(img);
-          } else {
-            replaceTarget(info);
-          }
-          setStatusText(type === "reference" ? "Analyzing..." : "Target Ready");
-        };
-        img.src = dataUrl;
+          triggerReferenceAnalysis(img);
+        } else {
+          replaceTarget(info);
+        }
+        setStatusText(type === "reference" ? "Analyzing..." : "Target Ready");
       };
-      reader.readAsDataURL(prepared.blob);
+      img.src = objectUrl;
     },
     [
       setSlotError,
       triggerReferenceAnalysis,
+      replaceReference,
       replaceTarget,
       loadVideoFile,
       handleImportPreset,
@@ -1004,6 +1030,71 @@ export default function App() {
     return () => window.removeEventListener("paste", handlePaste);
   }, [activePasteTarget, loadImageFile, setSlotError]);
 
+  const videoEl = targetImage?.kind === "video" ? targetImage.videoEl : null;
+  const activePreviewImgElement = !videoEl
+    ? targetImage?.imgElement || referenceImage?.imgElement || null
+    : null;
+
+  const gradingParamsRef = useRef(effectiveParams);
+  gradingParamsRef.current = effectiveParams;
+  const simulateLogInputRef = useRef(simulateLogInput);
+  simulateLogInputRef.current = simulateLogInput;
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+
+  const getScopeDims = useCallback((sw, sh) => {
+    const isMobile = typeof window !== "undefined" && window.innerWidth < 1024;
+    const maxW = isMobile ? 96 : 128;
+    const maxH = isMobile ? 54 : 72;
+    const scale = Math.min(1, maxW / Math.max(1, sw), maxH / Math.max(1, sh));
+    return {
+      w: Math.max(1, Math.round(sw * scale)),
+      h: Math.max(1, Math.round(sh * scale)),
+    };
+  }, []);
+
+  const refreshPhotoScope = useCallback(() => {
+    if (
+      isScopesCollapsedRef.current ||
+      isScopeFrozenRef.current ||
+      document.hidden ||
+      activeTabRef.current !== "home"
+    ) {
+      return;
+    }
+    const src = scopePhotoSrcRef.current;
+    if (!src) return;
+    const outBuf = new Uint8ClampedArray(src.data.length);
+    simulateGradePixels(
+      src.data,
+      outBuf,
+      gradingParamsRef.current,
+      simulateLogInputRef.current
+    );
+    setScopeImageData({ data: outBuf, width: src.width, height: src.height });
+  }, []);
+
+  // Build tiny <=96x54 (mobile) / <=128x72 (desktop) photo source buffer once per image.
+  useEffect(() => {
+    if (!activePreviewImgElement) {
+      scopePhotoSrcRef.current = null;
+      if (!videoEl) setScopeImageData(null);
+      return undefined;
+    }
+    const sw = activePreviewImgElement.naturalWidth || 1;
+    const sh = activePreviewImgElement.naturalHeight || 1;
+    const { w, h } = getScopeDims(sw, sh);
+    const oc = document.createElement("canvas");
+    oc.width = w;
+    oc.height = h;
+    const octx = oc.getContext("2d", { willReadFrequently: true });
+    octx.drawImage(activePreviewImgElement, 0, 0, w, h);
+    scopePhotoSrcRef.current = octx.getImageData(0, 0, w, h);
+    refreshPhotoScope();
+    return undefined;
+  }, [activePreviewImgElement, videoEl, getScopeDims, refreshPhotoScope]);
+
+  // CPU 2D fallback ONLY when WebGL is unavailable for photo preview.
   const updatePreviewSimulation = useCallback(() => {
     const srcData = previewSourceImageDataRef.current;
     const canvas = gradedCanvasRef.current;
@@ -1019,49 +1110,25 @@ export default function App() {
     );
     ctx.putImageData(targetImgData, 0, 0);
     canvas.dataset.rendered = "true";
-
-    // Downsample to <=160x90 for fast ProScopes telemetry
-    const sw = Math.min(160, targetImgData.width);
-    const sh = Math.min(90, Math.max(1, Math.round((sw * targetImgData.height) / targetImgData.width)));
-    const scopeBuf = new Uint8ClampedArray(sw * sh * 4);
-    for (let y = 0; y < sh; y++) {
-      const sy = Math.min(targetImgData.height - 1, Math.floor((y / sh) * targetImgData.height));
-      for (let x = 0; x < sw; x++) {
-        const sx = Math.min(targetImgData.width - 1, Math.floor((x / sw) * targetImgData.width));
-        const sIdx = (sy * targetImgData.width + sx) * 4;
-        const dIdx = (y * sw + x) * 4;
-        scopeBuf[dIdx] = targetImgData.data[sIdx];
-        scopeBuf[dIdx + 1] = targetImgData.data[sIdx + 1];
-        scopeBuf[dIdx + 2] = targetImgData.data[sIdx + 2];
-        scopeBuf[dIdx + 3] = targetImgData.data[sIdx + 3];
-      }
-    }
-    setScopeImageData({ data: scopeBuf, width: sw, height: sh });
   }, [effectiveParams, simulateLogInput]);
 
   useEffect(() => {
-    const isVideoTarget = targetImage?.kind === "video";
-    const activeImg = isVideoTarget
-      ? null
-      : targetImage?.imgElement || referenceImage?.imgElement;
-    const canvas = gradedCanvasRef.current;
-
-    if (isVideoTarget) {
-      // Video target is rendered by the WebGL pipeline; the CPU canvas is unused.
+    if (!webglPhotoError || videoEl) {
       previewSourceImageDataRef.current = null;
       lastRenderedImgRef.current = null;
       return undefined;
     }
 
+    const activeImg = activePreviewImgElement;
+    const canvas = gradedCanvasRef.current;
     if (!activeImg || !canvas) {
       previewSourceImageDataRef.current = null;
       lastRenderedImgRef.current = null;
-      setScopeImageData(null);
-      return;
+      return undefined;
     }
 
     const viewportPreviewCap =
-      typeof window !== "undefined" && window.innerWidth < 1024 ? 1280 : 1920;
+      typeof window !== "undefined" && window.innerWidth < 1024 ? 960 : 1600;
     const effectivePreviewCap = Math.min(previewMaxDim, viewportPreviewCap);
     const scale = Math.min(
       1,
@@ -1101,8 +1168,9 @@ export default function App() {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
   }, [
-    targetImage,
-    referenceImage,
+    webglPhotoError,
+    videoEl,
+    activePreviewImgElement,
     previewMaxDim,
     previewMode,
     calibrationTick,
@@ -1116,24 +1184,31 @@ export default function App() {
     }
   }, [targetImage]);
 
-  // Live scope telemetry from the current video frame (graded through the same equation).
-  const videoEl = targetImage?.kind === "video" ? targetImage.videoEl : null;
-  const gradingParamsRef = useRef(effectiveParams);
-  gradingParamsRef.current = effectiveParams;
-  const simulateLogInputRef = useRef(simulateLogInput);
-  simulateLogInputRef.current = simulateLogInput;
+  // Live scope telemetry from the current video frame (throttled to <=6 FPS, 0ms when paused/hidden/collapsed/dragging).
   useEffect(() => {
-    if (!videoEl) return undefined;
+    if (!videoEl) {
+      setIsVideoPlaying(false);
+      refreshScopesOnceRef.current = refreshPhotoScope;
+      return undefined;
+    }
+
     const small = document.createElement("canvas");
     const sctx = small.getContext("2d", { willReadFrequently: true });
     let gradedBuf = null;
+    let intervalId = 0;
 
     const tick = (force = false) => {
-      if (document.hidden || activeTab !== "home") return;
-      if (!force && videoEl.paused) return;
+      if (
+        document.hidden ||
+        activeTabRef.current !== "home" ||
+        isScopesCollapsedRef.current ||
+        isScopeFrozenRef.current
+      ) {
+        return;
+      }
+      if (!force && (videoEl.paused || videoEl.ended)) return;
       if (videoEl.readyState < 2 || !videoEl.videoWidth) return;
-      const w = 160;
-      const h = Math.min(90, Math.max(1, Math.round((w * videoEl.videoHeight) / videoEl.videoWidth)));
+      const { w, h } = getScopeDims(videoEl.videoWidth, videoEl.videoHeight);
       if (small.width !== w || small.height !== h || !gradedBuf || gradedBuf.length !== w * h * 4) {
         small.width = w;
         small.height = h;
@@ -1154,21 +1229,106 @@ export default function App() {
       }
     };
 
-    tick(true);
-    const id = setInterval(() => tick(false), 84);
+    refreshScopesOnceRef.current = () => tick(true);
+
+    const startInterval = () => {
+      if (intervalId || videoEl.paused || videoEl.ended) return;
+      intervalId = setInterval(() => tick(false), 165);
+    };
+    const stopInterval = () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = 0;
+      }
+    };
+
+    const onPlay = () => {
+      setIsVideoPlaying(true);
+      startInterval();
+    };
+    const onPauseOrEnd = () => {
+      setIsVideoPlaying(false);
+      stopInterval();
+      tick(true);
+    };
     const onSeekOrLoad = () => tick(true);
+    const onVisibility = () => {
+      if (document.hidden) {
+        stopInterval();
+      } else if (!videoEl.paused && !videoEl.ended) {
+        startInterval();
+        tick(true);
+      }
+    };
+
+    setIsVideoPlaying(!videoEl.paused && !videoEl.ended);
+    tick(true);
+    startInterval();
+
+    videoEl.addEventListener("play", onPlay);
+    videoEl.addEventListener("pause", onPauseOrEnd);
+    videoEl.addEventListener("ended", onPauseOrEnd);
     videoEl.addEventListener("seeked", onSeekOrLoad);
     videoEl.addEventListener("loadeddata", onSeekOrLoad);
+    document.addEventListener("visibilitychange", onVisibility);
+
     return () => {
-      clearInterval(id);
+      stopInterval();
+      videoEl.removeEventListener("play", onPlay);
+      videoEl.removeEventListener("pause", onPauseOrEnd);
+      videoEl.removeEventListener("ended", onPauseOrEnd);
       videoEl.removeEventListener("seeked", onSeekOrLoad);
       videoEl.removeEventListener("loadeddata", onSeekOrLoad);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [videoEl, activeTab]);
+  }, [videoEl, activeTab, getScopeDims, refreshPhotoScope]);
 
-  // Release any video object URL on unmount.
+  // Freeze ProScopes while dragging sliders/wheels/split-bar; flush once on release or 120ms idle.
+  const handleControlDragChange = useCallback((dragging) => {
+    if (scopeIdleTimerRef.current) {
+      clearTimeout(scopeIdleTimerRef.current);
+      scopeIdleTimerRef.current = null;
+    }
+    if (dragging) {
+      isControlDraggingRef.current = true;
+      isScopeFrozenRef.current = true;
+      setIsScopeFrozen(true);
+    } else {
+      isControlDraggingRef.current = false;
+      isScopeFrozenRef.current = false;
+      setIsScopeFrozen(false);
+      refreshScopesOnceRef.current();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isControlDraggingRef.current) {
+      if (!isScopeFrozenRef.current) {
+        isScopeFrozenRef.current = true;
+        setIsScopeFrozen(true);
+      }
+      if (scopeIdleTimerRef.current) clearTimeout(scopeIdleTimerRef.current);
+      scopeIdleTimerRef.current = setTimeout(() => {
+        scopeIdleTimerRef.current = null;
+        isScopeFrozenRef.current = false;
+        setIsScopeFrozen(false);
+        refreshScopesOnceRef.current();
+      }, 120);
+    } else {
+      refreshScopesOnceRef.current();
+    }
+  }, [effectiveParams, simulateLogInput]);
+
+  useEffect(() => {
+    if (!isScopesCollapsed) {
+      refreshScopesOnceRef.current();
+    }
+  }, [isScopesCollapsed]);
+
+  // Release any media object URLs and timers on unmount.
   useEffect(
     () => () => {
+      if (scopeIdleTimerRef.current) clearTimeout(scopeIdleTimerRef.current);
       const t = targetRef.current;
       if (t && t.kind === "video") {
         try {
@@ -1177,6 +1337,12 @@ export default function App() {
           // ignore
         }
         if (t.videoUrl) URL.revokeObjectURL(t.videoUrl);
+      } else if (t && t.objectUrl) {
+        URL.revokeObjectURL(t.objectUrl);
+      }
+      const r = referenceRef.current;
+      if (r && r.objectUrl) {
+        URL.revokeObjectURL(r.objectUrl);
       }
     },
     []
@@ -1479,7 +1645,7 @@ export default function App() {
           workspacePhase === "morphing-in" ? "m3-morph-topbar" : ""
         }`}
       >
-        {/* Left: Achromatic Keyflow Logo + Brand Title + v0.8.0 Beta Badge + Support Capsule */}
+        {/* Left: Achromatic Keyflow Logo + Brand Title + v0.8.1 Beta Badge + Support Capsule */}
         <div className="flex flex-wrap items-center gap-2">
           <KeyflowLogo size={26} />
           <div className="flex items-center gap-1.5 sm:gap-2">
@@ -1489,13 +1655,13 @@ export default function App() {
             <button
               type="button"
               onClick={handleOpenChangelog}
-              title="View What's New in v0.8.0 Beta"
+              title="View What's New in v0.8.1 Beta"
               className="m3-btn-morph inline-flex items-center gap-1 text-[10px] font-mono px-1.5 sm:px-2 py-0.5 rounded-md bg-white/[0.04] hover:bg-white/[0.09] text-[#E2E4E9] border border-white/[0.09] hover:border-white/25 cursor-pointer"
             >
               {hasUnreadUpdate && (
                 <span className="w-1.5 h-1.5 rounded-full bg-[#6EE7B7] animate-pulse" />
               )}
-              <span>v0.8.0 Beta</span>
+              <span>v0.8.1 Beta</span>
             </button>
             <a
               href="https://sociabuzz.com/tfbagas/support"
@@ -1605,7 +1771,7 @@ export default function App() {
                     imageInfo={referenceImage}
                     onSelectImage={(file) => loadImageFile(file, "reference")}
                     onClearImage={() => {
-                      setReferenceImage(null);
+                      replaceReference(null);
                       if (!importedLook) setLastMatchedParams(null);
                       setReferenceError("");
                       setStatusText("Ready");
@@ -1684,13 +1850,18 @@ export default function App() {
               >
                 <ComparisonSlider
                   originalImage={activePreviewImageUrl}
+                  imageEl={activePreviewImgElement}
                   gradedCanvasRef={gradedCanvasRef}
+                  useWebGLPhoto={!webglPhotoError}
+                  previewMaxDim={previewMaxDim}
+                  onWebGLPhotoError={() => setWebglPhotoError(true)}
                   hasImage={Boolean(activePreviewImageUrl) || Boolean(videoEl)}
                   mode={previewMode}
                   onModeChange={setPreviewMode}
                   videoEl={videoEl}
                   gradingParams={effectiveParams}
                   onVideoError={(msg) => setTargetError(msg)}
+                  onSplitDragChange={handleControlDragChange}
                   isPinned={isPreviewPinned}
                   onTogglePin={() => setIsPreviewPinned((p) => !p)}
                   onSaveImage={handleSaveImage}
@@ -1803,6 +1974,7 @@ export default function App() {
                     isBipolar={false}
                     valueSuffix="%"
                     onChange={(_, val) => setMatchStrength(Math.round(val))}
+                    onDragChange={handleControlDragChange}
                     icon={Gauge}
                   />
                 </div>
@@ -1812,6 +1984,10 @@ export default function App() {
                   <ProScopes
                     imageData={scopeImageData}
                     hasMedia={Boolean(activePreviewImageUrl || videoEl)}
+                    isDragging={isScopeFrozen}
+                    isVideoPlaying={isVideoPlaying}
+                    isCollapsed={isScopesCollapsed}
+                    onToggleCollapse={() => setIsScopesCollapsed((v) => !v)}
                   />
                 </div>
 
@@ -1843,6 +2019,7 @@ export default function App() {
                         defaultValue={DEFAULT_PARAMS[ctrl.key]}
                         isBipolar={ctrl.isBipolar}
                         onChange={handleParamChange}
+                        onDragChange={handleControlDragChange}
                         icon={ctrl.icon}
                       />
                     </div>
@@ -1947,6 +2124,7 @@ export default function App() {
                           ]}
                           onChange={(rgb) => handleWheelChange("lift", rgb)}
                           onReset={() => handleWheelReset("lift")}
+                          onDragChange={handleControlDragChange}
                         />
                         <ColorSwatchCard
                           title="Midtones (Gamma)"
@@ -1957,6 +2135,7 @@ export default function App() {
                           ]}
                           onChange={(rgb) => handleWheelChange("gamma", rgb)}
                           onReset={() => handleWheelReset("gamma")}
+                          onDragChange={handleControlDragChange}
                         />
                         <ColorSwatchCard
                           title="Highs (Gain)"
@@ -1967,6 +2146,7 @@ export default function App() {
                           ]}
                           onChange={(rgb) => handleWheelChange("gain", rgb)}
                           onReset={() => handleWheelReset("gain")}
+                          onDragChange={handleControlDragChange}
                         />
                       </div>
                     </div>
@@ -2194,10 +2374,10 @@ export default function App() {
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-lg font-bold font-display text-[#E2E4E9]">
-                        Color Match for Keyflow V.0.8.0 Beta
+                        Color Match for Keyflow V.0.8.1 Beta
                       </h2>
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.05] text-[#6EE7B7] border border-white/[0.09]">
-                        v0.8.0 Beta
+                        v0.8.1 Beta
                       </span>
                     </div>
                     <p className="text-xs text-[#9CA3AF] mt-0.5">
@@ -2254,7 +2434,7 @@ export default function App() {
                   </h3>
                 </div>
                 <span className="text-[11px] font-mono text-[#9CA3AF]">
-                  v0.5.0 - v0.8.0 Beta
+                  v0.5.0 - v0.8.1 Beta
                 </span>
               </div>
 
@@ -2271,7 +2451,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Interactive "What's New in v0.8.0 Beta" Modal Dialog */}
+      {/* Interactive "What's New in v0.8.1 Beta" Modal Dialog */}
       <ChangelogModal
         open={isChangelogOpen}
         onClose={() => setIsChangelogOpen(false)}

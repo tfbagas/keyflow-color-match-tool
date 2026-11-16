@@ -154,10 +154,22 @@ void main() {
 }
 `;
 
-// uMode: 0 = graded result, 1 = split slider, 2 = side by side
+// Static image vertex shader: flips Y in shader so UNPACK_FLIP_Y_WEBGL=false works
+// consistently across ImageBitmap, HTMLCanvasElement, and HTMLImageElement.
+export const IMAGE_PREVIEW_VERTEX = `attribute vec2 aPos;
+varying vec2 vTex;
+void main() {
+    vec2 a_texCoord = aPos * 0.5 + 0.5;
+    vTex = vec2(a_texCoord.x, 1.0 - a_texCoord.y);
+    gl_Position = vec4(aPos, 0.0, 1.0);
+}
+`;
+
+// u_viewMode: 0 = Split Slider, 1 = Side by Side, 2 = Split Result
 export const PREVIEW_FRAGMENT = `${PRECISION_HEADER}
 uniform sampler2D uTexture;
-uniform float uMode;
+uniform float u_viewMode;
+uniform vec2 u_resolution;
 uniform float uSplit;
 uniform float uHold;
 uniform float uLogInput;
@@ -177,14 +189,20 @@ void main() {
     vec2 uv = vTex;
     bool graded = true;
 
-    if (uMode > 1.5) {
+    if (u_viewMode > 1.5) {
+        graded = true;
+    } else if (u_viewMode > 0.5) {
+        if (u_resolution.x > 0.0 && abs(floor(gl_FragCoord.x) - floor(u_resolution.x * 0.5)) < 0.5) {
+            gl_FragColor = vec4(0.42, 0.43, 0.47, 1.0);
+            return;
+        }
         if (vTex.x < 0.5) {
             uv.x = vTex.x * 2.0;
             graded = false;
         } else {
             uv.x = (vTex.x - 0.5) * 2.0;
         }
-    } else if (uMode > 0.5) {
+    } else {
         graded = vTex.x >= uSplit;
     }
 

@@ -3,6 +3,7 @@ import { Columns, MoveHorizontal, Eye, Pin, PinOff, Camera, Download, Check } fr
 import { usePillIndicator } from "../hooks/usePillIndicator";
 import { prepareGrade, gradeRGB, applyLogInputRGB } from "../utils/gradeEngine";
 import VideoGLCanvas from "./VideoGLCanvas";
+import ImageGLCanvas from "./ImageGLCanvas";
 
 const PREVIEW_MODES = [
   { id: "split", label: "Split Slider" },
@@ -12,13 +13,18 @@ const PREVIEW_MODES = [
 
 export default function ComparisonSlider({
   originalImage,
+  imageEl = null,
   gradedCanvasRef,
+  useWebGLPhoto = false,
+  previewMaxDim = 960,
+  onWebGLPhotoError,
   hasImage,
   mode = "split",
   onModeChange,
   videoEl = null,
   gradingParams,
   onVideoError,
+  onSplitDragChange,
   isPinned = true,
   onTogglePin,
   onSaveImage,
@@ -45,20 +51,24 @@ export default function ComparisonSlider({
   const mediaBoxRef = useRef(null);
   const [mediaBox, setMediaBox] = useState(null);
   const sampleBufferRef = useRef({ data: null, w: 0, h: 0 });
+  const splitRafRef = useRef(0);
+  const pendingSplitXRef = useRef(null);
+  const onSplitDragChangeRef = useRef(onSplitDragChange);
+  onSplitDragChangeRef.current = onSplitDragChange;
 
   const preparedGrade = useMemo(
     () => (gradingParams ? prepareGrade(gradingParams) : null),
     [gradingParams]
   );
 
-  // Build lightweight <=320px CPU pixel buffer for zero-stall hover RGB/IRE readout
+  // Build lightweight <=240px CPU pixel buffer for zero-stall hover RGB/IRE readout
   useEffect(() => {
     if (videoEl) {
       const c = document.createElement("canvas");
       const ctx = c.getContext("2d", { willReadFrequently: true });
       const syncVideoSample = () => {
-        if (videoEl.readyState < 2 || !videoEl.videoWidth) return;
-        const scale = Math.min(1, 320 / Math.max(videoEl.videoWidth, videoEl.videoHeight));
+        if (!videoEl.paused || videoEl.readyState < 2 || !videoEl.videoWidth) return;
+        const scale = Math.min(1, 240 / Math.max(videoEl.videoWidth, videoEl.videoHeight));
         const w = Math.max(1, Math.round(videoEl.videoWidth * scale));
         const h = Math.max(1, Math.round(videoEl.videoHeight * scale));
         if (c.width !== w || c.height !== h) {
@@ -91,7 +101,7 @@ export default function ComparisonSlider({
     const img = new Image();
     img.onload = () => {
       if (cancelled) return;
-      const scale = Math.min(1, 320 / Math.max(img.width, img.height));
+      const scale = Math.min(1, 240 / Math.max(img.width, img.height));
       const w = Math.max(1, Math.round(img.width * scale));
       const h = Math.max(1, Math.round(img.height * scale));
       const c = document.createElement("canvas");
@@ -217,27 +227,67 @@ export default function ComparisonSlider({
   };
 
   useEffect(() => {
-    const handleMouseUp = () => setIsDragging(false);
-    const handleMouseMove = (e) => {
-      if (isDragging) updatePosition(e.clientX);
+    if (!isDragging) return undefined;
+
+    const handleEnd = () => {
+      if (splitRafRef.current) {
+        cancelAnimationFrame(splitRafRef.current);
+        splitRafRef.current = 0;
+      }
+      if (pendingSplitXRef.current !== null) {
+        const x = pendingSplitXRef.current;
+        pendingSplitXRef.current = null;
+        updatePosition(x);
+      }
+      setIsDragging(false);
+      onSplitDragChangeRef.current?.(false);
     };
-    const handleTouchMove = (e) => {
-      if (isDragging && e.touches?.[0]) {
-        updatePosition(e.touches[0].clientX);
+
+    const schedulePosition = (clientX) => {
+      pendingSplitXRef.current = clientX;
+      if (!splitRafRef.current) {
+        splitRafRef.current = requestAnimationFrame(() => {
+          splitRafRef.current = 0;
+          if (pendingSplitXRef.current !== null) {
+            const x = pendingSplitXRef.current;
+            pendingSplitXRef.current = null;
+            updatePosition(x);
+          }
+        });
       }
     };
 
-    window.addEventListener("mouseup", handleMouseUp);
+    const handleMouseMove = (e) => {
+      schedulePosition(e.clientX);
+    };
+    const handleTouchMove = (e) => {
+      if (e.touches?.[0]) {
+        schedulePosition(e.touches[0].clientX);
+      }
+    };
+
+    window.addEventListener("pointerup", handleEnd);
+    window.addEventListener("pointercancel", handleEnd);
+    window.addEventListener("mouseup", handleEnd);
     window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("touchend", handleMouseUp);
+    window.addEventListener("touchend", handleEnd);
+    window.addEventListener("touchcancel", handleEnd);
     window.addEventListener("touchmove", handleTouchMove, { passive: true });
 
     return () => {
-      window.removeEventListener("mouseup", handleMouseUp);
+      if (splitRafRef.current) {
+        cancelAnimationFrame(splitRafRef.current);
+        splitRafRef.current = 0;
+      }
+      window.removeEventListener("pointerup", handleEnd);
+      window.removeEventListener("pointercancel", handleEnd);
+      window.removeEventListener("mouseup", handleEnd);
       window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("touchend", handleMouseUp);
+      window.removeEventListener("touchend", handleEnd);
+      window.removeEventListener("touchcancel", handleEnd);
       window.removeEventListener("touchmove", handleTouchMove);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDragging]);
 
   // Keyboard shortcut: hold '\' to peek at Before image
@@ -557,6 +607,7 @@ export default function ComparisonSlider({
         onMouseDown={(e) => {
           if (mode === "split" && hasImage && !isHoldingBefore) {
             setIsDragging(true);
+            onSplitDragChangeRef.current?.(true);
             updatePosition(e.clientX);
           }
         }}
@@ -565,6 +616,7 @@ export default function ComparisonSlider({
         onTouchStart={(e) => {
           if (mode === "split" && hasImage && !isHoldingBefore && e.touches?.[0]) {
             setIsDragging(true);
+            onSplitDragChangeRef.current?.(true);
             updatePosition(e.touches[0].clientX);
           }
         }}
@@ -578,8 +630,8 @@ export default function ComparisonSlider({
           <div className="text-center p-6 text-[#9CA3AF]/60 text-xs">
             Load a Reference or Target image above to inspect Before / After grading
           </div>
-        ) : videoEl ? (
-          /* WebGL fragment-shader video preview (identical grading to .kfplug) */
+        ) : videoEl || (useWebGLPhoto && imageEl) ? (
+          /* Single-pass WebGL fragment-shader preview for video & photo (identical grading to .kfplug) */
           <div className="relative w-full h-full flex items-center justify-center">
             <div
               ref={mode === "split" ? mediaBoxRef : undefined}
@@ -592,16 +644,30 @@ export default function ComparisonSlider({
                 mode !== "side" && mediaBox ? "" : "w-full h-full"
               }`}
             >
-              <VideoGLCanvas
-                videoEl={videoEl}
-                params={gradingParams}
-                mode={mode}
-                splitPos={splitPos}
-                hold={isHoldingBefore}
-                simulateLogInput={simulateLogInput}
-                onError={onVideoError}
-                className="w-full h-full object-contain pointer-events-none"
-              />
+              {videoEl ? (
+                <VideoGLCanvas
+                  videoEl={videoEl}
+                  params={gradingParams}
+                  mode={mode}
+                  splitPos={splitPos}
+                  hold={isHoldingBefore}
+                  simulateLogInput={simulateLogInput}
+                  onError={onVideoError}
+                  className="w-full h-full object-contain pointer-events-none"
+                />
+              ) : (
+                <ImageGLCanvas
+                  imageEl={imageEl}
+                  params={gradingParams}
+                  mode={mode}
+                  splitPos={splitPos}
+                  hold={isHoldingBefore}
+                  simulateLogInput={simulateLogInput}
+                  maxSide={previewMaxDim}
+                  onError={onWebGLPhotoError}
+                  className="w-full h-full object-contain pointer-events-none"
+                />
+              )}
 
               {mode === "split" && !isHoldingBefore && (
                 <div
