@@ -43,9 +43,9 @@ import SplashIntro from "./components/SplashIntro";
 import { usePillIndicator } from "./hooks/usePillIndicator";
 import {
   DEFAULT_PARAMS,
-  analyzeImagePixels,
   simulateGradePixels,
 } from "./utils/colorGrading";
+import { DEFAULT_ENGINE_ID } from "./utils/engineRegistry";
 import { scaleParamsByStrength } from "./utils/gradeEngine";
 import {
   generateKfplug,
@@ -55,10 +55,15 @@ import { sanitizeMetadataText } from "./utils/hostGuard";
 import { SLIDER_PARAM_SPECS, applyCalibrationToParams } from "./utils/paramSchema";
 import { generateLutFile } from "./utils/lutExporter";
 import { exportGradedImage } from "./utils/imageExporter";
-import { importKfplugFile, parseLutText, fitParamsToLut } from "./utils/presetImporter";
+import { importKfplugFile } from "./utils/presetImporter";
 import { SAMPLE_LOOKS, renderLookSample, drawNeutralScene } from "./utils/sampleLooks";
 import VideoTransportBar from "./components/VideoTransportBar";
-import { useMediaLoader, revokeMediaUrls } from "./hooks/useMediaLoader";
+import {
+  useMediaLoader,
+  revokeMediaUrls,
+  sampleVideoMultiTimestamp,
+} from "./hooks/useMediaLoader";
+import { useColorMatchWorker } from "./hooks/useColorMatchWorker";
 
 const SLIDER_ICON_MAP = {
   exposure: Sun,
@@ -243,22 +248,10 @@ export default function App() {
     Math.abs(calibration.wbScale - 1.0) > 0.004 ||
     Math.abs(calibration.chromaScale - 1.0) > 0.004;
 
-  const workerRef = useRef(null);
-  const analysisTimeoutRef = useRef(null);
-  const analysisJobIdRef = useRef(0);
-  const pendingAnalysisRef = useRef(null);
-  const pendingLutFitRef = useRef(null);
   const gradedCanvasRef = useRef(null);
   const previewSourceImageDataRef = useRef(null);
   const lastRenderedImgRef = useRef(null);
   const rafRef = useRef(null);
-
-  const clearAnalysisTimeout = useCallback(() => {
-    if (analysisTimeoutRef.current) {
-      clearTimeout(analysisTimeoutRef.current);
-      analysisTimeoutRef.current = null;
-    }
-  }, []);
 
   // Draws an image or a video frame into RGBA pixels (downscaled to maxDim).
   const captureRgba = useCallback((source, maxDim) => {
@@ -277,72 +270,22 @@ export default function App() {
     return { data: d.data, numPixels: w * h };
   }, []);
 
-  const runFallbackAnalysisOrReset = useCallback(
-    (reasonMsg) => {
-      clearAnalysisTimeout();
-      const pending = pendingAnalysisRef.current;
-      pendingAnalysisRef.current = null;
-
-      let refData = pending?.rgbaData;
-      let refNumPixels = pending?.numPixels || 0;
-      let tgtData = pending?.targetRgbaData || null;
-      let tgtNumPixels = pending?.targetNumPixels || 0;
-
-      // Re-capture on main thread if pixel buffers were transferred to a timed-out/crashed worker
-      if ((!refData || refData.buffer.byteLength === 0) && referenceRef.current?.imgElement) {
-        const recRef = captureRgba(referenceRef.current.imgElement, pending?.maxDim || 1280);
-        if (recRef) {
-          refData = recRef.data;
-          refNumPixels = recRef.numPixels;
-        }
-      }
-      if (
-        tgtData &&
-        tgtData.buffer.byteLength === 0 &&
-        targetRef.current?.imgElement
-      ) {
-        const recTgt = captureRgba(
-          targetRef.current.imgElement,
-          Math.min(pending?.maxDim || 1280, 960)
-        );
-        if (recTgt) {
-          tgtData = recTgt.data;
-          tgtNumPixels = recTgt.numPixels;
-        } else {
-          tgtData = null;
-          tgtNumPixels = 0;
-        }
-      }
-
-      if (refData && refData.buffer.byteLength > 0 && refNumPixels > 0) {
-        try {
-          const fallbackParams = analyzeImagePixels(
-            refData,
-            refNumPixels,
-            undefined,
-            tgtData && tgtData.buffer.byteLength > 0 ? tgtData : null,
-            tgtNumPixels,
-            pending?.mediaType || "image"
-          );
-          setIsAnalyzing(false);
-          setGradingParams({ ...fallbackParams });
-          setLastMatchedParams({ ...fallbackParams });
-          setStatusText("Matched");
-          return;
-        } catch (err) {
-          setReferenceError(
-            (err && err.message) || reasonMsg || "Failed to analyze reference image."
-          );
-        }
-      } else if (reasonMsg) {
-        setReferenceError(reasonMsg);
-      }
-
-      setIsAnalyzing(false);
-      setStatusText("Error");
-    },
-    [clearAnalysisTimeout, captureRgba]
-  );
+  const {
+    beginAnalysisJob,
+    isCurrentJob,
+    dispatchAnalysis,
+    fitLutInWorker,
+    restartWorker,
+  } = useColorMatchWorker({
+    referenceRef,
+    targetRef,
+    captureRgba,
+    setIsAnalyzing,
+    setStatusText,
+    setReferenceError,
+    setGradingParams,
+    setLastMatchedParams,
+  });
 
   const handleOpenChangelog = () => {
     setIsChangelogOpen(true);
@@ -390,92 +333,6 @@ export default function App() {
     setShowSplash(true);
   };
 
-  const initWorker = useCallback(() => {
-    if (workerRef.current) {
-      workerRef.current.terminate();
-    }
-
-    const worker = new Worker(
-      new URL("./workers/colorMatchWorker.js", import.meta.url),
-      { type: "module" }
-    );
-
-    worker.onmessage = (e) => {
-      const { type, jobId, params, stage, error, rms, kind, title } = e.data || {};
-      if (jobId !== undefined && jobId !== analysisJobIdRef.current) {
-        return;
-      }
-      if (type === "stage") {
-        setStatusText(stage || "Analyzing...");
-      } else if (type === "fitLutSuccess" && params) {
-        const pendingLut = pendingLutFitRef.current;
-        if (pendingLut && pendingLut.jobId === jobId) {
-          clearTimeout(pendingLut.timer);
-          pendingLutFitRef.current = null;
-          pendingLut.resolve({ params, rms, kind, title });
-        }
-      } else if (type === "success" && params) {
-        clearAnalysisTimeout();
-        pendingAnalysisRef.current = null;
-        setIsAnalyzing(false);
-        setGradingParams({ ...params });
-        setLastMatchedParams({ ...params });
-        setStatusText("Matched");
-      } else if (type === "error") {
-        const pendingLut = pendingLutFitRef.current;
-        if (pendingLut && pendingLut.jobId === jobId) {
-          clearTimeout(pendingLut.timer);
-          pendingLutFitRef.current = null;
-          pendingLut.reject(new Error(error || "Failed to fit LUT."));
-          return;
-        }
-        clearAnalysisTimeout();
-        pendingAnalysisRef.current = null;
-        setIsAnalyzing(false);
-        setReferenceError(error || "Failed to analyze image.");
-        setStatusText("Error");
-      }
-    };
-
-    worker.onerror = (err) => {
-      if (err && typeof err.preventDefault === "function") {
-        err.preventDefault();
-      }
-      const pendingLut = pendingLutFitRef.current;
-      if (pendingLut) {
-        clearTimeout(pendingLut.timer);
-        pendingLutFitRef.current = null;
-        pendingLut.fallback();
-      }
-      runFallbackAnalysisOrReset(
-        "Background worker encountered an error; recovered on main thread."
-      );
-    };
-
-    worker.onmessageerror = () => {
-      const pendingLut = pendingLutFitRef.current;
-      if (pendingLut) {
-        clearTimeout(pendingLut.timer);
-        pendingLutFitRef.current = null;
-        pendingLut.fallback();
-      }
-      runFallbackAnalysisOrReset(
-        "Worker message serialization error; recovered on main thread."
-      );
-    };
-
-    workerRef.current = worker;
-    return worker;
-  }, [clearAnalysisTimeout, runFallbackAnalysisOrReset]);
-
-  useEffect(() => {
-    const worker = initWorker();
-    return () => {
-      clearAnalysisTimeout();
-      worker.terminate();
-    };
-  }, [initWorker, clearAnalysisTimeout]);
-
   const setSlotError = useCallback((slot, msg) => {
     if (slot === "reference") {
       setReferenceError(msg);
@@ -484,126 +341,11 @@ export default function App() {
     }
   }, []);
 
-  // Video-only helpers: mean luma check, letterbox bar filtering (R,G,B <= 6),
-  // and smart non-black frame seeking on the single primary videoEl (no dual decoder).
-  const computeFrameMeanLuma = useCallback((rgba) => {
-    if (!rgba || rgba.length < 4) return 0;
-    let sum = 0;
-    let count = 0;
-    for (let i = 0; i < rgba.length; i += 16) {
-      sum += (0.2126 * rgba[i] + 0.7152 * rgba[i + 1] + 0.0722 * rgba[i + 2]) / 255;
-      count++;
-    }
-    return count > 0 ? sum / count : 0;
-  }, []);
-
-  const filterLetterboxPixels = useCallback((rgba) => {
-    const total = rgba.length / 4;
-    let kept = 0;
-    for (let i = 0; i < rgba.length; i += 4) {
-      if (rgba[i] > 8 || rgba[i + 1] > 8 || rgba[i + 2] > 8) kept++;
-    }
-    if (kept < total * 0.15 || kept === total) {
-      return { data: rgba, numPixels: total };
-    }
-    const filtered = new Uint8ClampedArray(kept * 4);
-    let ptr = 0;
-    for (let i = 0; i < rgba.length; i += 4) {
-      if (rgba[i] > 8 || rgba[i + 1] > 8 || rgba[i + 2] > 8) {
-        filtered[ptr++] = rgba[i];
-        filtered[ptr++] = rgba[i + 1];
-        filtered[ptr++] = rgba[i + 2];
-        filtered[ptr++] = rgba[i + 3];
-      }
-    }
-    return { data: filtered, numPixels: kept };
-  }, []);
-
-  const captureBestVideoFrame = useCallback(
-    async (videoEl, maxDim) => {
-      if (!videoEl) return null;
-      const cur = videoEl.readyState >= 2 ? captureRgba(videoEl, maxDim) : null;
-      if (cur && videoEl.currentTime > 0.1 && computeFrameMeanLuma(cur.data) >= 0.08) {
-        return filterLetterboxPixels(cur.data);
-      }
-
-      const dur = Number.isFinite(videoEl.duration) ? videoEl.duration : 0;
-      if (dur <= 0.25 || videoEl.readyState < 1) {
-        return cur ? filterLetterboxPixels(cur.data) : null;
-      }
-
-      const wasPaused = videoEl.paused;
-      const origTime = videoEl.currentTime;
-      if (!wasPaused) {
-        try {
-          videoEl.pause();
-        } catch {
-          // ignore
-        }
-      }
-
-      const seekTo = (ts) =>
-        new Promise((resolve) => {
-          let done = false;
-          const finish = () => {
-            if (done) return;
-            done = true;
-            clearTimeout(t);
-            videoEl.removeEventListener("seeked", onSeeked);
-            requestAnimationFrame(() => resolve());
-          };
-          const onSeeked = () => finish();
-          const t = setTimeout(finish, 1200);
-          videoEl.addEventListener("seeked", onSeeked);
-          try {
-            videoEl.currentTime = ts;
-          } catch {
-            finish();
-          }
-        });
-
-      try {
-        const candidates = [
-          Math.min(dur * 0.25, 2.0),
-          dur * 0.5,
-          dur * 0.7,
-        ].filter((ts) => ts > 0.05 && ts < dur - 0.05);
-
-        let best = cur;
-        let bestLuma = cur ? computeFrameMeanLuma(cur.data) : 0;
-
-        for (const ts of candidates) {
-          await seekTo(ts);
-          const cap = captureRgba(videoEl, maxDim);
-          if (!cap) continue;
-          const luma = computeFrameMeanLuma(cap.data);
-          if (luma > bestLuma) {
-            best = cap;
-            bestLuma = luma;
-          }
-          if (luma >= 0.08) break;
-        }
-
-        if (Math.abs(videoEl.currentTime - origTime) > 0.02) {
-          await seekTo(origTime);
-        }
-        return best ? filterLetterboxPixels(best.data) : null;
-      } catch {
-        return cur ? filterLetterboxPixels(cur.data) : null;
-      } finally {
-        if (!wasPaused) {
-          videoEl.play().catch(() => {});
-        }
-      }
-    },
-    [captureRgba, computeFrameMeanLuma, filterLetterboxPixels]
-  );
-
-  // Triggers background worker analysis (reference vs. current target image / video frame)
+  // Triggers background worker analysis (reference vs. current target image / multi-timestamp video)
   const triggerReferenceAnalysis = useCallback(
     async (img) => {
       if (!img) return;
-      const jobId = ++analysisJobIdRef.current;
+      const jobId = beginAnalysisJob();
       setIsAnalyzing(true);
       setStatusText("Analyzing...");
 
@@ -618,9 +360,10 @@ export default function App() {
       if (tgtInfo) {
         try {
           if (tgtInfo.kind === "video") {
-            tgt = await captureBestVideoFrame(
+            tgt = await sampleVideoMultiTimestamp(
               tgtInfo.videoEl,
-              Math.min(analysisMaxDim, 960)
+              Math.min(analysisMaxDim, 512),
+              captureRgba
             );
           } else if (tgtInfo.imgElement) {
             tgt = captureRgba(tgtInfo.imgElement, Math.min(analysisMaxDim, 960));
@@ -631,123 +374,23 @@ export default function App() {
       }
 
       // If a newer analysis started while awaiting video frame seek, abort this stale job.
-      if (jobId !== analysisJobIdRef.current) return;
+      if (!isCurrentJob(jobId)) return;
 
-      pendingAnalysisRef.current = {
+      dispatchAnalysis({
         jobId,
-        maxDim: analysisMaxDim,
-        rgbaData: ref.data,
-        numPixels: ref.numPixels,
-        targetRgbaData: tgt ? tgt.data : null,
-        targetNumPixels: tgt ? tgt.numPixels : 0,
+        ref,
+        tgt,
         mediaType: tgtInfo?.kind === "video" ? "video" : "image",
-      };
-
-      clearAnalysisTimeout();
-      analysisTimeoutRef.current = setTimeout(() => {
-        analysisJobIdRef.current += 1;
-        workerRef.current?.terminate();
-        workerRef.current = null;
-        initWorker();
-        runFallbackAnalysisOrReset(
-          "Worker analysis timed out; recovered on main thread."
-        );
-      }, 6000);
-
-      try {
-        const transferables = [ref.data.buffer];
-        if (tgt?.data?.buffer && tgt.data.buffer !== ref.data.buffer) {
-          transferables.push(tgt.data.buffer);
-        }
-        workerRef.current?.postMessage(
-          {
-            type: "analyze",
-            jobId,
-            rgbaData: ref.data,
-            numPixels: ref.numPixels,
-            targetRgbaData: tgt ? tgt.data : null,
-            targetNumPixels: tgt ? tgt.numPixels : 0,
-            mediaType: tgtInfo?.kind === "video" ? "video" : "image",
-          },
-          transferables
-        );
-      } catch {
-        runFallbackAnalysisOrReset(
-          "Worker unavailable; analyzed on main thread."
-        );
-      }
+        engineId: DEFAULT_ENGINE_ID,
+      });
     },
-    [
-      analysisMaxDim,
-      captureBestVideoFrame,
-      captureRgba,
-      clearAnalysisTimeout,
-      initWorker,
-      runFallbackAnalysisOrReset,
-    ]
+    [analysisMaxDim, beginAnalysisJob, captureRgba, dispatchAnalysis, isCurrentJob]
   );
 
   triggerAnalysisRef.current = () => {
     const r = referenceRef.current;
     if (r && r.imgElement) triggerReferenceAnalysis(r.imgElement);
   };
-
-  const fitLutInWorker = useCallback(
-    (lutText) =>
-      new Promise((resolve, reject) => {
-        if (pendingLutFitRef.current) {
-          clearTimeout(pendingLutFitRef.current.timer);
-          pendingLutFitRef.current.reject(new Error("Superseded by a newer LUT import."));
-          pendingLutFitRef.current = null;
-        }
-
-        const jobId = ++analysisJobIdRef.current;
-        const runMainThreadFallback = () => {
-          try {
-            const lut = parseLutText(lutText);
-            const { params, rms } = fitParamsToLut(lut);
-            resolve({
-              params,
-              rms,
-              kind: lut.kind === "3d" ? `3D LUT ${lut.size}^3` : `1D LUT ${lut.size}`,
-              title: lut.title,
-            });
-          } catch (err) {
-            reject(err);
-          }
-        };
-
-        const timer = setTimeout(() => {
-          if (pendingLutFitRef.current?.jobId === jobId) {
-            pendingLutFitRef.current = null;
-            runMainThreadFallback();
-          }
-        }, 15000);
-
-        pendingLutFitRef.current = {
-          jobId,
-          timer,
-          resolve,
-          reject,
-          fallback: runMainThreadFallback,
-        };
-
-        try {
-          if (!workerRef.current) {
-            clearTimeout(timer);
-            pendingLutFitRef.current = null;
-            runMainThreadFallback();
-            return;
-          }
-          workerRef.current.postMessage({ type: "fitLut", jobId, lutText });
-        } catch {
-          clearTimeout(timer);
-          pendingLutFitRef.current = null;
-          runMainThreadFallback();
-        }
-      }),
-    []
-  );
 
   const handleImportPreset = useCallback(
     async (file, meta) => {
@@ -809,7 +452,6 @@ export default function App() {
     setTargetImage,
     setSlotError,
     setStatusText,
-    computeFrameMeanLuma,
     onImportPreset: handleImportPreset,
     onReferenceLoaded: handleReferenceLoaded,
   });
@@ -1259,7 +901,7 @@ export default function App() {
     }
     const avgDeltaE = (totalDiff / numPixels).toFixed(2);
 
-    initWorker();
+    restartWorker();
     previewSourceImageDataRef.current = null;
     lastRenderedImgRef.current = null;
     if (gradedCanvasRef.current) {

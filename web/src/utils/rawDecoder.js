@@ -249,17 +249,18 @@ function srgbEncodeLut() {
   return t;
 }
 
-const MAX_TIFF_DECODE_DIM = 2560;
+const MAX_TIFF_DECODE_DIM = 2048;
 const RAW_SCAN_CHUNK_BYTES = 2 * 1024 * 1024;
+const RAW_HEAD_SCAN_BYTES = 16 * 1024 * 1024;
+const RAW_TAIL_SCAN_BYTES = 16 * 1024 * 1024;
 const MAX_EMBEDDED_JPEG_BYTES = 16 * 1024 * 1024;
 
-async function findEmbeddedJpegsFromFile(file) {
-  const found = [];
+async function scanRangeForJpegs(file, rangeStart, rangeEnd, found) {
   const totalSize = file.size;
-  let offset = 0;
+  let offset = rangeStart;
 
-  while (offset < totalSize - 3) {
-    const chunkEnd = Math.min(totalSize, offset + RAW_SCAN_CHUNK_BYTES + 3);
+  while (offset < rangeEnd - 3) {
+    const chunkEnd = Math.min(rangeEnd, offset + RAW_SCAN_CHUNK_BYTES + 3);
     const chunkU8 = new Uint8Array(await file.slice(offset, chunkEnd).arrayBuffer());
     const limit = chunkU8.length - 3;
     let i = 0;
@@ -305,6 +306,25 @@ async function findEmbeddedJpegsFromFile(file) {
       offset += RAW_SCAN_CHUNK_BYTES;
     }
   }
+}
+
+async function findEmbeddedJpegsFromFile(file) {
+  const found = [];
+  const totalSize = file.size;
+
+  // Scan header/initial block first, then trailing block, using file.slice() to keep RAM low.
+  const headEnd = Math.min(totalSize, RAW_HEAD_SCAN_BYTES);
+  await scanRangeForJpegs(file, 0, headEnd, found);
+
+  const tailStart = Math.max(headEnd, totalSize - RAW_TAIL_SCAN_BYTES);
+  if (tailStart < totalSize) {
+    await scanRangeForJpegs(file, tailStart, totalSize, found);
+  }
+
+  // Only scan the middle sensor-data region if neither head nor tail yielded a valid preview.
+  if (found.length === 0 && headEnd < tailStart) {
+    await scanRangeForJpegs(file, headEnd, tailStart, found);
+  }
 
   found.sort((a, b) => b.w * b.h - a.w * a.h || b.bytes - a.bytes);
   return found;
@@ -341,24 +361,45 @@ async function decodeTiffLike(file) {
           rgba[i + 2] = lut[rgba[i + 2]];
         }
       }
-      const srcCanvas = document.createElement("canvas");
-      srcCanvas.width = ifd.width;
-      srcCanvas.height = ifd.height;
-      const srcCtx = srcCanvas.getContext("2d");
-      const imgData = srcCtx.createImageData(ifd.width, ifd.height);
-      imgData.data.set(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, ifd.width * ifd.height * 4));
-      srcCtx.putImageData(imgData, 0, 0);
-
       const scale = Math.min(1, MAX_TIFF_DECODE_DIM / Math.max(ifd.width, ifd.height));
-      let outCanvas = srcCanvas;
-      if (scale < 1) {
-        outCanvas = document.createElement("canvas");
-        outCanvas.width = Math.max(1, Math.round(ifd.width * scale));
-        outCanvas.height = Math.max(1, Math.round(ifd.height * scale));
-        const outCtx = outCanvas.getContext("2d");
-        outCtx.drawImage(srcCanvas, 0, 0, outCanvas.width, outCanvas.height);
-        srcCanvas.width = 0;
-        srcCanvas.height = 0;
+      const outW = Math.max(1, Math.round(ifd.width * scale));
+      const outH = Math.max(1, Math.round(ifd.height * scale));
+      const outCanvas = document.createElement("canvas");
+      outCanvas.width = outW;
+      outCanvas.height = outH;
+      const outCtx = outCanvas.getContext("2d");
+
+      const clamped = new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, ifd.width * ifd.height * 4);
+      const imgData = new ImageData(clamped, ifd.width, ifd.height);
+
+      let drewWithBitmap = false;
+      if (scale < 1 && typeof createImageBitmap === "function") {
+        try {
+          const bmp = await createImageBitmap(imgData, {
+            resizeWidth: outW,
+            resizeHeight: outH,
+            resizeQuality: "high",
+          });
+          outCtx.drawImage(bmp, 0, 0, outW, outH);
+          bmp.close();
+          drewWithBitmap = true;
+        } catch {
+          drewWithBitmap = false;
+        }
+      }
+
+      if (!drewWithBitmap) {
+        if (scale < 1) {
+          const srcCanvas = document.createElement("canvas");
+          srcCanvas.width = ifd.width;
+          srcCanvas.height = ifd.height;
+          srcCanvas.getContext("2d").putImageData(imgData, 0, 0);
+          outCtx.drawImage(srcCanvas, 0, 0, outW, outH);
+          srcCanvas.width = 0;
+          srcCanvas.height = 0;
+        } else {
+          outCtx.putImageData(imgData, 0, 0);
+        }
       }
 
       const blob = await new Promise((res) => outCanvas.toBlob(res, "image/jpeg", 0.92));

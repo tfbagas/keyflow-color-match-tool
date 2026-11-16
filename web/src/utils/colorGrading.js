@@ -381,3 +381,79 @@ export function analyzeImagePixels(
   }
   return sanitizeParams(rounded);
 }
+
+// Computes Rec. 709 mean luma (0..1) on a 4-pixel stride for fast frame screening.
+export function computeFrameMeanLuma(rgba) {
+  if (!rgba || rgba.length < 4) return 0;
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < rgba.length; i += 16) {
+    sum += (0.2126 * rgba[i] + 0.7152 * rgba[i + 1] + 0.0722 * rgba[i + 2]) / 255;
+    count++;
+  }
+  return count > 0 ? sum / count : 0;
+}
+
+// Removes pure-black letterbox / pillarbox bars (R, G, B <= 8) when active area >= 15%.
+export function filterLetterboxPixels(rgba) {
+  const total = Math.floor(rgba.length / 4);
+  let kept = 0;
+  for (let i = 0; i < rgba.length; i += 4) {
+    if (rgba[i] > 8 || rgba[i + 1] > 8 || rgba[i + 2] > 8) kept++;
+  }
+  if (kept < total * 0.15 || kept === total) {
+    return { data: rgba, numPixels: total };
+  }
+  const filtered = new Uint8ClampedArray(kept * 4);
+  let ptr = 0;
+  for (let i = 0; i < rgba.length; i += 4) {
+    if (rgba[i] > 8 || rgba[i + 1] > 8 || rgba[i + 2] > 8) {
+      filtered[ptr++] = rgba[i];
+      filtered[ptr++] = rgba[i + 1];
+      filtered[ptr++] = rgba[i + 2];
+      filtered[ptr++] = rgba[i + 3];
+    }
+  }
+  return { data: filtered, numPixels: kept };
+}
+
+// Combines multiple valid video frame samples into one bounded RGBA buffer.
+export function mergeFramePixelSamples(frames, maxTotalPixels = 360000) {
+  if (!frames || frames.length === 0) return null;
+  if (frames.length === 1) return frames[0];
+
+  let totalPixels = 0;
+  for (const f of frames) {
+    totalPixels += f.numPixels;
+  }
+  if (totalPixels <= 0) return null;
+
+  if (totalPixels <= maxTotalPixels) {
+    const merged = new Uint8ClampedArray(totalPixels * 4);
+    let offset = 0;
+    for (const f of frames) {
+      merged.set(f.data.subarray(0, f.numPixels * 4), offset);
+      offset += f.numPixels * 4;
+    }
+    return { data: merged, numPixels: totalPixels };
+  }
+
+  const stride = Math.ceil(totalPixels / maxTotalPixels);
+  let outCount = 0;
+  for (const f of frames) {
+    outCount += Math.ceil(f.numPixels / stride);
+  }
+  const merged = new Uint8ClampedArray(outCount * 4);
+  let ptr = 0;
+  for (const f of frames) {
+    const src = f.data;
+    const limit = f.numPixels * 4;
+    for (let i = 0; i < limit; i += stride * 4) {
+      merged[ptr++] = src[i];
+      merged[ptr++] = src[i + 1];
+      merged[ptr++] = src[i + 2];
+      merged[ptr++] = src[i + 3];
+    }
+  }
+  return { data: merged, numPixels: Math.floor(ptr / 4) };
+}

@@ -1,4 +1,4 @@
-import { analyzeImagePixels } from "../utils/colorGrading.js";
+import { getEngine, DEFAULT_ENGINE_ID } from "../utils/engineRegistry.js";
 import { parseLutText, fitParamsToLut } from "../utils/presetImporter.js";
 
 self.onmessage = function (e) {
@@ -6,8 +6,11 @@ self.onmessage = function (e) {
   const {
     type,
     jobId,
+    engineId,
+    refBuffer,
     rgbaData,
     numPixels,
+    tgtBuffer,
     targetRgbaData,
     targetNumPixels,
     mediaType,
@@ -16,7 +19,14 @@ self.onmessage = function (e) {
 
   if (type === "analyze") {
     try {
-      if (!rgbaData || !numPixels || numPixels < 1) {
+      const refView =
+        refBuffer instanceof ArrayBuffer ? new Uint8ClampedArray(refBuffer) : rgbaData;
+      const tgtView =
+        tgtBuffer instanceof ArrayBuffer
+          ? new Uint8ClampedArray(tgtBuffer)
+          : targetRgbaData || null;
+
+      if (!refView || !numPixels || numPixels < 1) {
         throw new Error("Invalid pixel buffer received by worker.");
       }
 
@@ -26,16 +36,15 @@ self.onmessage = function (e) {
         stage: "Analyzing colors & luminance...",
       });
 
-      const params = analyzeImagePixels(
-        rgbaData,
+      const engine = getEngine(engineId || DEFAULT_ENGINE_ID);
+      const params = engine.analyze(refView, tgtView, {
         numPixels,
-        (stageText) => {
+        targetNumPixels: targetNumPixels || 0,
+        mediaType: mediaType || "image",
+        onStage: (stageText) => {
           self.postMessage({ type: "stage", jobId, stage: stageText });
         },
-        targetRgbaData || null,
-        targetNumPixels || 0,
-        mediaType || "image"
-      );
+      });
 
       self.postMessage({
         type: "stage",

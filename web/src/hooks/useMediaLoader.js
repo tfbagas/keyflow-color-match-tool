@@ -1,6 +1,111 @@
 import { useRef, useCallback } from "react";
 import { inspectFile, prepareImageBlob } from "../utils/rawDecoder";
 import { sanitizeMetadataText } from "../utils/hostGuard";
+import {
+  computeFrameMeanLuma,
+  filterLetterboxPixels,
+  mergeFramePixelSamples,
+} from "../utils/colorGrading";
+
+const MIN_VALID_LUMA = 0.06;
+const MAX_VALID_LUMA = 0.88;
+
+function isCleanFrameLuma(luma) {
+  return luma >= MIN_VALID_LUMA && luma <= MAX_VALID_LUMA;
+}
+
+function getSampleTimestamps(dur) {
+  if (!Number.isFinite(dur) || dur <= 0.25) return [];
+  const raw = dur > 2.0 ? [dur * 0.2, dur * 0.5, dur * 0.8] : [dur * 0.5];
+  return raw.filter((ts) => ts > 0.05 && ts < dur - 0.05);
+}
+
+function seekVideoElement(videoEl, ts, timeoutMs = 1200) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(t);
+      videoEl.removeEventListener("seeked", onSeeked);
+      requestAnimationFrame(() => resolve());
+    };
+    const onSeeked = () => finish();
+    const t = setTimeout(finish, timeoutMs);
+    videoEl.addEventListener("seeked", onSeeked);
+    try {
+      videoEl.currentTime = ts;
+    } catch {
+      finish();
+    }
+  });
+}
+
+// Single-decoder multi-timestamp sampler: extracts representative frames,
+// filters out fade-in/out (<0.06) and white flash (>0.88), merges pixel stats,
+// and restores the video element to a clean preview frame.
+export async function sampleVideoMultiTimestamp(videoEl, maxDim, captureRgba) {
+  if (!videoEl) return null;
+  const cur = videoEl.readyState >= 2 ? captureRgba(videoEl, maxDim) : null;
+  const dur = Number.isFinite(videoEl.duration) ? videoEl.duration : 0;
+  const timestamps = getSampleTimestamps(dur);
+
+  if (timestamps.length === 0 || videoEl.readyState < 1) {
+    return cur ? filterLetterboxPixels(cur.data) : null;
+  }
+
+  const wasPaused = videoEl.paused;
+  const origTime = videoEl.currentTime;
+  const origLuma = cur ? computeFrameMeanLuma(cur.data) : 0;
+  const origClean = cur && isCleanFrameLuma(origLuma);
+
+  if (!wasPaused) {
+    try {
+      videoEl.pause();
+    } catch {
+      // ignore
+    }
+  }
+
+  try {
+    const validFrames = [];
+    let bestFallback = cur;
+    let bestFallbackDist = cur ? Math.abs(origLuma - 0.45) : Infinity;
+    let firstCleanTs = origClean ? origTime : null;
+
+    for (const ts of timestamps) {
+      await seekVideoElement(videoEl, ts);
+      const cap = captureRgba(videoEl, maxDim);
+      if (!cap) continue;
+      const luma = computeFrameMeanLuma(cap.data);
+      const dist = Math.abs(luma - 0.45);
+      if (dist < bestFallbackDist) {
+        bestFallback = cap;
+        bestFallbackDist = dist;
+      }
+      if (isCleanFrameLuma(luma)) {
+        if (firstCleanTs === null) firstCleanTs = ts;
+        validFrames.push(filterLetterboxPixels(cap.data));
+      }
+    }
+
+    const restoreTs = origClean ? origTime : firstCleanTs !== null ? firstCleanTs : origTime;
+    if (Math.abs(videoEl.currentTime - restoreTs) > 0.02) {
+      await seekVideoElement(videoEl, restoreTs);
+    }
+
+    if (validFrames.length > 0) {
+      return mergeFramePixelSamples(validFrames);
+    }
+    return bestFallback ? filterLetterboxPixels(bestFallback.data) : null;
+  } catch {
+    return cur ? filterLetterboxPixels(cur.data) : null;
+  } finally {
+    if (!wasPaused) {
+      videoEl.play().catch(() => {});
+    }
+  }
+}
 
 function createThumbnailUrl(source, maxDim = 512) {
   return new Promise((resolve) => {
@@ -66,7 +171,6 @@ export function useMediaLoader({
   setTargetImage,
   setSlotError,
   setStatusText,
-  computeFrameMeanLuma,
   onImportPreset,
   onReferenceLoaded,
 }) {
@@ -173,32 +277,25 @@ export function useMediaLoader({
           let luma = computeFrameMeanLuma(pctx.getImageData(0, 0, pw, ph).data);
 
           const dur = Number.isFinite(v.duration) ? v.duration : 0;
-          if (luma < 0.08 && dur > 0.25) {
-            const seekTargets = [Math.min(dur * 0.25, 2.0), dur * 0.5].filter(
-              (ts) => ts > 0.05 && ts < dur - 0.05
-            );
+          let cleanPreviewTime = isCleanFrameLuma(luma) ? 0 : null;
+          if (!isCleanFrameLuma(luma) && dur > 0.25) {
+            const seekTargets = getSampleTimestamps(dur);
             for (const ts of seekTargets) {
-              await new Promise((resolve) => {
-                const t = setTimeout(resolve, 1000);
-                const onSeek = () => {
-                  v.removeEventListener("seeked", onSeek);
-                  clearTimeout(t);
-                  requestAnimationFrame(() => resolve());
-                };
-                v.addEventListener("seeked", onSeek);
-                v.currentTime = ts;
-              });
+              await seekVideoElement(v, ts, 1000);
               if (token !== loadTokenRef.current.target) break;
               pctx.drawImage(v, 0, 0, pw, ph);
               luma = computeFrameMeanLuma(pctx.getImageData(0, 0, pw, ph).data);
-              if (luma >= 0.08) break;
+              if (isCleanFrameLuma(luma)) {
+                cleanPreviewTime = ts;
+                break;
+              }
             }
           }
           const thumbBlob = await new Promise((res) => pc.toBlob(res, "image/jpeg", 0.82));
           pc.width = 0;
           pc.height = 0;
           poster = thumbBlob ? URL.createObjectURL(thumbBlob) : "";
-          if (v.currentTime > 0.05) {
+          if (cleanPreviewTime === 0 && v.currentTime > 0.05) {
             v.currentTime = 0;
           }
         } catch {
@@ -240,7 +337,7 @@ export function useMediaLoader({
       v.src = url;
       v.load();
     },
-    [setSlotError, setStatusText, computeFrameMeanLuma, replaceTarget]
+    [setSlotError, setStatusText, replaceTarget]
   );
 
   const loadImageFile = useCallback(
