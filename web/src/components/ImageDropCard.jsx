@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { memo, useRef, useState } from "react";
 import {
   Upload,
   RefreshCw,
@@ -19,7 +19,7 @@ export const ALLOWED_IMAGE_MIMES = [
   "image/webp",
 ];
 
-export default function ImageDropCard({
+const ImageDropCard = memo(function ImageDropCard({
   title,
   imageInfo,
   onSelectImage,
@@ -31,7 +31,6 @@ export default function ImageDropCard({
   onHoverChange,
   onFocusSlot,
   errorMessage = "",
-  onFileRejected,
   allowVideo = false,
   allowPresets = false,
   sampleOptions = null,
@@ -146,7 +145,7 @@ export default function ImageDropCard({
         <div className="mt-2.5 pt-2.5 border-t border-white/[0.08] flex items-center justify-between gap-2.5 m3-tab-enter">
           <div className="flex items-center gap-2.5 min-w-0">
             <img
-              src={imageInfo.dataUrl}
+              src={imageInfo.thumbUrl || imageInfo.dataUrl}
               alt={imageInfo.name}
               className="w-8 h-8 rounded-md object-cover bg-[#0A0A0D]/38 border border-white/10 shrink-0"
             />
@@ -200,7 +199,7 @@ export default function ImageDropCard({
               {imageInfo ? (
                 <>
                   <img
-                    src={imageInfo.dataUrl}
+                    src={imageInfo.thumbUrl || imageInfo.dataUrl}
                     alt={title}
                     className="w-full h-[84px] lg:h-[210px] object-contain p-1 lg:p-1.5 select-none"
                   />
@@ -313,4 +312,6 @@ export default function ImageDropCard({
       </div>
     </div>
   );
-}
+});
+
+export default ImageDropCard;

@@ -45,13 +45,15 @@ function renderViaWebGL(source, width, height, params, layout, splitPos, simulat
   try {
     vs = compileShader(gl, gl.VERTEX_SHADER, PREVIEW_VERTEX);
     fs = compileShader(gl, gl.FRAGMENT_SHADER, PREVIEW_FRAGMENT);
-    if (!vs || !fs) return null;
+    if (!vs || !fs) throw new Error("Shader compile failed.");
 
     program = gl.createProgram();
     gl.attachShader(program, vs);
     gl.attachShader(program, fs);
     gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return null;
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      throw new Error("Shader link failed.");
+    }
 
     gl.useProgram(program);
 

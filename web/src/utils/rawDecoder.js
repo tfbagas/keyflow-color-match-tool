@@ -249,6 +249,67 @@ function srgbEncodeLut() {
   return t;
 }
 
+const MAX_TIFF_DECODE_DIM = 2560;
+const RAW_SCAN_CHUNK_BYTES = 2 * 1024 * 1024;
+const MAX_EMBEDDED_JPEG_BYTES = 16 * 1024 * 1024;
+
+async function findEmbeddedJpegsFromFile(file) {
+  const found = [];
+  const totalSize = file.size;
+  let offset = 0;
+
+  while (offset < totalSize - 3) {
+    const chunkEnd = Math.min(totalSize, offset + RAW_SCAN_CHUNK_BYTES + 3);
+    const chunkU8 = new Uint8Array(await file.slice(offset, chunkEnd).arrayBuffer());
+    const limit = chunkU8.length - 3;
+    let i = 0;
+    let jumped = false;
+
+    while (i < limit) {
+      i = chunkU8.indexOf(0xff, i);
+      if (i < 0 || i >= limit) break;
+      if (chunkU8[i + 1] === 0xd8 && chunkU8[i + 2] === 0xff) {
+        const soiOffset = offset + i;
+        let res = findJpegEnd(chunkU8, i);
+        let relEnd = res ? res.end - i : 0;
+
+        if (!res && soiOffset + chunkU8.length - i < totalSize) {
+          const probeEnd = Math.min(totalSize, soiOffset + MAX_EMBEDDED_JPEG_BYTES);
+          const probeU8 = new Uint8Array(await file.slice(soiOffset, probeEnd).arrayBuffer());
+          res = findJpegEnd(probeU8, 0);
+          relEnd = res ? res.end : 0;
+        }
+
+        if (res && relEnd > 20000) {
+          found.push({
+            start: soiOffset,
+            end: soiOffset + relEnd,
+            w: res.w,
+            h: res.h,
+            bytes: relEnd,
+          });
+          const nextFileOffset = soiOffset + relEnd;
+          if (nextFileOffset >= offset + RAW_SCAN_CHUNK_BYTES) {
+            offset = nextFileOffset;
+            jumped = true;
+            break;
+          }
+          i += relEnd;
+          continue;
+        }
+      }
+      i++;
+    }
+
+    if (!jumped) {
+      offset += RAW_SCAN_CHUNK_BYTES;
+    }
+  }
+
+  found.sort((a, b) => b.w * b.h - a.w * a.h || b.bytes - a.bytes);
+  return found;
+}
+
 async function decodeTiffLike(file) {
   const mod = await import("utif");
   const UTIF = mod.default || mod;
@@ -280,14 +341,29 @@ async function decodeTiffLike(file) {
           rgba[i + 2] = lut[rgba[i + 2]];
         }
       }
-      const canvas = document.createElement("canvas");
-      canvas.width = ifd.width;
-      canvas.height = ifd.height;
-      const ctx = canvas.getContext("2d");
-      const imgData = ctx.createImageData(ifd.width, ifd.height);
+      const srcCanvas = document.createElement("canvas");
+      srcCanvas.width = ifd.width;
+      srcCanvas.height = ifd.height;
+      const srcCtx = srcCanvas.getContext("2d");
+      const imgData = srcCtx.createImageData(ifd.width, ifd.height);
       imgData.data.set(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, ifd.width * ifd.height * 4));
-      ctx.putImageData(imgData, 0, 0);
-      const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
+      srcCtx.putImageData(imgData, 0, 0);
+
+      const scale = Math.min(1, MAX_TIFF_DECODE_DIM / Math.max(ifd.width, ifd.height));
+      let outCanvas = srcCanvas;
+      if (scale < 1) {
+        outCanvas = document.createElement("canvas");
+        outCanvas.width = Math.max(1, Math.round(ifd.width * scale));
+        outCanvas.height = Math.max(1, Math.round(ifd.height * scale));
+        const outCtx = outCanvas.getContext("2d");
+        outCtx.drawImage(srcCanvas, 0, 0, outCanvas.width, outCanvas.height);
+        srcCanvas.width = 0;
+        srcCanvas.height = 0;
+      }
+
+      const blob = await new Promise((res) => outCanvas.toBlob(res, "image/jpeg", 0.92));
+      outCanvas.width = 0;
+      outCanvas.height = 0;
       if (blob) return blob;
     } catch {
       // try next IFD
@@ -301,10 +377,9 @@ export async function prepareImageBlob(file, info) {
   const { ext } = info;
 
   if (info.isRaw) {
-    const u8 = new Uint8Array(await file.arrayBuffer());
-    const jpegs = findEmbeddedJpegs(u8);
+    const jpegs = await findEmbeddedJpegsFromFile(file);
     for (const j of jpegs.slice(0, 4)) {
-      const blob = new Blob([u8.subarray(j.start, j.end)], { type: "image/jpeg" });
+      const blob = file.slice(j.start, j.end, "image/jpeg");
       if (await decodeCheck(blob)) return { blob, source: "embedded-preview" };
     }
     if (TIFF_BASED_RAW.includes(ext) || ext === "orf" || ext === "rw2") {

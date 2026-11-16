@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { Columns, MoveHorizontal, Eye, Pin, PinOff, Camera, Download, Check } from "lucide-react";
+import { Columns, MoveHorizontal, Eye, Pin, PinOff, Download, Check } from "lucide-react";
 import { usePillIndicator } from "../hooks/usePillIndicator";
 import { prepareGrade, gradeRGB, applyLogInputRGB } from "../utils/gradeEngine";
 import VideoGLCanvas from "./VideoGLCanvas";
@@ -35,6 +35,7 @@ export default function ComparisonSlider({
   targetBaseName = "Target",
   simulateLogInput = false,
   onToggleSimulateLogInput,
+  isTabActive = true,
   footer = null,
 }) {
   const [splitPos, setSplitPos] = useState(50); // percentage 0..100
@@ -383,6 +384,13 @@ export default function ComparisonSlider({
     }
   };
 
+  useEffect(
+    () => () => {
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    },
+    []
+  );
+
   return (
     <div className="m3-panel !bg-[#121216] lg:!bg-transparent rounded-2xl p-2.5 lg:p-3.5 flex-1 flex flex-col">
       {/* Header Row */}
@@ -672,6 +680,7 @@ export default function ComparisonSlider({
                   simulateLogInput={simulateLogInput}
                   previewRef={activeGLRef}
                   onError={onVideoError}
+                  isActive={isTabActive}
                   className="w-full h-full object-contain pointer-events-none"
                 />
               ) : (

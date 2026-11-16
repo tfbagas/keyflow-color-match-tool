@@ -115,88 +115,6 @@ function applyCalibrationToParams(params, cal) {
   };
 }
 
-function drawHistogram(canvas, imageData) {
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  const w = canvas.width;
-  const h = canvas.height;
-  ctx.clearRect(0, 0, w, h);
-
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
-  ctx.lineWidth = 1;
-  [0.25, 0.5, 0.75].forEach((p) => {
-    const x = Math.round(w * p) + 0.5;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, h);
-    ctx.stroke();
-  });
-
-  if (!imageData || !imageData.data) {
-    return;
-  }
-
-  const data = imageData.data;
-  const rHist = new Uint32Array(256);
-  const gHist = new Uint32Array(256);
-  const bHist = new Uint32Array(256);
-  const yHist = new Uint32Array(256);
-
-  const step = 8;
-  for (let i = 0; i < data.length; i += step) {
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
-    rHist[r]++;
-    gHist[g]++;
-    bHist[b]++;
-    const y = Math.min(255, Math.max(0, Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b)));
-    yHist[y]++;
-  }
-
-  let maxCount = 1;
-  for (let i = 2; i < 254; i++) {
-    if (rHist[i] > maxCount) maxCount = rHist[i];
-    if (gHist[i] > maxCount) maxCount = gHist[i];
-    if (bHist[i] > maxCount) maxCount = bHist[i];
-    if (yHist[i] > maxCount) maxCount = yHist[i];
-  }
-
-  const drawChannel = (hist, strokeColor, fillColor) => {
-    ctx.beginPath();
-    ctx.moveTo(0, h);
-    for (let i = 0; i < 256; i++) {
-      const x = (i / 255) * w;
-      const norm = Math.min(1, hist[i] / maxCount);
-      const y = h - norm * (h - 6);
-      ctx.lineTo(x, y);
-    }
-    ctx.lineTo(w, h);
-    ctx.closePath();
-    ctx.fillStyle = fillColor;
-    ctx.fill();
-
-    ctx.beginPath();
-    for (let i = 0; i < 256; i++) {
-      const x = (i / 255) * w;
-      const norm = Math.min(1, hist[i] / maxCount);
-      const y = h - norm * (h - 6);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = 1.25;
-    ctx.stroke();
-  };
-
-  ctx.globalCompositeOperation = "screen";
-  drawChannel(rHist, "rgba(248, 113, 113, 0.75)", "rgba(248, 113, 113, 0.14)");
-  drawChannel(gHist, "rgba(74, 222, 128, 0.75)", "rgba(74, 222, 128, 0.14)");
-  drawChannel(bHist, "rgba(96, 165, 250, 0.75)", "rgba(96, 165, 250, 0.14)");
-  drawChannel(yHist, "rgba(226, 228, 233, 0.85)", "rgba(226, 228, 233, 0.08)");
-  ctx.globalCompositeOperation = "source-over";
-}
-
 function toRgbCss(r = 0.5, g = 0.5, b = 0.5) {
   const cb = (v) => Math.max(0, Math.min(255, Math.round((v ?? 0.5) * 255)));
   return `rgb(${cb(r)}, ${cb(g)}, ${cb(b)})`;
@@ -260,7 +178,6 @@ export default function App() {
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [isSavingFrame, setIsSavingFrame] = useState(false);
   const [simulateLogInput, setSimulateLogInput] = useState(false);
-  const [scopeImageData, setScopeImageData] = useState(null);
   const [isScopesCollapsed, setIsScopesCollapsed] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth < 1024 : false
   );
@@ -269,6 +186,10 @@ export default function App() {
   const [webglPhotoError, setWebglPhotoError] = useState(false);
   const [lastMatchedParams, setLastMatchedParams] = useState(null);
   const [reloadedFeedback, setReloadedFeedback] = useState(false);
+  const reloadedTimerRef = useRef(null);
+  const scopeRef = useRef(null);
+  const slotSnapshotsRef = useRef(slotSnapshots);
+  slotSnapshotsRef.current = slotSnapshots;
 
   const isScopesCollapsedRef = useRef(isScopesCollapsed);
   isScopesCollapsedRef.current = isScopesCollapsed;
@@ -348,9 +269,9 @@ export default function App() {
 
   const workerRef = useRef(null);
   const analysisTimeoutRef = useRef(null);
+  const analysisJobIdRef = useRef(0);
   const pendingAnalysisRef = useRef(null);
   const gradedCanvasRef = useRef(null);
-  const histogramCanvasRef = useRef(null);
   const previewSourceImageDataRef = useRef(null);
   const lastRenderedImgRef = useRef(null);
   const rafRef = useRef(null);
@@ -362,21 +283,69 @@ export default function App() {
     }
   }, []);
 
+  // Draws an image or a video frame into RGBA pixels (downscaled to maxDim).
+  const captureRgba = useCallback((source, maxDim) => {
+    const sw = source.videoWidth || source.naturalWidth;
+    const sh = source.videoHeight || source.naturalHeight;
+    if (!sw || !sh) return null;
+    const scale = Math.min(1, maxDim / Math.max(sw, sh));
+    const w = Math.max(1, Math.round(sw * scale));
+    const h = Math.max(1, Math.round(sh * scale));
+    const off = document.createElement("canvas");
+    off.width = w;
+    off.height = h;
+    const ctx = off.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(source, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h);
+    return { data: d.data, numPixels: w * h };
+  }, []);
+
   const runFallbackAnalysisOrReset = useCallback(
     (reasonMsg) => {
       clearAnalysisTimeout();
       const pending = pendingAnalysisRef.current;
       pendingAnalysisRef.current = null;
 
-      if (pending && pending.rgbaData && pending.numPixels > 0) {
+      let refData = pending?.rgbaData;
+      let refNumPixels = pending?.numPixels || 0;
+      let tgtData = pending?.targetRgbaData || null;
+      let tgtNumPixels = pending?.targetNumPixels || 0;
+
+      // Re-capture on main thread if pixel buffers were transferred to a timed-out/crashed worker
+      if ((!refData || refData.buffer.byteLength === 0) && referenceRef.current?.imgElement) {
+        const recRef = captureRgba(referenceRef.current.imgElement, pending?.maxDim || 1280);
+        if (recRef) {
+          refData = recRef.data;
+          refNumPixels = recRef.numPixels;
+        }
+      }
+      if (
+        tgtData &&
+        tgtData.buffer.byteLength === 0 &&
+        targetRef.current?.imgElement
+      ) {
+        const recTgt = captureRgba(
+          targetRef.current.imgElement,
+          Math.min(pending?.maxDim || 1280, 960)
+        );
+        if (recTgt) {
+          tgtData = recTgt.data;
+          tgtNumPixels = recTgt.numPixels;
+        } else {
+          tgtData = null;
+          tgtNumPixels = 0;
+        }
+      }
+
+      if (refData && refData.buffer.byteLength > 0 && refNumPixels > 0) {
         try {
           const fallbackParams = analyzeImagePixels(
-            pending.rgbaData,
-            pending.numPixels,
+            refData,
+            refNumPixels,
             undefined,
-            pending.targetRgbaData || null,
-            pending.targetNumPixels || 0,
-            pending.mediaType || "image"
+            tgtData && tgtData.buffer.byteLength > 0 ? tgtData : null,
+            tgtNumPixels,
+            pending?.mediaType || "image"
           );
           setIsAnalyzing(false);
           setGradingParams({ ...fallbackParams });
@@ -395,7 +364,7 @@ export default function App() {
       setIsAnalyzing(false);
       setStatusText("Error");
     },
-    [clearAnalysisTimeout]
+    [clearAnalysisTimeout, captureRgba]
   );
 
   const handleOpenChangelog = () => {
@@ -455,7 +424,10 @@ export default function App() {
     );
 
     worker.onmessage = (e) => {
-      const { type, params, stage, error } = e.data || {};
+      const { type, jobId, params, stage, error } = e.data || {};
+      if (jobId !== undefined && jobId !== analysisJobIdRef.current) {
+        return;
+      }
       if (type === "stage") {
         setStatusText(stage || "Analyzing...");
       } else if (type === "success" && params) {
@@ -509,25 +481,8 @@ export default function App() {
     }
   }, []);
 
-  // Draws an image or a video frame into RGBA pixels (downscaled to maxDim).
-  const captureRgba = useCallback((source, maxDim) => {
-    const sw = source.videoWidth || source.naturalWidth;
-    const sh = source.videoHeight || source.naturalHeight;
-    if (!sw || !sh) return null;
-    const scale = Math.min(1, maxDim / Math.max(sw, sh));
-    const w = Math.max(1, Math.round(sw * scale));
-    const h = Math.max(1, Math.round(sh * scale));
-    const off = document.createElement("canvas");
-    off.width = w;
-    off.height = h;
-    const ctx = off.getContext("2d", { willReadFrequently: true });
-    ctx.drawImage(source, 0, 0, w, h);
-    const d = ctx.getImageData(0, 0, w, h);
-    return { data: d.data, numPixels: w * h };
-  }, []);
-
   // Video-only helpers: mean luma check, letterbox bar filtering (R,G,B <= 6),
-  // and smart non-black frame seeking when video starts with a black fade-in.
+  // and smart non-black frame seeking on the single primary videoEl (no dual decoder).
   const computeFrameMeanLuma = useCallback((rgba) => {
     if (!rgba || rgba.length < 4) return 0;
     let sum = 0;
@@ -570,30 +525,41 @@ export default function App() {
       }
 
       const dur = Number.isFinite(videoEl.duration) ? videoEl.duration : 0;
-      const srcUrl = videoEl.currentSrc || videoEl.src;
-      if (!srcUrl || dur <= 0.25) {
+      if (dur <= 0.25 || videoEl.readyState < 1) {
         return cur ? filterLetterboxPixels(cur.data) : null;
       }
 
-      const probe = document.createElement("video");
-      probe.muted = true;
-      probe.playsInline = true;
-      probe.preload = "auto";
-      probe.src = srcUrl;
+      const wasPaused = videoEl.paused;
+      const origTime = videoEl.currentTime;
+      if (!wasPaused) {
+        try {
+          videoEl.pause();
+        } catch {
+          // ignore
+        }
+      }
 
-      try {
-        await new Promise((resolve) => {
-          const t = setTimeout(resolve, 1500);
-          probe.onloadeddata = () => {
+      const seekTo = (ts) =>
+        new Promise((resolve) => {
+          let done = false;
+          const finish = () => {
+            if (done) return;
+            done = true;
             clearTimeout(t);
-            resolve();
+            videoEl.removeEventListener("seeked", onSeeked);
+            requestAnimationFrame(() => resolve());
           };
-          probe.onerror = () => {
-            clearTimeout(t);
-            resolve();
-          };
+          const onSeeked = () => finish();
+          const t = setTimeout(finish, 1200);
+          videoEl.addEventListener("seeked", onSeeked);
+          try {
+            videoEl.currentTime = ts;
+          } catch {
+            finish();
+          }
         });
 
+      try {
         const candidates = [
           Math.min(dur * 0.25, 2.0),
           dur * 0.5,
@@ -604,15 +570,8 @@ export default function App() {
         let bestLuma = cur ? computeFrameMeanLuma(cur.data) : 0;
 
         for (const ts of candidates) {
-          await new Promise((resolve) => {
-            const t = setTimeout(resolve, 1200);
-            probe.onseeked = () => {
-              clearTimeout(t);
-              requestAnimationFrame(() => resolve());
-            };
-            probe.currentTime = ts;
-          });
-          const cap = captureRgba(probe, maxDim);
+          await seekTo(ts);
+          const cap = captureRgba(videoEl, maxDim);
           if (!cap) continue;
           const luma = computeFrameMeanLuma(cap.data);
           if (luma > bestLuma) {
@@ -621,15 +580,16 @@ export default function App() {
           }
           if (luma >= 0.08) break;
         }
+
+        if (Math.abs(videoEl.currentTime - origTime) > 0.02) {
+          await seekTo(origTime);
+        }
         return best ? filterLetterboxPixels(best.data) : null;
       } catch {
         return cur ? filterLetterboxPixels(cur.data) : null;
       } finally {
-        try {
-          probe.removeAttribute("src");
-          probe.load();
-        } catch {
-          // ignore probe cleanup
+        if (!wasPaused) {
+          videoEl.play().catch(() => {});
         }
       }
     },
@@ -640,6 +600,7 @@ export default function App() {
   const triggerReferenceAnalysis = useCallback(
     async (img) => {
       if (!img) return;
+      const jobId = ++analysisJobIdRef.current;
       setIsAnalyzing(true);
       setStatusText("Analyzing...");
 
@@ -666,7 +627,12 @@ export default function App() {
         }
       }
 
+      // If a newer analysis started while awaiting video frame seek, abort this stale job.
+      if (jobId !== analysisJobIdRef.current) return;
+
       pendingAnalysisRef.current = {
+        jobId,
+        maxDim: analysisMaxDim,
         rgbaData: ref.data,
         numPixels: ref.numPixels,
         targetRgbaData: tgt ? tgt.data : null,
@@ -676,16 +642,32 @@ export default function App() {
 
       clearAnalysisTimeout();
       analysisTimeoutRef.current = setTimeout(() => {
+        analysisJobIdRef.current += 1;
+        workerRef.current?.terminate();
+        workerRef.current = null;
+        initWorker();
         runFallbackAnalysisOrReset(
           "Worker analysis timed out; recovered on main thread."
         );
       }, 6000);
 
       try {
-        workerRef.current?.postMessage({
-          type: "analyze",
-          ...pendingAnalysisRef.current,
-        });
+        const transferables = [ref.data.buffer];
+        if (tgt?.data?.buffer && tgt.data.buffer !== ref.data.buffer) {
+          transferables.push(tgt.data.buffer);
+        }
+        workerRef.current?.postMessage(
+          {
+            type: "analyze",
+            jobId,
+            rgbaData: ref.data,
+            numPixels: ref.numPixels,
+            targetRgbaData: tgt ? tgt.data : null,
+            targetNumPixels: tgt ? tgt.numPixels : 0,
+            mediaType: tgtInfo?.kind === "video" ? "video" : "image",
+          },
+          transferables
+        );
       } catch {
         runFallbackAnalysisOrReset(
           "Worker unavailable; analyzed on main thread."
@@ -697,6 +679,7 @@ export default function App() {
       captureBestVideoFrame,
       captureRgba,
       clearAnalysisTimeout,
+      initWorker,
       runFallbackAnalysisOrReset,
     ]
   );
@@ -706,40 +689,77 @@ export default function App() {
     if (r && r.imgElement) triggerReferenceAnalysis(r.imgElement);
   };
 
-  const replaceReference = useCallback((next) => {
-    const prev = referenceRef.current;
-    if (prev && prev.objectUrl) {
-      try {
-        URL.revokeObjectURL(prev.objectUrl);
-      } catch {
-        // ignore revoke errors
-      }
-    }
-    referenceRef.current = next;
-    setReferenceImage(next);
+  const createThumbnailUrl = useCallback(async (source, maxDim = 512) => {
+    const sw = source.videoWidth || source.naturalWidth || 0;
+    const sh = source.videoHeight || source.naturalHeight || 0;
+    if (!sw || !sh) return "";
+    const scale = Math.min(1, maxDim / Math.max(sw, sh));
+    const w = Math.max(1, Math.round(sw * scale));
+    const h = Math.max(1, Math.round(sh * scale));
+    const tc = document.createElement("canvas");
+    tc.width = w;
+    tc.height = h;
+    const tctx = tc.getContext("2d");
+    if (!tctx) return "";
+    tctx.drawImage(source, 0, 0, w, h);
+    const blob = await new Promise((res) => tc.toBlob(res, "image/jpeg", 0.82));
+    tc.width = 0;
+    tc.height = 0;
+    return blob ? URL.createObjectURL(blob) : "";
   }, []);
 
-  const replaceTarget = useCallback((next) => {
-    const prev = targetRef.current;
-    if (prev && prev.kind === "video") {
+  const revokeMediaUrls = useCallback((item) => {
+    if (!item) return;
+    if (item.thumbUrl && item.thumbUrl !== item.objectUrl && item.thumbUrl.startsWith("blob:")) {
       try {
-        prev.videoEl.pause();
-        prev.videoEl.removeAttribute("src");
-        prev.videoEl.load();
+        URL.revokeObjectURL(item.thumbUrl);
       } catch {
-        // ignore teardown errors
-      }
-      if (prev.videoUrl) URL.revokeObjectURL(prev.videoUrl);
-    } else if (prev && prev.objectUrl) {
-      try {
-        URL.revokeObjectURL(prev.objectUrl);
-      } catch {
-        // ignore revoke errors
+        // ignore
       }
     }
-    targetRef.current = next;
-    setTargetImage(next);
+    if (item.objectUrl) {
+      try {
+        URL.revokeObjectURL(item.objectUrl);
+      } catch {
+        // ignore
+      }
+    }
+    if (item.videoUrl) {
+      try {
+        URL.revokeObjectURL(item.videoUrl);
+      } catch {
+        // ignore
+      }
+    }
   }, []);
+
+  const replaceReference = useCallback(
+    (next) => {
+      revokeMediaUrls(referenceRef.current);
+      referenceRef.current = next;
+      setReferenceImage(next);
+    },
+    [revokeMediaUrls]
+  );
+
+  const replaceTarget = useCallback(
+    (next) => {
+      const prev = targetRef.current;
+      if (prev && prev.kind === "video") {
+        try {
+          prev.videoEl.pause();
+          prev.videoEl.removeAttribute("src");
+          prev.videoEl.load();
+        } catch {
+          // ignore teardown errors
+        }
+      }
+      revokeMediaUrls(prev);
+      targetRef.current = next;
+      setTargetImage(next);
+    },
+    [revokeMediaUrls]
+  );
 
   const loadVideoFile = useCallback(
     (file, meta) => {
@@ -790,7 +810,7 @@ export default function App() {
 
         let poster = "";
         try {
-          const pw = Math.min(640, v.videoWidth);
+          const pw = Math.min(512, v.videoWidth);
           const ph = Math.max(1, Math.round((pw * v.videoHeight) / v.videoWidth));
           const pc = document.createElement("canvas");
           pc.width = pw;
@@ -820,7 +840,10 @@ export default function App() {
               if (luma >= 0.08) break;
             }
           }
-          poster = pc.toDataURL("image/jpeg", 0.8);
+          const thumbBlob = await new Promise((res) => pc.toBlob(res, "image/jpeg", 0.82));
+          pc.width = 0;
+          pc.height = 0;
+          poster = thumbBlob ? URL.createObjectURL(thumbBlob) : "";
           if (v.currentTime > 0.05) {
             v.currentTime = 0;
           }
@@ -839,6 +862,7 @@ export default function App() {
           formatBadge: `VIDEO (${meta.ext.toUpperCase()})`,
           sizeMB: (file.size / (1024 * 1024)).toFixed(1),
           dataUrl: poster,
+          thumbUrl: poster,
           imgElement: null,
           videoEl: v,
           videoUrl: url,
@@ -930,7 +954,7 @@ export default function App() {
         setStatusText("Invalid Image");
       };
 
-      img.onload = () => {
+      img.onload = async () => {
         if (img.naturalWidth < 1 || img.naturalHeight < 1) {
           URL.revokeObjectURL(objectUrl);
           setSlotError(type, "Invalid image dimensions.");
@@ -940,6 +964,15 @@ export default function App() {
         const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
         const rawBaseName = file.name.replace(/\.[^/.]+$/, "");
         const baseName = sanitizeMetadataText(rawBaseName, "Reference", 48);
+
+        let thumbUrl = "";
+        if (Math.max(img.naturalWidth, img.naturalHeight) > 512) {
+          try {
+            thumbUrl = await createThumbnailUrl(img, 512);
+          } catch {
+            thumbUrl = "";
+          }
+        }
 
         const info = {
           kind: "image",
@@ -951,6 +984,7 @@ export default function App() {
           formatBadge: meta.label,
           sizeMB,
           dataUrl: objectUrl,
+          thumbUrl: thumbUrl || objectUrl,
           objectUrl,
           imgElement: img,
         };
@@ -975,6 +1009,7 @@ export default function App() {
       triggerReferenceAnalysis,
       replaceReference,
       replaceTarget,
+      createThumbnailUrl,
       loadVideoFile,
       handleImportPreset,
     ]
@@ -1010,6 +1045,8 @@ export default function App() {
 
   const activePasteTarget =
     hoveredSlot || focusedSlot || (!referenceImage ? "reference" : "target");
+  const activePasteTargetRef = useRef(activePasteTarget);
+  activePasteTargetRef.current = activePasteTarget;
 
   useEffect(() => {
     const handlePaste = (e) => {
@@ -1019,12 +1056,14 @@ export default function App() {
       const items = e.clipboardData?.items;
       if (!items) return;
 
+      const targetSlot = activePasteTargetRef.current;
+
       for (let i = 0; i < items.length; i++) {
         const mime = items[i].type;
         if (mime.startsWith("image/")) {
           if (!ALLOWED_IMAGE_MIMES.includes(mime)) {
             setSlotError(
-              activePasteTarget,
+              targetSlot,
               `Unsupported clipboard image format (${mime}). Allowed: JPG, PNG, WEBP.`
             );
             return;
@@ -1035,7 +1074,7 @@ export default function App() {
             const file = new File([blob], `Clipboard_Image.${ext}`, {
               type: mime,
             });
-            loadImageFile(file, activePasteTarget);
+            loadImageFile(file, targetSlot);
             break;
           }
         }
@@ -1043,7 +1082,7 @@ export default function App() {
     };
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
-  }, [activePasteTarget, loadImageFile, setSlotError]);
+  }, [loadImageFile, setSlotError]);
 
   const videoEl = targetImage?.kind === "video" ? targetImage.videoEl : null;
   const activePreviewImgElement = !videoEl
@@ -1086,14 +1125,14 @@ export default function App() {
       gradingParamsRef.current,
       simulateLogInputRef.current
     );
-    setScopeImageData({ data: outBuf, width: src.width, height: src.height });
+    scopeRef.current?.updateFrame({ data: outBuf, width: src.width, height: src.height });
   }, []);
 
   // Build tiny <=96x54 (mobile) / <=128x72 (desktop) photo source buffer once per image.
   useEffect(() => {
     if (!activePreviewImgElement) {
       scopePhotoSrcRef.current = null;
-      if (!videoEl) setScopeImageData(null);
+      if (!videoEl) scopeRef.current?.updateFrame(null);
       return undefined;
     }
     const sw = activePreviewImgElement.naturalWidth || 1;
@@ -1238,7 +1277,7 @@ export default function App() {
           gradingParamsRef.current,
           simulateLogInputRef.current
         );
-        setScopeImageData({ data: gradedBuf, width: w, height: h });
+        scopeRef.current?.updateFrame({ data: gradedBuf, width: w, height: h });
       } catch {
         // frame not readable yet
       }
@@ -1369,23 +1408,22 @@ export default function App() {
     () => () => {
       if (scopeIdleTimerRef.current) clearTimeout(scopeIdleTimerRef.current);
       if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+      if (reloadedTimerRef.current) clearTimeout(reloadedTimerRef.current);
       const t = targetRef.current;
       if (t && t.kind === "video") {
         try {
           t.videoEl.pause();
+          t.videoEl.removeAttribute("src");
+          t.videoEl.load();
         } catch {
           // ignore
         }
-        if (t.videoUrl) URL.revokeObjectURL(t.videoUrl);
-      } else if (t && t.objectUrl) {
-        URL.revokeObjectURL(t.objectUrl);
       }
-      const r = referenceRef.current;
-      if (r && r.objectUrl) {
-        URL.revokeObjectURL(r.objectUrl);
-      }
+      revokeMediaUrls(t);
+      revokeMediaUrls(referenceRef.current);
     },
-    []
+    [revokeMediaUrls]
   );
 
   const handleRunPipelineCalibration = () => {
@@ -1443,36 +1481,42 @@ export default function App() {
     }, 180);
   };
 
-  const handleParamChange = (key, value) => {
-    const next = { ...liveParamsRef.current, [key]: value };
-    liveParamsRef.current = next;
-    const eff = scaleParamsByStrength(next, liveStrengthRef.current);
-    glPreviewRef.current?.setParams?.(eff);
-    if (isControlDraggingRef.current) {
-      scheduleParamCommit();
-    } else {
-      setGradingParams(next);
-    }
-  };
+  const handleParamChange = useCallback(
+    (key, value) => {
+      const next = { ...liveParamsRef.current, [key]: value };
+      liveParamsRef.current = next;
+      const eff = scaleParamsByStrength(next, liveStrengthRef.current);
+      glPreviewRef.current?.setParams?.(eff);
+      if (isControlDraggingRef.current) {
+        scheduleParamCommit();
+      } else {
+        setGradingParams(next);
+      }
+    },
+    [scheduleParamCommit]
+  );
 
-  const handleMatchStrengthChange = (_, val) => {
-    const nextStrength = Math.round(val);
-    liveStrengthRef.current = nextStrength;
-    const eff = scaleParamsByStrength(liveParamsRef.current, nextStrength);
-    glPreviewRef.current?.setParams?.(eff);
-    if (isControlDraggingRef.current) {
-      scheduleParamCommit();
-    } else {
-      setMatchStrength(nextStrength);
-    }
-  };
+  const handleMatchStrengthChange = useCallback(
+    (_, val) => {
+      const nextStrength = Math.round(val);
+      liveStrengthRef.current = nextStrength;
+      const eff = scaleParamsByStrength(liveParamsRef.current, nextStrength);
+      glPreviewRef.current?.setParams?.(eff);
+      if (isControlDraggingRef.current) {
+        scheduleParamCommit();
+      } else {
+        setMatchStrength(nextStrength);
+      }
+    },
+    [scheduleParamCommit]
+  );
 
-  const handleCalibrationChange = (key, value) => {
+  const handleCalibrationChange = useCallback((key, value) => {
     setCalibration((prev) => ({
       ...prev,
       [key]: value,
     }));
-  };
+  }, []);
 
   const handleResetParams = () => {
     setGradingParams({ ...DEFAULT_PARAMS });
@@ -1481,36 +1525,63 @@ export default function App() {
     setStatusText("Reset");
   };
 
-  const handleWheelChange = (prefix, [r, g, b]) => {
-    const next = {
-      ...liveParamsRef.current,
-      [`${prefix}R`]: r,
-      [`${prefix}G`]: g,
-      [`${prefix}B`]: b,
-    };
-    liveParamsRef.current = next;
-    const eff = scaleParamsByStrength(next, liveStrengthRef.current);
-    glPreviewRef.current?.setParams?.(eff);
-    if (isControlDraggingRef.current) {
-      scheduleParamCommit();
-    } else {
-      setGradingParams(next);
-    }
-  };
+  const handleWheelChange = useCallback(
+    (prefix, [r, g, b]) => {
+      const next = {
+        ...liveParamsRef.current,
+        [`${prefix}R`]: r,
+        [`${prefix}G`]: g,
+        [`${prefix}B`]: b,
+      };
+      liveParamsRef.current = next;
+      const eff = scaleParamsByStrength(next, liveStrengthRef.current);
+      glPreviewRef.current?.setParams?.(eff);
+      if (isControlDraggingRef.current) {
+        scheduleParamCommit();
+      } else {
+        setGradingParams(next);
+      }
+    },
+    [scheduleParamCommit]
+  );
 
-  const handleWheelReset = (prefix) => {
-    handleWheelChange(prefix, [0.5, 0.5, 0.5]);
-  };
+  const handleWheelReset = useCallback(
+    (prefix) => {
+      handleWheelChange(prefix, [0.5, 0.5, 0.5]);
+    },
+    [handleWheelChange]
+  );
+
+  const handleLiftChange = useCallback((rgb) => handleWheelChange("lift", rgb), [handleWheelChange]);
+  const handleGammaChange = useCallback((rgb) => handleWheelChange("gamma", rgb), [handleWheelChange]);
+  const handleGainChange = useCallback((rgb) => handleWheelChange("gain", rgb), [handleWheelChange]);
+  const handleLiftReset = useCallback(() => handleWheelReset("lift"), [handleWheelReset]);
+  const handleGammaReset = useCallback(() => handleWheelReset("gamma"), [handleWheelReset]);
+  const handleGainReset = useCallback(() => handleWheelReset("gain"), [handleWheelReset]);
+
+  const liftRgb = useMemo(
+    () => [gradingParams.liftR, gradingParams.liftG, gradingParams.liftB],
+    [gradingParams.liftR, gradingParams.liftG, gradingParams.liftB]
+  );
+  const gammaRgb = useMemo(
+    () => [gradingParams.gammaR, gradingParams.gammaG, gradingParams.gammaB],
+    [gradingParams.gammaR, gradingParams.gammaG, gradingParams.gammaB]
+  );
+  const gainRgb = useMemo(
+    () => [gradingParams.gainR, gradingParams.gainG, gradingParams.gainB],
+    [gradingParams.gainR, gradingParams.gainG, gradingParams.gainB]
+  );
 
   const handleSwitchSlot = useCallback(
     (nextSlot) => {
       if (nextSlot === activeSlot) return;
-      setSlotSnapshots((prev) => {
-        const updated = { ...prev, [activeSlot]: { ...gradingParams } };
-        const loaded = updated[nextSlot] || { ...DEFAULT_PARAMS };
-        setGradingParams({ ...loaded });
-        return updated;
-      });
+      const updated = {
+        ...slotSnapshotsRef.current,
+        [activeSlot]: { ...gradingParams },
+      };
+      const loaded = updated[nextSlot] || { ...DEFAULT_PARAMS };
+      setSlotSnapshots(updated);
+      setGradingParams({ ...loaded });
       setActiveSlot(nextSlot);
       setStatusText(`Slot ${nextSlot}`);
     },
@@ -1592,8 +1663,9 @@ export default function App() {
     if (lastMatchedParams) {
       setGradingParams({ ...lastMatchedParams });
       setStatusText("Matched");
+      if (reloadedTimerRef.current) clearTimeout(reloadedTimerRef.current);
       setReloadedFeedback(true);
-      setTimeout(() => setReloadedFeedback(false), 1200);
+      reloadedTimerRef.current = setTimeout(() => setReloadedFeedback(false), 1200);
     } else if (referenceImage?.imgElement) {
       triggerReferenceAnalysis(referenceImage.imgElement);
     }
@@ -1601,34 +1673,37 @@ export default function App() {
 
   const hasLook = Boolean(referenceImage || importedLook);
 
-  const buildCalibratedParams = () =>
-    applyCalibrationToParams(effectiveParams, calibration);
+  const handleExportLut = useCallback(
+    (ext) => {
+      if (!hasLook) return;
+      try {
+        const safePreset = sanitizeMetadataText(
+          presetName,
+          referenceImage?.baseName || importedLook?.name || "Custom Look",
+          64
+        );
+        const { blob, fileName } = generateLutFile(
+          applyCalibrationToParams(effectiveParams, calibration),
+          safePreset,
+          ext
+        );
+        downloadBlob(blob, fileName);
+        setStatusText(`Exported .${ext}`);
+      } catch {
+        setStatusText("Export Error");
+      }
+    },
+    [hasLook, presetName, referenceImage, importedLook, effectiveParams, calibration]
+  );
 
-  const handleExportLut = (ext) => {
-    if (!hasLook) return;
-    try {
-      const safePreset = sanitizeMetadataText(
-        presetName,
-        referenceImage?.baseName || importedLook?.name || "Custom Look",
-        64
-      );
-      const { blob, fileName } = generateLutFile(
-        buildCalibratedParams(),
-        safePreset,
-        ext
-      );
-      downloadBlob(blob, fileName);
-      setStatusText(`Exported .${ext}`);
-    } catch {
-      setStatusText("Export Error");
-    }
-  };
+  const handleExportCube = useCallback(() => handleExportLut("cube"), [handleExportLut]);
+  const handleExportLut3d = useCallback(() => handleExportLut("lut"), [handleExportLut]);
 
   const handleResetCalibration = () => {
     setCalibration({ ...DEFAULT_CALIBRATION });
   };
 
-  const handleExport = async () => {
+  const handleExport = useCallback(async () => {
     if (!hasLook) return;
     setIsExporting(true);
     setStatusText("Exporting...");
@@ -1659,7 +1734,64 @@ export default function App() {
     } finally {
       setIsExporting(false);
     }
-  };
+  }, [
+    hasLook,
+    effectiveParams,
+    calibration,
+    presetName,
+    referenceImage,
+    importedLook,
+    authorName,
+    description,
+  ]);
+
+  const handleSelectReference = useCallback(
+    (file) => loadImageFile(file, "reference"),
+    [loadImageFile]
+  );
+  const handleClearReference = useCallback(() => {
+    replaceReference(null);
+    if (!importedLook) setLastMatchedParams(null);
+    setReferenceError("");
+    setStatusText("Ready");
+  }, [replaceReference, importedLook]);
+  const handleTryReferenceSample = useCallback(
+    (id) => handleTrySample("reference", id),
+    [handleTrySample]
+  );
+  const handleClearImportedLook = useCallback(() => {
+    setImportedLook(null);
+    setLastMatchedParams(null);
+  }, []);
+  const handleHoverReference = useCallback(
+    (hovered) => setHoveredSlot(hovered ? "reference" : null),
+    []
+  );
+  const handleFocusReference = useCallback(() => setFocusedSlot("reference"), []);
+
+  const handleSelectTarget = useCallback(
+    (file) => loadImageFile(file, "target"),
+    [loadImageFile]
+  );
+  const handleClearTarget = useCallback(() => {
+    replaceTarget(null);
+    setTargetError("");
+  }, [replaceTarget]);
+  const handleTryTargetSample = useCallback(
+    () => handleTrySample("target"),
+    [handleTrySample]
+  );
+  const handleHoverTarget = useCallback(
+    (hovered) => setHoveredSlot(hovered ? "target" : null),
+    []
+  );
+  const handleFocusTarget = useCallback(() => setFocusedSlot("target"), []);
+
+  const handleToggleScopesCollapse = useCallback(
+    () => setIsScopesCollapsed((v) => !v),
+    []
+  );
+  const handleOpenCalibration = useCallback(() => setActiveTab("settings"), []);
 
   const activePreviewImageUrl =
     targetImage?.dataUrl || referenceImage?.dataUrl || null;
@@ -1834,32 +1966,21 @@ export default function App() {
                   <ImageDropCard
                     title="REFERENCE"
                     imageInfo={referenceImage}
-                    onSelectImage={(file) => loadImageFile(file, "reference")}
-                    onClearImage={() => {
-                      replaceReference(null);
-                      if (!importedLook) setLastMatchedParams(null);
-                      setReferenceError("");
-                      setStatusText("Ready");
-                    }}
-                    onTrySample={(id) => handleTrySample("reference", id)}
+                    onSelectImage={handleSelectReference}
+                    onClearImage={handleClearReference}
+                    onTrySample={handleTryReferenceSample}
                     sampleOptions={SAMPLE_LOOKS}
                     allowPresets
                     importedLook={importedLook}
-                    onClearImportedLook={() => {
-                      setImportedLook(null);
-                      setLastMatchedParams(null);
-                    }}
+                    onClearImportedLook={handleClearImportedLook}
                     isAnalyzing={isAnalyzing}
                     isPasteTarget={
                       hoveredSlot === "reference" ||
                       (!hoveredSlot && focusedSlot === "reference")
                     }
-                    onHoverChange={(hovered) =>
-                      setHoveredSlot(hovered ? "reference" : null)
-                    }
-                    onFocusSlot={() => setFocusedSlot("reference")}
+                    onHoverChange={handleHoverReference}
+                    onFocusSlot={handleFocusReference}
                     errorMessage={referenceError}
-                    onFileRejected={(msg) => setReferenceError(msg)}
                   />
                 </div>
 
@@ -1878,22 +1999,16 @@ export default function App() {
                     title="TARGET IMAGE / VIDEO"
                     allowVideo
                     imageInfo={targetImage}
-                    onSelectImage={(file) => loadImageFile(file, "target")}
-                    onClearImage={() => {
-                      replaceTarget(null);
-                      setTargetError("");
-                    }}
-                    onTrySample={() => handleTrySample("target")}
+                    onSelectImage={handleSelectTarget}
+                    onClearImage={handleClearTarget}
+                    onTrySample={handleTryTargetSample}
                     isPasteTarget={
                       hoveredSlot === "target" ||
                       (!hoveredSlot && focusedSlot === "target")
                     }
-                    onHoverChange={(hovered) =>
-                      setHoveredSlot(hovered ? "target" : null)
-                    }
-                    onFocusSlot={() => setFocusedSlot("target")}
+                    onHoverChange={handleHoverTarget}
+                    onFocusSlot={handleFocusTarget}
                     errorMessage={targetError}
-                    onFileRejected={(msg) => setTargetError(msg)}
                   />
                 </div>
               </div>
@@ -1937,6 +2052,7 @@ export default function App() {
                   targetBaseName={targetImage?.baseName || referenceImage?.baseName || "Target"}
                   simulateLogInput={simulateLogInput}
                   onToggleSimulateLogInput={setSimulateLogInput}
+                  isTabActive={activeTab === "home"}
                   footer={
                     videoEl ? (
                       <VideoTransportBar
@@ -2048,12 +2164,12 @@ export default function App() {
                 {/* Pro Scopes (Luma/RGB, RGB Parade, Vectorscope with Skin-Tone Line) */}
                 <div className="mb-2.5">
                   <ProScopes
-                    imageData={scopeImageData}
+                    ref={scopeRef}
                     hasMedia={Boolean(activePreviewImageUrl || videoEl)}
                     isDragging={isScopeFrozen}
                     isVideoPlaying={isVideoPlaying}
                     isCollapsed={isScopesCollapsed}
-                    onToggleCollapse={() => setIsScopesCollapsed((v) => !v)}
+                    onToggleCollapse={handleToggleScopesCollapse}
                   />
                 </div>
 
@@ -2183,35 +2299,23 @@ export default function App() {
                       <div className="grid grid-cols-3 gap-2">
                         <ColorSwatchCard
                           title="Shadows (Lift)"
-                          rgb={[
-                            gradingParams.liftR,
-                            gradingParams.liftG,
-                            gradingParams.liftB,
-                          ]}
-                          onChange={(rgb) => handleWheelChange("lift", rgb)}
-                          onReset={() => handleWheelReset("lift")}
+                          rgb={liftRgb}
+                          onChange={handleLiftChange}
+                          onReset={handleLiftReset}
                           onDragChange={handleControlDragChange}
                         />
                         <ColorSwatchCard
                           title="Midtones (Gamma)"
-                          rgb={[
-                            gradingParams.gammaR,
-                            gradingParams.gammaG,
-                            gradingParams.gammaB,
-                          ]}
-                          onChange={(rgb) => handleWheelChange("gamma", rgb)}
-                          onReset={() => handleWheelReset("gamma")}
+                          rgb={gammaRgb}
+                          onChange={handleGammaChange}
+                          onReset={handleGammaReset}
                           onDragChange={handleControlDragChange}
                         />
                         <ColorSwatchCard
                           title="Highs (Gain)"
-                          rgb={[
-                            gradingParams.gainR,
-                            gradingParams.gainG,
-                            gradingParams.gainB,
-                          ]}
-                          onChange={(rgb) => handleWheelChange("gain", rgb)}
-                          onReset={() => handleWheelReset("gain")}
+                          rgb={gainRgb}
+                          onChange={handleGainChange}
+                          onReset={handleGainReset}
                           onDragChange={handleControlDragChange}
                         />
                       </div>
@@ -2241,10 +2345,10 @@ export default function App() {
                   onExport={handleExport}
                   isExporting={isExporting}
                   disabled={!hasLook}
-                  onExportCube={() => handleExportLut("cube")}
-                  onExportLut={() => handleExportLut("lut")}
+                  onExportCube={handleExportCube}
+                  onExportLut={handleExportLut3d}
                   isCalibrationActive={isCalibrationActive}
-                  onOpenCalibration={() => setActiveTab("settings")}
+                  onOpenCalibration={handleOpenCalibration}
                 />
               </div>
             </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { memo, useEffect, useRef, useState } from "react";
 import { Check } from "lucide-react";
 
 const WHEEL_SCALE = 0.42;
@@ -41,7 +41,7 @@ function wheelXYToRgb(x, y) {
   ];
 }
 
-export default function ColorSwatchCard({
+const ColorSwatchCard = memo(function ColorSwatchCard({
   title,
   rgb = [0.5, 0.5, 0.5],
   onChange,
@@ -53,6 +53,7 @@ export default function ColorSwatchCard({
   const wheelRef = useRef(null);
   const draggingRef = useRef(false);
   const rafRef = useRef(0);
+  const copyTimerRef = useRef(null);
   const pendingCoordsRef = useRef(null);
   const onChangeRef = useRef(onChange);
   const onDragChangeRef = useRef(onDragChange);
@@ -143,6 +144,7 @@ export default function ColorSwatchCard({
   useEffect(
     () => () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
       if (draggingRef.current) {
         draggingRef.current = false;
         onDragChangeRef.current?.(false);
@@ -161,9 +163,10 @@ export default function ColorSwatchCard({
 
   const handleCopy = (e) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(hex);
+    navigator.clipboard?.writeText?.(hex)?.catch?.(() => {});
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     setCopied(true);
-    setTimeout(() => setCopied(false), 1200);
+    copyTimerRef.current = setTimeout(() => setCopied(false), 1200);
   };
 
   const isNeutral =
@@ -248,4 +251,6 @@ export default function ColorSwatchCard({
       </button>
     </div>
   );
-}
+});
+
+export default ColorSwatchCard;

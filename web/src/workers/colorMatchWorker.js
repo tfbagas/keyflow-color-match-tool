@@ -2,7 +2,7 @@ import { analyzeImagePixels } from "../utils/colorGrading.js";
 
 self.onmessage = function (e) {
   const data = e.data || {};
-  const { type, rgbaData, numPixels, targetRgbaData, targetNumPixels, mediaType } = data;
+  const { type, jobId, rgbaData, numPixels, targetRgbaData, targetNumPixels, mediaType } = data;
 
   if (type === "analyze") {
     try {
@@ -12,6 +12,7 @@ self.onmessage = function (e) {
 
       self.postMessage({
         type: "stage",
+        jobId,
         stage: "Analyzing colors & luminance...",
       });
 
@@ -19,7 +20,7 @@ self.onmessage = function (e) {
         rgbaData,
         numPixels,
         (stageText) => {
-          self.postMessage({ type: "stage", stage: stageText });
+          self.postMessage({ type: "stage", jobId, stage: stageText });
         },
         targetRgbaData || null,
         targetNumPixels || 0,
@@ -28,12 +29,14 @@ self.onmessage = function (e) {
 
       self.postMessage({
         type: "stage",
+        jobId,
         stage: "Finalizing grading parameters...",
       });
-      self.postMessage({ type: "success", params });
+      self.postMessage({ type: "success", jobId, params });
     } catch (err) {
       self.postMessage({
         type: "error",
+        jobId,
         error: (err && err.message) || "Failed to analyze image",
       });
     }

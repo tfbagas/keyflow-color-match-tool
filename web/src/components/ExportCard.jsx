@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { memo, useEffect, useRef, useState } from "react";
 import {
   Download,
   Check,
@@ -10,7 +10,7 @@ import {
   Sliders,
 } from "lucide-react";
 
-export default function ExportCard({
+const ExportCard = memo(function ExportCard({
   presetName,
   setPresetName,
   authorName,
@@ -28,6 +28,13 @@ export default function ExportCard({
   const [isExpanded, setIsExpanded] = useState(true);
   const [exportedKey, setExportedKey] = useState(null);
   const timerRef = useRef(null);
+
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    []
+  );
 
   const handleTrigger = async (key, handler) => {
     if (!handler || disabled || isExporting) return;
@@ -232,4 +239,6 @@ export default function ExportCard({
       </div>
     </div>
   );
-}
+});
+
+export default ExportCard;

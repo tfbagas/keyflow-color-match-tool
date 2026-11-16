@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { memo, useEffect, useRef, useState } from "react";
 import { ChevronUp, ChevronDown } from "lucide-react";
 
-export default function ParameterControl({
+const ParameterControl = memo(function ParameterControl({
   paramKey,
   label,
   min,
@@ -65,6 +65,10 @@ export default function ParameterControl({
   }, [value, min, max, defaultValue, isBipolar, valueSuffix]);
 
   useEffect(() => {
+    if (!isDragging) {
+      setShiftHeld(false);
+      return undefined;
+    }
     const onKeyDown = (e) => {
       if (e.key === "Shift") setShiftHeld(true);
     };
@@ -80,7 +84,7 @@ export default function ParameterControl({
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
     };
-  }, []);
+  }, [isDragging]);
 
   const flushPending = () => {
     if (rafRef.current) {
@@ -343,4 +347,6 @@ export default function ParameterControl({
       </div>
     </div>
   );
-}
+});
+
+export default ParameterControl;

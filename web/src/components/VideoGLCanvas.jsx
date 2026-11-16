@@ -41,9 +41,12 @@ export default function VideoGLCanvas({
   maxSide = 0,
   previewRef = null,
   onError,
+  isActive = true,
   className = "",
 }) {
   const canvasRef = useRef(null);
+  const isActiveRef = useRef(isActive);
+  isActiveRef.current = isActive;
   const stateRef = useRef({
     params,
     mode,
@@ -53,6 +56,9 @@ export default function VideoGLCanvas({
     maxSide,
   });
   const scheduleDrawRef = useRef(() => {});
+  const startLoopRef = useRef(() => {});
+  const stopLoopRef = useRef(() => {});
+  const drawRef = useRef(() => {});
 
   stateRef.current = { params, mode, splitPos, hold, simulateLogInput, maxSide };
 
@@ -234,7 +240,7 @@ export default function VideoGLCanvas({
     };
 
     const draw = (allowUpload = false) => {
-      if (disposed || gl.isContextLost() || document.hidden) return;
+      if (disposed || gl.isContextLost() || document.hidden || !isActiveRef.current) return;
       const st = stateRef.current;
 
       if (videoEl) {
@@ -388,7 +394,7 @@ export default function VideoGLCanvas({
     const useVfc = videoEl && typeof videoEl.requestVideoFrameCallback === "function";
     const loopVfc = (_now, metadata) => {
       vfcId = 0;
-      if (disposed || videoEl.paused || videoEl.ended) return;
+      if (disposed || videoEl.paused || videoEl.ended || !isActiveRef.current) return;
       if (!document.hidden) {
         const pf = metadata?.presentedFrames;
         if (pf === undefined || pf !== lastPresentedFrames) {
@@ -406,7 +412,7 @@ export default function VideoGLCanvas({
 
     const loopRaf = () => {
       rafId = 0;
-      if (disposed || videoEl.paused || videoEl.ended) return;
+      if (disposed || videoEl.paused || videoEl.ended || !isActiveRef.current) return;
       if (!document.hidden) {
         if (videoEl.currentTime !== lastUploadedTime) {
           needsFrameUpload = true;
@@ -432,13 +438,17 @@ export default function VideoGLCanvas({
     };
 
     const startLoop = () => {
-      if (disposed || !videoEl || videoEl.paused || videoEl.ended) return;
+      if (disposed || !videoEl || videoEl.paused || videoEl.ended || !isActiveRef.current) return;
       if (useVfc) {
         if (!vfcId) vfcId = videoEl.requestVideoFrameCallback(loopVfc);
       } else {
         if (!rafId) rafId = requestAnimationFrame(loopRaf);
       }
     };
+
+    startLoopRef.current = startLoop;
+    stopLoopRef.current = stopLoop;
+    drawRef.current = draw;
 
     const onPlay = () => {
       startLoop();
@@ -473,7 +483,12 @@ export default function VideoGLCanvas({
     ro.observe(canvas);
 
     const onVisibility = () => {
-      if (!document.hidden) scheduleDraw();
+      if (document.hidden) {
+        stopLoop();
+      } else if (isActiveRef.current) {
+        scheduleDraw();
+        startLoop();
+      }
     };
     document.addEventListener("visibilitychange", onVisibility);
 
@@ -486,6 +501,9 @@ export default function VideoGLCanvas({
     return () => {
       disposed = true;
       scheduleDrawRef.current = () => {};
+      startLoopRef.current = () => {};
+      stopLoopRef.current = () => {};
+      drawRef.current = () => {};
       if (previewRef) previewRef.current = null;
       stopLoop();
       if (pendingDrawRaf) cancelAnimationFrame(pendingDrawRaf);
@@ -517,6 +535,16 @@ export default function VideoGLCanvas({
   useEffect(() => {
     scheduleDrawRef.current();
   }, [params, mode, splitPos, hold, simulateLogInput, maxSide]);
+
+  // Stop WebGL video loop when leaving Home tab; render 1 frame & resume when returning.
+  useEffect(() => {
+    if (!isActive) {
+      stopLoopRef.current();
+    } else {
+      drawRef.current(true);
+      startLoopRef.current();
+    }
+  }, [isActive]);
 
   return <canvas ref={canvasRef} className={className} />;
 }

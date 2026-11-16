@@ -13,6 +13,8 @@ export default function SplashIntro({ onStartExit, onComplete }) {
   const [cursor, setCursor] = useState({ rx: 0, ry: 0, sx: 0, sy: 0 });
   const exitingRef = useRef(false);
   const timersRef = useRef([]);
+  const rafRef = useRef(0);
+  const pendingPointRef = useRef(null);
 
   const triggerExit = useCallback(() => {
     if (exitingRef.current) return;
@@ -37,6 +39,10 @@ export default function SplashIntro({ onStartExit, onComplete }) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+      }
       timersRef.current.forEach(clearTimeout);
       window.removeEventListener("keydown", handleKeyDown);
     };
@@ -44,14 +50,32 @@ export default function SplashIntro({ onStartExit, onComplete }) {
 
   const handlePointerMove = (e) => {
     if (exitingRef.current) return;
-    const nx = (e.clientX / Math.max(1, window.innerWidth) - 0.5) * 2;
-    const ny = (e.clientY / Math.max(1, window.innerHeight) - 0.5) * 2;
-    setCursor({
-      rx: Number((-ny * 5).toFixed(2)),
-      ry: Number((nx * 6).toFixed(2)),
-      sx: Number((nx * 64).toFixed(1)),
-      sy: Number((ny * 44).toFixed(1)),
-    });
+    pendingPointRef.current = { x: e.clientX, y: e.clientY };
+    if (!rafRef.current) {
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = 0;
+        if (exitingRef.current || !pendingPointRef.current) return;
+        const { x, y } = pendingPointRef.current;
+        pendingPointRef.current = null;
+        const nx = (x / Math.max(1, window.innerWidth) - 0.5) * 2;
+        const ny = (y / Math.max(1, window.innerHeight) - 0.5) * 2;
+        setCursor({
+          rx: Number((-ny * 5).toFixed(2)),
+          ry: Number((nx * 6).toFixed(2)),
+          sx: Number((nx * 64).toFixed(1)),
+          sy: Number((ny * 44).toFixed(1)),
+        });
+      });
+    }
+  };
+
+  const handlePointerLeave = () => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    }
+    pendingPointRef.current = null;
+    setCursor({ rx: 0, ry: 0, sx: 0, sy: 0 });
   };
 
   return (
@@ -61,7 +85,7 @@ export default function SplashIntro({ onStartExit, onComplete }) {
       aria-label="Color Match Tool Studio Intro"
       onClick={triggerExit}
       onPointerMove={handlePointerMove}
-      onPointerLeave={() => setCursor({ rx: 0, ry: 0, sx: 0, sy: 0 })}
+      onPointerLeave={handlePointerLeave}
       className={`fixed inset-0 z-50 flex flex-col items-center justify-center px-5 bg-[#0A0A0D] select-none cursor-pointer overflow-hidden transition-[opacity,transform] duration-260 ${
         isExiting
           ? "opacity-0 scale-[1.03] pointer-events-none"
