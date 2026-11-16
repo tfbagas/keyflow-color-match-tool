@@ -1,93 +1,13 @@
 import JSZip from "jszip";
+import { KFPLUG_FRAGMENT } from "./gradeShader.js";
+import { sanitizeParams } from "./gradeEngine.js";
 
-const SHADER_PASS0 = `#ifdef GL_FRAGMENT_PRECISION_HIGH
-precision highp float;
-#else
-precision mediump float;
-#endif
-
-uniform sampler2D uTexture;
-varying vec2 vTex;
-
-uniform float uGradeMix;
-uniform float uExposure;
-uniform float uContrast;
-uniform float uPivot;
-uniform float uHighlights;
-uniform float uShadows;
-uniform float uTemp;
-uniform float uTint;
-uniform float uSat;
-uniform float uVib;
-
-uniform float uLiftR;
-uniform float uLiftG;
-uniform float uLiftB;
-
-uniform float uGammaR;
-uniform float uGammaG;
-uniform float uGammaB;
-
-uniform float uGainR;
-uniform float uGainG;
-uniform float uGainB;
-
-void main() {
-    vec4 c = texture2D(uTexture, vTex);
-    float a = c.a;
-    if (a <= 1e-4) {
-        gl_FragColor = vec4(0.0);
-        return;
-    }
-
-    vec3 origRgb = c.rgb / a;
-    vec3 rgb = origRgb;
-
-    rgb *= pow(2.0, uExposure);
-
-    rgb.r += uTemp * 0.12 + uTint * 0.06;
-    rgb.g -= uTint * 0.12;
-    rgb.b -= uTemp * 0.12 - uTint * 0.06;
-    rgb = max(rgb, vec3(0.0));
-
-    float lum = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
-
-    vec3 liftDelta  = (vec3(uLiftR, uLiftG, uLiftB) - 0.5) * 2.0;
-    vec3 gammaDelta = (vec3(uGammaR, uGammaG, uGammaB) - 0.5) * 2.0;
-    vec3 gainDelta  = (vec3(uGainR, uGainG, uGainB) - 0.5) * 2.0;
-
-    float wShadow = clamp(1.0 - lum * 2.5, 0.0, 1.0);
-    float wHigh   = clamp((lum - 0.5) * 2.0, 0.0, 1.0);
-    float wMid    = clamp(1.0 - abs(lum - 0.45) * 2.5, 0.0, 1.0);
-
-    rgb += liftDelta * wShadow * 0.35;
-    rgb += gammaDelta * wMid * 0.35;
-    rgb += gainDelta * wHigh * 0.35;
-
-    rgb += vec3(uShadows) * wShadow * 0.25;
-    rgb += vec3(uHighlights) * wHigh * 0.25;
-
-    rgb = (rgb - uPivot) * uContrast + uPivot;
-
-    float lumaPost = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
-    float maxC = max(rgb.r, max(rgb.g, rgb.b));
-    float minC = min(rgb.r, min(rgb.g, rgb.b));
-    float currentSat = (maxC - minC) / max(maxC, 1e-4);
-    
-    float vibBonus = uVib * (1.0 - currentSat);
-    float satTotal = clamp(uSat + vibBonus, 0.0, 3.0);
-    rgb = mix(vec3(lumaPost), rgb, satTotal);
-
-    rgb = clamp(rgb, 0.0, 1.0);
-    vec3 finalRgb = mix(origRgb, rgb, clamp(uGradeMix, 0.0, 1.0));
-    gl_FragColor = vec4(finalRgb * a, a);
-}
-`;
+const SHADER_PASS0 = KFPLUG_FRAGMENT;
 
 const BASE_PARAMS = [
   { id: "gradeMix", label: "Grade Mix / Blend", type: "scalar", default: 1.0, min: 0.0, max: 1.0, displayScale: 100.0, decimals: 0, group: "Master" },
   { id: "exposure", label: "Exposure (EV)", type: "scalar", default: 0.0, min: -2.0, max: 2.0, displayScale: 1.0, decimals: 2, group: "Tone & Contrast" },
-  { id: "contrast", label: "Contrast", type: "scalar", default: 1.0, min: 0.2, max: 2.0, displayScale: 1.0, decimals: 2, group: "Tone & Contrast" },
+  { id: "contrast", label: "Contrast", type: "scalar", default: 1.0, min: 0.5, max: 2.0, displayScale: 1.0, decimals: 2, group: "Tone & Contrast" },
   { id: "pivot", label: "Contrast Pivot", type: "scalar", default: 0.435, min: 0.1, max: 0.9, displayScale: 1.0, decimals: 2, group: "Tone & Contrast" },
   { id: "shadows", label: "Shadows Lift/Crush", type: "scalar", default: 0.0, min: -1.0, max: 1.0, displayScale: 100.0, decimals: 0, group: "Tone & Contrast" },
   { id: "highlights", label: "Highlights Boost/Roll", type: "scalar", default: 0.0, min: -1.0, max: 1.0, displayScale: 100.0, decimals: 0, group: "Tone & Contrast" },
@@ -135,7 +55,7 @@ const PRESETS = [
   }
 ];
 
-function checkAllowedHost() {
+export function checkAllowedHost() {
   const host = (
     typeof self !== "undefined" && self.location
       ? self.location.hostname
@@ -185,6 +105,15 @@ export async function generateKfplug(params, presetName, author, description) {
   const words = cleanName.match(/[a-zA-Z0-9]+/g) || [];
   const cleanPresetId = "preset" + (words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join("").slice(0, 24) || "Match");
 
+  // Strict sanitation: finite, no -0, clamped to Keyflow slider ranges.
+  const safeValues = sanitizeParams(params);
+  const safePresets = PRESETS.map((pr) => ({
+    ...pr,
+    values: Object.fromEntries(
+      Object.keys(pr.values).map((k) => [k, sanitizeParams({ ...pr.values })[k]])
+    ),
+  }));
+
   const effectData = {
     id: effectId,
     name: displayName,
@@ -197,12 +126,12 @@ export async function generateKfplug(params, presetName, author, description) {
       {
         id: cleanPresetId,
         label: cleanName.slice(0, 32),
-        values: { ...params }
+        values: { ...safeValues }
       },
-      ...PRESETS
+      ...safePresets
     ],
-    newInstanceValues: { ...params },
-    thumbnailValues: { ...params },
+    newInstanceValues: { ...safeValues },
+    thumbnailValues: { ...safeValues },
     passes: [{ shader: "pass0.frag", scale: 1.0 }]
   };
 

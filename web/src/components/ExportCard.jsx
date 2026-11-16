@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   Download,
+  Check,
   Edit3,
   User,
   FileText,
@@ -21,11 +22,23 @@ export default function ExportCard({
   disabled,
   isCalibrationActive = false,
   onOpenCalibration,
+  onExportCube,
+  onExportLut,
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [exportedKey, setExportedKey] = useState(null);
+  const timerRef = useRef(null);
+
+  const handleTrigger = async (key, handler) => {
+    if (!handler || disabled || isExporting) return;
+    await handler();
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setExportedKey(key);
+    timerRef.current = setTimeout(() => setExportedKey(null), 1200);
+  };
 
   return (
-    <div className="m3-panel rounded-2xl p-3.5">
+    <div className="m3-panel rounded-2xl p-3">
       {/* Header Row with Collapse Toggle */}
       <div
         onClick={() => setIsExpanded((prev) => !prev)}
@@ -153,19 +166,67 @@ export default function ExportCard({
             {/* Material 3 Filled Primary Action Button with Shape-Morphing Spring */}
             <button
               type="button"
-              onClick={onExport}
+              onClick={() => handleTrigger("kfplug", onExport)}
               disabled={disabled || isExporting}
-              className={`w-full mt-1 py-2.5 px-4 rounded-xl font-semibold text-xs flex items-center justify-center gap-2 ${
+              className={`w-full mt-1 py-2 px-4 rounded-xl font-semibold text-xs flex items-center justify-center gap-2 transition-[opacity,transform] duration-200 ${
                 disabled
                   ? "bg-white/[0.035] text-[#9CA3AF]/40 border border-white/[0.09] cursor-not-allowed"
+                  : exportedKey === "kfplug"
+                  ? "m3-btn-primary-morph bg-[#86EFAC] text-[#042F1E] scale-[0.99] cursor-pointer"
                   : "m3-btn-primary-morph bg-[#6EE7B7] hover:bg-[#86EFAC] text-[#042F1E] cursor-pointer"
               }`}
             >
-              <Download className="w-4 h-4 stroke-[2.25]" />
-              <span>
-                {isExporting ? "Packaging .kfplug..." : "Export to .kfplug"}
-              </span>
+              {exportedKey === "kfplug" ? (
+                <>
+                  <Check className="w-4 h-4 stroke-[2.5] transition-transform duration-200 scale-105" />
+                  <span>Exported</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4 stroke-[2.25]" />
+                  <span>
+                    {isExporting ? "Packaging .kfplug..." : "Export to .kfplug"}
+                  </span>
+                </>
+              )}
             </button>
+
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { key: "cube", label: "Export .cube", handler: onExportCube },
+                { key: "lut", label: "Export .lut", handler: onExportLut },
+              ].map((b) => {
+                const isDone = exportedKey === b.key;
+                return (
+                  <button
+                    key={b.key}
+                    type="button"
+                    onClick={() => handleTrigger(b.key, b.handler)}
+                    disabled={disabled || isExporting || !b.handler}
+                    title="33x33x33 3D LUT (35,937 nodes) from the current grade"
+                    className={`py-1.5 px-3 rounded-xl font-medium text-xs flex items-center justify-center gap-1.5 border transition-[opacity,transform] duration-200 ${
+                      disabled
+                        ? "bg-white/[0.035] text-[#9CA3AF]/40 border-white/[0.09] cursor-not-allowed"
+                        : isDone
+                        ? "m3-btn-morph bg-[#6EE7B7]/15 text-[#6EE7B7] border-[#6EE7B7]/40 scale-[0.99] cursor-pointer"
+                        : "m3-btn-morph bg-white/[0.04] hover:bg-white/[0.09] text-[#E2E4E9] border-white/[0.12] cursor-pointer"
+                    }`}
+                  >
+                    {isDone ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                        <span>Exported</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-3.5 h-3.5" />
+                        <span>{b.label}</span>
+                      </>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>

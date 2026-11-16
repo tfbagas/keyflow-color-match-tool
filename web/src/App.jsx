@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Sliders,
   Settings,
@@ -14,7 +14,6 @@ import {
   Layers,
   RotateCcw,
   Heart,
-  BarChart3,
   ChevronDown,
   Cpu,
   CheckCircle2,
@@ -22,6 +21,8 @@ import {
   History,
   Check,
   Play,
+  HelpCircle,
+  Gauge,
 } from "lucide-react";
 
 import ImageDropCard, { ALLOWED_IMAGE_MIMES } from "./components/ImageDropCard";
@@ -30,8 +31,9 @@ import ParameterControl from "./components/ParameterControl";
 import ColorSwatchCard from "./components/ColorSwatchCard";
 import ExportCard from "./components/ExportCard";
 import SupportTab from "./components/SupportTab";
-import SupportBanner from "./components/SupportBanner";
 import SupportToast from "./components/SupportToast";
+import ProScopes from "./components/ProScopes";
+import ShortcutsModal from "./components/ShortcutsModal";
 import KeyflowLogo, { TfbagasWordmark } from "./components/KeyflowLogo";
 import ChangelogModal, {
   ReleaseHistoryAccordion,
@@ -44,27 +46,34 @@ import {
   analyzeImagePixels,
   simulateGradePixels,
 } from "./utils/colorGrading";
+import { scaleParamsByStrength } from "./utils/gradeEngine";
 import {
   generateKfplug,
   downloadBlob,
   sanitizeMetadataText,
 } from "./utils/kfplugPackager";
+import { inspectFile, prepareImageBlob } from "./utils/rawDecoder";
+import { generateLutFile } from "./utils/lutExporter";
+import { exportGradedImage } from "./utils/imageExporter";
+import { importLutFile, importKfplugFile } from "./utils/presetImporter";
+import { SAMPLE_LOOKS, renderLookSample, drawNeutralScene } from "./utils/sampleLooks";
+import VideoTransportBar from "./components/VideoTransportBar";
 
 const PARAM_CONTROLS = [
-  { key: "exposure", label: "Exposure (EV)", min: -2.0, max: 2.0, step: 0.01, icon: Sun, isBipolar: true },
-  { key: "contrast", label: "Contrast", min: 0.2, max: 2.0, step: 0.01, icon: Contrast, isBipolar: true },
-  { key: "pivot", label: "Contrast Pivot", min: 0.1, max: 0.9, step: 0.01, icon: SlidersHorizontal, isBipolar: false },
-  { key: "shadows", label: "Shadows Tint/Level", min: -0.5, max: 0.5, step: 0.01, icon: Droplet, isBipolar: true },
-  { key: "highlights", label: "Highlights Tint/Level", min: -0.5, max: 0.5, step: 0.01, icon: Sparkles, isBipolar: true },
-  { key: "temp", label: "Color Temperature", min: -1.0, max: 1.0, step: 0.01, icon: Thermometer, isBipolar: true },
-  { key: "tint", label: "Color Tint", min: -1.0, max: 1.0, step: 0.01, icon: Palette, isBipolar: true },
-  { key: "sat", label: "Saturation", min: 0.0, max: 2.0, step: 0.01, icon: Droplet, isBipolar: true },
-  { key: "vib", label: "Vibrance", min: -0.8, max: 0.8, step: 0.01, icon: Activity, isBipolar: true },
+  { key: "exposure", label: "Exposure (EV)", min: -2.0, max: 2.0, step: 0.02, icon: Sun, isBipolar: true },
+  { key: "contrast", label: "Contrast", min: 0.5, max: 2.0, step: 0.02, icon: Contrast, isBipolar: true },
+  { key: "pivot", label: "Contrast Pivot", min: 0.1, max: 0.9, step: 0.02, icon: SlidersHorizontal, isBipolar: false },
+  { key: "shadows", label: "Shadows Tint/Level", min: -0.5, max: 0.5, step: 0.02, icon: Droplet, isBipolar: true },
+  { key: "highlights", label: "Highlights Tint/Level", min: -0.5, max: 0.5, step: 0.02, icon: Sparkles, isBipolar: true },
+  { key: "temp", label: "Color Temperature", min: -1.0, max: 1.0, step: 0.02, icon: Thermometer, isBipolar: true },
+  { key: "tint", label: "Color Tint", min: -1.0, max: 1.0, step: 0.02, icon: Palette, isBipolar: true },
+  { key: "sat", label: "Saturation", min: 0.0, max: 2.0, step: 0.02, icon: Droplet, isBipolar: true },
+  { key: "vib", label: "Vibrance", min: -0.8, max: 0.8, step: 0.02, icon: Activity, isBipolar: true },
 ];
 
 const CALIBRATION_STORAGE_KEY = "kf_export_calibration_v1";
-const SEEN_UPDATE_STORAGE_KEY = "kf_seen_update_v065";
-const SPLASH_SESSION_KEY = "kf_splash_seen_v065";
+const SEEN_UPDATE_STORAGE_KEY = "kf_seen_update_v080";
+const SPLASH_SESSION_KEY = "kf_splash_seen_v080";
 const DEFAULT_CALIBRATION = {
   toneScale: 1.0,
   wbScale: 1.0,
@@ -87,7 +96,7 @@ function applyCalibrationToParams(params, cal) {
   return {
     ...params,
     exposure: round2(clampVal((params.exposure ?? 0) * tS, -2.0, 2.0)),
-    contrast: round2(clampVal(1.0 + ((params.contrast ?? 1.0) - 1.0) * tS, 0.2, 2.0)),
+    contrast: round2(clampVal(1.0 + ((params.contrast ?? 1.0) - 1.0) * tS, 0.5, 2.0)),
     shadows: round2(clampVal((params.shadows ?? 0) * tS, -0.5, 0.5)),
     highlights: round2(clampVal((params.highlights ?? 0) * tS, -0.5, 0.5)),
     liftR: round2(clampVal(0.5 + ((params.liftR ?? 0.5) - 0.5) * tS, 0.0, 1.0)),
@@ -229,14 +238,36 @@ export default function App() {
   const [targetError, setTargetError] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [statusText, setStatusText] = useState("Ready");
+  const [importedLook, setImportedLook] = useState(null);
+  const targetRef = useRef(null);
+  const referenceRef = useRef(null);
+  const triggerAnalysisRef = useRef(() => {});
+  targetRef.current = targetImage;
+  referenceRef.current = referenceImage;
 
   const [hoveredSlot, setHoveredSlot] = useState(null);
   const [focusedSlot, setFocusedSlot] = useState(null);
 
   // Grading parameters & last matched Reference snapshot (includes 9 sliders + 9 color wheel channels)
   const [gradingParams, setGradingParams] = useState({ ...DEFAULT_PARAMS });
+  const [matchStrength, setMatchStrength] = useState(100);
+  const [activeSlot, setActiveSlot] = useState("A");
+  const [slotSnapshots, setSlotSnapshots] = useState({
+    A: { ...DEFAULT_PARAMS },
+    B: { ...DEFAULT_PARAMS },
+  });
+  const [isPreviewPinned, setIsPreviewPinned] = useState(true);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [isSavingFrame, setIsSavingFrame] = useState(false);
+  const [simulateLogInput, setSimulateLogInput] = useState(false);
+  const [scopeImageData, setScopeImageData] = useState(null);
   const [lastMatchedParams, setLastMatchedParams] = useState(null);
   const [reloadedFeedback, setReloadedFeedback] = useState(false);
+
+  const effectiveParams = useMemo(
+    () => scaleParamsByStrength(gradingParams, matchStrength),
+    [gradingParams, matchStrength]
+  );
 
   const [previewMode, setPreviewMode] = useState("split");
 
@@ -313,7 +344,11 @@ export default function App() {
         try {
           const fallbackParams = analyzeImagePixels(
             pending.rgbaData,
-            pending.numPixels
+            pending.numPixels,
+            undefined,
+            pending.targetRgbaData || null,
+            pending.targetNumPixels || 0,
+            pending.mediaType || "image"
           );
           setIsAnalyzing(false);
           setGradingParams({ ...fallbackParams });
@@ -363,7 +398,14 @@ export default function App() {
       // ignore storage errors
     }
     setShowSplash(false);
+    setWorkspacePhase((prev) => (prev === "hidden" ? "settled" : prev));
   }, []);
+
+  useEffect(() => {
+    if (!showSplash && workspacePhase === "hidden") {
+      setWorkspacePhase("settled");
+    }
+  }, [showSplash, workspacePhase]);
 
   const handleReplayIntro = () => {
     if (settleTimerRef.current) {
@@ -439,30 +481,169 @@ export default function App() {
     }
   }, []);
 
-  // Triggers background worker analysis for a given HTMLImageElement
+  // Draws an image or a video frame into RGBA pixels (downscaled to maxDim).
+  const captureRgba = useCallback((source, maxDim) => {
+    const sw = source.videoWidth || source.naturalWidth;
+    const sh = source.videoHeight || source.naturalHeight;
+    if (!sw || !sh) return null;
+    const scale = Math.min(1, maxDim / Math.max(sw, sh));
+    const w = Math.max(1, Math.round(sw * scale));
+    const h = Math.max(1, Math.round(sh * scale));
+    const off = document.createElement("canvas");
+    off.width = w;
+    off.height = h;
+    const ctx = off.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(source, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h);
+    return { data: d.data, numPixels: w * h };
+  }, []);
+
+  // Video-only helpers: mean luma check, letterbox bar filtering (R,G,B <= 6),
+  // and smart non-black frame seeking when video starts with a black fade-in.
+  const computeFrameMeanLuma = useCallback((rgba) => {
+    if (!rgba || rgba.length < 4) return 0;
+    let sum = 0;
+    let count = 0;
+    for (let i = 0; i < rgba.length; i += 16) {
+      sum += (0.2126 * rgba[i] + 0.7152 * rgba[i + 1] + 0.0722 * rgba[i + 2]) / 255;
+      count++;
+    }
+    return count > 0 ? sum / count : 0;
+  }, []);
+
+  const filterLetterboxPixels = useCallback((rgba) => {
+    const total = rgba.length / 4;
+    let kept = 0;
+    for (let i = 0; i < rgba.length; i += 4) {
+      if (rgba[i] > 8 || rgba[i + 1] > 8 || rgba[i + 2] > 8) kept++;
+    }
+    if (kept < total * 0.15 || kept === total) {
+      return { data: rgba, numPixels: total };
+    }
+    const filtered = new Uint8ClampedArray(kept * 4);
+    let ptr = 0;
+    for (let i = 0; i < rgba.length; i += 4) {
+      if (rgba[i] > 8 || rgba[i + 1] > 8 || rgba[i + 2] > 8) {
+        filtered[ptr++] = rgba[i];
+        filtered[ptr++] = rgba[i + 1];
+        filtered[ptr++] = rgba[i + 2];
+        filtered[ptr++] = rgba[i + 3];
+      }
+    }
+    return { data: filtered, numPixels: kept };
+  }, []);
+
+  const captureBestVideoFrame = useCallback(
+    async (videoEl, maxDim) => {
+      if (!videoEl) return null;
+      const cur = videoEl.readyState >= 2 ? captureRgba(videoEl, maxDim) : null;
+      if (cur && videoEl.currentTime > 0.1 && computeFrameMeanLuma(cur.data) >= 0.08) {
+        return filterLetterboxPixels(cur.data);
+      }
+
+      const dur = Number.isFinite(videoEl.duration) ? videoEl.duration : 0;
+      const srcUrl = videoEl.currentSrc || videoEl.src;
+      if (!srcUrl || dur <= 0.25) {
+        return cur ? filterLetterboxPixels(cur.data) : null;
+      }
+
+      const probe = document.createElement("video");
+      probe.muted = true;
+      probe.playsInline = true;
+      probe.preload = "auto";
+      probe.src = srcUrl;
+
+      try {
+        await new Promise((resolve) => {
+          const t = setTimeout(resolve, 1500);
+          probe.onloadeddata = () => {
+            clearTimeout(t);
+            resolve();
+          };
+          probe.onerror = () => {
+            clearTimeout(t);
+            resolve();
+          };
+        });
+
+        const candidates = [
+          Math.min(dur * 0.25, 2.0),
+          dur * 0.5,
+          dur * 0.7,
+        ].filter((ts) => ts > 0.05 && ts < dur - 0.05);
+
+        let best = cur;
+        let bestLuma = cur ? computeFrameMeanLuma(cur.data) : 0;
+
+        for (const ts of candidates) {
+          await new Promise((resolve) => {
+            const t = setTimeout(resolve, 1200);
+            probe.onseeked = () => {
+              clearTimeout(t);
+              requestAnimationFrame(() => resolve());
+            };
+            probe.currentTime = ts;
+          });
+          const cap = captureRgba(probe, maxDim);
+          if (!cap) continue;
+          const luma = computeFrameMeanLuma(cap.data);
+          if (luma > bestLuma) {
+            best = cap;
+            bestLuma = luma;
+          }
+          if (luma >= 0.08) break;
+        }
+        return best ? filterLetterboxPixels(best.data) : null;
+      } catch {
+        return cur ? filterLetterboxPixels(cur.data) : null;
+      } finally {
+        try {
+          probe.removeAttribute("src");
+          probe.load();
+        } catch {
+          // ignore probe cleanup
+        }
+      }
+    },
+    [captureRgba, computeFrameMeanLuma, filterLetterboxPixels]
+  );
+
+  // Triggers background worker analysis (reference vs. current target image / video frame)
   const triggerReferenceAnalysis = useCallback(
-    (img) => {
+    async (img) => {
       if (!img) return;
       setIsAnalyzing(true);
       setStatusText("Analyzing...");
 
-      const scale = Math.min(
-        1,
-        analysisMaxDim / Math.max(img.naturalWidth, img.naturalHeight)
-      );
-      const w = Math.max(1, Math.round(img.naturalWidth * scale));
-      const h = Math.max(1, Math.round(img.naturalHeight * scale));
+      const ref = captureRgba(img, analysisMaxDim);
+      if (!ref) {
+        setIsAnalyzing(false);
+        return;
+      }
 
-      const offCanvas = document.createElement("canvas");
-      offCanvas.width = w;
-      offCanvas.height = h;
-      const ctx = offCanvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, w, h);
-      const imgData = ctx.getImageData(0, 0, w, h);
+      const tgtInfo = targetRef.current;
+      let tgt = null;
+      if (tgtInfo) {
+        try {
+          if (tgtInfo.kind === "video") {
+            tgt = await captureBestVideoFrame(
+              tgtInfo.videoEl,
+              Math.min(analysisMaxDim, 960)
+            );
+          } else if (tgtInfo.imgElement) {
+            tgt = captureRgba(tgtInfo.imgElement, Math.min(analysisMaxDim, 960));
+          }
+        } catch {
+          tgt = null;
+        }
+      }
 
       pendingAnalysisRef.current = {
-        rgbaData: imgData.data,
-        numPixels: w * h,
+        rgbaData: ref.data,
+        numPixels: ref.numPixels,
+        targetRgbaData: tgt ? tgt.data : null,
+        targetNumPixels: tgt ? tgt.numPixels : 0,
+        mediaType: tgtInfo?.kind === "video" ? "video" : "image",
       };
 
       clearAnalysisTimeout();
@@ -470,13 +651,12 @@ export default function App() {
         runFallbackAnalysisOrReset(
           "Worker analysis timed out; recovered on main thread."
         );
-      }, 3500);
+      }, 6000);
 
       try {
         workerRef.current?.postMessage({
           type: "analyze",
-          rgbaData: imgData.data,
-          numPixels: w * h,
+          ...pendingAnalysisRef.current,
         });
       } catch {
         runFallbackAnalysisOrReset(
@@ -484,22 +664,212 @@ export default function App() {
         );
       }
     },
-    [analysisMaxDim, clearAnalysisTimeout, runFallbackAnalysisOrReset]
+    [
+      analysisMaxDim,
+      captureBestVideoFrame,
+      captureRgba,
+      clearAnalysisTimeout,
+      runFallbackAnalysisOrReset,
+    ]
   );
 
-  // Strict MIME validation + image decode integrity check
-  const loadImageFile = useCallback(
-    (file, type) => {
-      if (!file || !ALLOWED_IMAGE_MIMES.includes(file.type)) {
-        setSlotError(
-          type,
-          `Unsupported file format (${file?.type || "unknown"}). Allowed: JPG, PNG, WEBP.`
+  triggerAnalysisRef.current = () => {
+    const r = referenceRef.current;
+    if (r && r.imgElement) triggerReferenceAnalysis(r.imgElement);
+  };
+
+  const replaceTarget = useCallback((next) => {
+    const prev = targetRef.current;
+    if (prev && prev.kind === "video") {
+      try {
+        prev.videoEl.pause();
+        prev.videoEl.removeAttribute("src");
+        prev.videoEl.load();
+      } catch {
+        // ignore teardown errors
+      }
+      if (prev.videoUrl) URL.revokeObjectURL(prev.videoUrl);
+    }
+    targetRef.current = next;
+    setTargetImage(next);
+  }, []);
+
+  const loadVideoFile = useCallback(
+    (file, meta) => {
+      setTargetError("");
+      setStatusText("Loading video...");
+      const url = URL.createObjectURL(file);
+      const v = document.createElement("video");
+      v.muted = true;
+      v.loop = true;
+      v.playsInline = true;
+      v.preload = "auto";
+
+      let settled = false;
+      const fail = (msg) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try {
+          v.removeAttribute("src");
+          v.load();
+        } catch {
+          // ignore
+        }
+        URL.revokeObjectURL(url);
+        setTargetError(msg);
+        setStatusText("Video Error");
+      };
+
+      const timer = setTimeout(
+        () => fail(`Could not load this ${meta.label} video (timed out). The codec may not be supported by this browser.`),
+        20000
+      );
+
+      v.onerror = () =>
+        fail(
+          `This ${meta.label} video uses a codec or container this browser cannot play. Try MP4 (H.264) or WEBM (VP9).`
         );
+
+      v.onloadeddata = async () => {
+        if (settled) return;
+        if (!v.videoWidth || !v.videoHeight) {
+          fail("This video has no decodable picture track (audio-only or unsupported codec).");
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        v.onerror = () => setTargetError("Video playback error.");
+
+        let poster = "";
+        try {
+          const pw = Math.min(640, v.videoWidth);
+          const ph = Math.max(1, Math.round((pw * v.videoHeight) / v.videoWidth));
+          const pc = document.createElement("canvas");
+          pc.width = pw;
+          pc.height = ph;
+          const pctx = pc.getContext("2d", { willReadFrequently: true });
+          pctx.drawImage(v, 0, 0, pw, ph);
+          let luma = computeFrameMeanLuma(pctx.getImageData(0, 0, pw, ph).data);
+
+          const dur = Number.isFinite(v.duration) ? v.duration : 0;
+          if (luma < 0.08 && dur > 0.25) {
+            const seekTargets = [Math.min(dur * 0.25, 2.0), dur * 0.5].filter(
+              (ts) => ts > 0.05 && ts < dur - 0.05
+            );
+            for (const ts of seekTargets) {
+              await new Promise((resolve) => {
+                const t = setTimeout(resolve, 1000);
+                const onSeek = () => {
+                  v.removeEventListener("seeked", onSeek);
+                  clearTimeout(t);
+                  requestAnimationFrame(() => resolve());
+                };
+                v.addEventListener("seeked", onSeek);
+                v.currentTime = ts;
+              });
+              pctx.drawImage(v, 0, 0, pw, ph);
+              luma = computeFrameMeanLuma(pctx.getImageData(0, 0, pw, ph).data);
+              if (luma >= 0.08) break;
+            }
+          }
+          poster = pc.toDataURL("image/jpeg", 0.8);
+          if (v.currentTime > 0.05) {
+            v.currentTime = 0;
+          }
+        } catch {
+          poster = "";
+        }
+
+        const rawBase = file.name.replace(/\.[^/.]+$/, "");
+        replaceTarget({
+          kind: "video",
+          name: sanitizeMetadataText(file.name, "video", 80),
+          baseName: sanitizeMetadataText(rawBase, "Target", 48),
+          width: v.videoWidth,
+          height: v.videoHeight,
+          ext: meta.ext.toUpperCase(),
+          formatBadge: `VIDEO (${meta.ext.toUpperCase()})`,
+          sizeMB: (file.size / (1024 * 1024)).toFixed(1),
+          dataUrl: poster,
+          imgElement: null,
+          videoEl: v,
+          videoUrl: url,
+        });
+        setStatusText("Video Ready");
+        v.play().catch(() => {});
+      };
+
+      v.src = url;
+      v.load();
+    },
+    [replaceTarget, computeFrameMeanLuma]
+  );
+
+  const handleImportPreset = useCallback(async (file, meta) => {
+    setReferenceError("");
+    setStatusText(`Importing ${meta.label}...`);
+    try {
+      const result =
+        meta.ext === "kfplug"
+          ? await importKfplugFile(file)
+          : await importLutFile(file);
+      setGradingParams({ ...result.params });
+      setLastMatchedParams({ ...result.params });
+      setImportedLook({ kind: result.kind, name: result.name, rms: result.rms });
+      setPresetName(result.name.slice(0, 28));
+      if (result.author) setAuthorName(result.author);
+      setDescription(
+        result.description || `Imported from ${meta.label}: ${result.name}.`
+      );
+      setStatusText("Imported");
+    } catch (err) {
+      setReferenceError((err && err.message) || "Failed to import this file.");
+      setStatusText("Import Error");
+    }
+  }, []);
+
+  // Extension + magic byte validation, RAW / TIFF / HEIC decoding, video and LUT routing
+  const loadImageFile = useCallback(
+    async (file, type) => {
+      if (!file) return;
+      setSlotError(type, "");
+
+      const meta = await inspectFile(file);
+
+      if (meta.category === "preset") {
+        if (type === "reference") {
+          await handleImportPreset(file, meta);
+        } else {
+          setSlotError(type, "LUT and plugin files can only be imported into the REFERENCE slot.");
+        }
+        return;
+      }
+
+      if (meta.category === "video") {
+        if (type === "target") {
+          loadVideoFile(file, meta);
+        } else {
+          setSlotError(type, "Video files are supported in the TARGET slot only.");
+        }
+        return;
+      }
+
+      if (meta.category !== "image") {
+        setSlotError(type, meta.error || "Unsupported file format.");
         setStatusText("Invalid File");
         return;
       }
 
-      setSlotError(type, "");
+      setStatusText(`Decoding ${meta.label}...`);
+      let prepared;
+      try {
+        prepared = await prepareImageBlob(file, meta);
+      } catch (err) {
+        setSlotError(type, (err && err.message) || "Failed to decode this image.");
+        setStatusText("Decode Error");
+        return;
+      }
 
       const reader = new FileReader();
       reader.onerror = () => {
@@ -514,7 +884,7 @@ export default function App() {
         img.onerror = () => {
           setSlotError(
             type,
-            "Corrupted or invalid image data. Please choose a valid JPG, PNG, or WEBP image."
+            `This ${meta.label} image could not be decoded by the browser. Try exporting it as JPG or PNG.`
           );
           setStatusText("Invalid Image");
         };
@@ -525,123 +895,71 @@ export default function App() {
             return;
           }
 
-          const ext = file.name.split(".").pop()?.toUpperCase() || "IMG";
           const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
           const rawBaseName = file.name.replace(/\.[^/.]+$/, "");
           const baseName = sanitizeMetadataText(rawBaseName, "Reference", 48);
 
           const info = {
+            kind: "image",
             name: sanitizeMetadataText(file.name, "image.png", 80),
             baseName,
             width: img.naturalWidth,
             height: img.naturalHeight,
-            ext,
+            ext: meta.ext.toUpperCase(),
+            formatBadge: meta.label,
             sizeMB,
             dataUrl,
             imgElement: img,
           };
 
           if (type === "reference") {
+            setImportedLook(null);
             setReferenceImage(info);
+            referenceRef.current = info;
             setPresetName(baseName.slice(0, 28));
             setDescription(
               `Grading preset matched from reference '${baseName}'.`
             );
             triggerReferenceAnalysis(img);
           } else {
-            setTargetImage(info);
+            replaceTarget(info);
           }
+          setStatusText(type === "reference" ? "Analyzing..." : "Target Ready");
         };
         img.src = dataUrl;
       };
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(prepared.blob);
     },
-    [setSlotError, triggerReferenceAnalysis]
+    [
+      setSlotError,
+      triggerReferenceAnalysis,
+      replaceTarget,
+      loadVideoFile,
+      handleImportPreset,
+    ]
   );
 
   const handleTrySample = useCallback(
-    (type) => {
+    (type, id) => {
       const w = 960;
       const h = 540;
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d");
+      let canvas;
+      let fileName;
 
       if (type === "reference") {
-        const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.68);
-        skyGrad.addColorStop(0, "#0b2434");
-        skyGrad.addColorStop(0.45, "#194a5a");
-        skyGrad.addColorStop(0.8, "#d97736");
-        skyGrad.addColorStop(1, "#f3a852");
-        ctx.fillStyle = skyGrad;
-        ctx.fillRect(0, 0, w, h);
-
-        const sunGrad = ctx.createRadialGradient(w * 0.62, h * 0.52, 10, w * 0.62, h * 0.52, 220);
-        sunGrad.addColorStop(0, "rgba(255, 220, 145, 0.95)");
-        sunGrad.addColorStop(0.4, "rgba(240, 135, 60, 0.45)");
-        sunGrad.addColorStop(1, "rgba(20, 50, 65, 0)");
-        ctx.fillStyle = sunGrad;
-        ctx.fillRect(0, 0, w, h);
-
-        const seaGrad = ctx.createLinearGradient(0, h * 0.65, 0, h);
-        seaGrad.addColorStop(0, "#143542");
-        seaGrad.addColorStop(0.5, "#0d2530");
-        seaGrad.addColorStop(1, "#07141b");
-        ctx.fillStyle = seaGrad;
-        ctx.fillRect(0, h * 0.65, w, h * 0.35);
-
-        ctx.fillStyle = "#091820";
-        const blocks = [
-          [60, 270, 55, 90],
-          [125, 230, 65, 130],
-          [200, 255, 48, 105],
-          [260, 205, 75, 155],
-          [345, 240, 60, 120],
-          [420, 280, 90, 80],
-          [710, 250, 65, 110],
-          [785, 220, 70, 140],
-        ];
-        blocks.forEach(([bx, by, bw, bh]) => ctx.fillRect(bx, by, bw, bh));
+        const rendered = renderLookSample(id || SAMPLE_LOOKS[0].id, w, h);
+        canvas = rendered.canvas;
+        fileName = rendered.fileName;
       } else {
-        const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.62);
-        skyGrad.addColorStop(0, "#4b79a1");
-        skyGrad.addColorStop(0.6, "#7fa6c9");
-        skyGrad.addColorStop(1, "#c8d9e6");
-        ctx.fillStyle = skyGrad;
-        ctx.fillRect(0, 0, w, h);
-
-        ctx.fillStyle = "#4d5d6c";
-        ctx.beginPath();
-        ctx.moveTo(0, h * 0.62);
-        ctx.lineTo(w * 0.25, h * 0.36);
-        ctx.lineTo(w * 0.52, h * 0.58);
-        ctx.lineTo(w * 0.78, h * 0.32);
-        ctx.lineTo(w, h * 0.55);
-        ctx.lineTo(w, h * 0.62);
-        ctx.closePath();
-        ctx.fill();
-
-        const groundGrad = ctx.createLinearGradient(0, h * 0.62, 0, h);
-        groundGrad.addColorStop(0, "#5c7457");
-        groundGrad.addColorStop(0.5, "#3f533d");
-        groundGrad.addColorStop(1, "#273326");
-        ctx.fillStyle = groundGrad;
-        ctx.fillRect(0, h * 0.62, w, h * 0.38);
-
-        const patches = ["#d14949", "#d98a3c", "#e0c341", "#4ba366", "#457ec4", "#e5e7eb", "#6b7280", "#1f2937"];
-        patches.forEach((col, idx) => {
-          ctx.fillStyle = col;
-          ctx.fillRect(36 + idx * 34, h - 54, 28, 28);
-        });
+        canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        drawNeutralScene(canvas.getContext("2d"), w, h);
+        fileName = "Sample_Daylight_Target.png";
       }
 
       canvas.toBlob((blob) => {
         if (!blob) return;
-        const fileName =
-          type === "reference"
-            ? "Sample_Cinematic_TealAmber.png"
-            : "Sample_Daylight_Target.png";
         const file = new File([blob], fileName, { type: "image/png" });
         loadImageFile(file, type);
       }, "image/png");
@@ -693,27 +1011,61 @@ export default function App() {
 
     const ctx = canvas.getContext("2d");
     const targetImgData = ctx.createImageData(srcData.width, srcData.height);
-    simulateGradePixels(srcData.data, targetImgData.data, gradingParams);
+    simulateGradePixels(
+      srcData.data,
+      targetImgData.data,
+      effectiveParams,
+      simulateLogInput
+    );
     ctx.putImageData(targetImgData, 0, 0);
     canvas.dataset.rendered = "true";
 
-    drawHistogram(histogramCanvasRef.current, targetImgData);
-  }, [gradingParams]);
+    // Downsample to <=160x90 for fast ProScopes telemetry
+    const sw = Math.min(160, targetImgData.width);
+    const sh = Math.min(90, Math.max(1, Math.round((sw * targetImgData.height) / targetImgData.width)));
+    const scopeBuf = new Uint8ClampedArray(sw * sh * 4);
+    for (let y = 0; y < sh; y++) {
+      const sy = Math.min(targetImgData.height - 1, Math.floor((y / sh) * targetImgData.height));
+      for (let x = 0; x < sw; x++) {
+        const sx = Math.min(targetImgData.width - 1, Math.floor((x / sw) * targetImgData.width));
+        const sIdx = (sy * targetImgData.width + sx) * 4;
+        const dIdx = (y * sw + x) * 4;
+        scopeBuf[dIdx] = targetImgData.data[sIdx];
+        scopeBuf[dIdx + 1] = targetImgData.data[sIdx + 1];
+        scopeBuf[dIdx + 2] = targetImgData.data[sIdx + 2];
+        scopeBuf[dIdx + 3] = targetImgData.data[sIdx + 3];
+      }
+    }
+    setScopeImageData({ data: scopeBuf, width: sw, height: sh });
+  }, [effectiveParams, simulateLogInput]);
 
   useEffect(() => {
-    const activeImg = targetImage?.imgElement || referenceImage?.imgElement;
+    const isVideoTarget = targetImage?.kind === "video";
+    const activeImg = isVideoTarget
+      ? null
+      : targetImage?.imgElement || referenceImage?.imgElement;
     const canvas = gradedCanvasRef.current;
+
+    if (isVideoTarget) {
+      // Video target is rendered by the WebGL pipeline; the CPU canvas is unused.
+      previewSourceImageDataRef.current = null;
+      lastRenderedImgRef.current = null;
+      return undefined;
+    }
 
     if (!activeImg || !canvas) {
       previewSourceImageDataRef.current = null;
       lastRenderedImgRef.current = null;
-      drawHistogram(histogramCanvasRef.current, null);
+      setScopeImageData(null);
       return;
     }
 
+    const viewportPreviewCap =
+      typeof window !== "undefined" && window.innerWidth < 1024 ? 1280 : 1920;
+    const effectivePreviewCap = Math.min(previewMaxDim, viewportPreviewCap);
     const scale = Math.min(
       1,
-      previewMaxDim / Math.max(activeImg.naturalWidth, activeImg.naturalHeight)
+      effectivePreviewCap / Math.max(activeImg.naturalWidth, activeImg.naturalHeight)
     );
     const w = Math.max(1, Math.round(activeImg.naturalWidth * scale));
     const h = Math.max(1, Math.round(activeImg.naturalHeight * scale));
@@ -756,6 +1108,79 @@ export default function App() {
     calibrationTick,
     updatePreviewSimulation,
   ]);
+
+  // Re-run the dynamic range / chroma match whenever the target changes.
+  useEffect(() => {
+    if (referenceRef.current?.imgElement) {
+      triggerAnalysisRef.current();
+    }
+  }, [targetImage]);
+
+  // Live scope telemetry from the current video frame (graded through the same equation).
+  const videoEl = targetImage?.kind === "video" ? targetImage.videoEl : null;
+  const gradingParamsRef = useRef(effectiveParams);
+  gradingParamsRef.current = effectiveParams;
+  const simulateLogInputRef = useRef(simulateLogInput);
+  simulateLogInputRef.current = simulateLogInput;
+  useEffect(() => {
+    if (!videoEl) return undefined;
+    const small = document.createElement("canvas");
+    const sctx = small.getContext("2d", { willReadFrequently: true });
+    let gradedBuf = null;
+
+    const tick = (force = false) => {
+      if (document.hidden || activeTab !== "home") return;
+      if (!force && videoEl.paused) return;
+      if (videoEl.readyState < 2 || !videoEl.videoWidth) return;
+      const w = 160;
+      const h = Math.min(90, Math.max(1, Math.round((w * videoEl.videoHeight) / videoEl.videoWidth)));
+      if (small.width !== w || small.height !== h || !gradedBuf || gradedBuf.length !== w * h * 4) {
+        small.width = w;
+        small.height = h;
+        gradedBuf = new Uint8ClampedArray(w * h * 4);
+      }
+      try {
+        sctx.drawImage(videoEl, 0, 0, w, h);
+        const src = sctx.getImageData(0, 0, w, h);
+        simulateGradePixels(
+          src.data,
+          gradedBuf,
+          gradingParamsRef.current,
+          simulateLogInputRef.current
+        );
+        setScopeImageData({ data: gradedBuf, width: w, height: h });
+      } catch {
+        // frame not readable yet
+      }
+    };
+
+    tick(true);
+    const id = setInterval(() => tick(false), 84);
+    const onSeekOrLoad = () => tick(true);
+    videoEl.addEventListener("seeked", onSeekOrLoad);
+    videoEl.addEventListener("loadeddata", onSeekOrLoad);
+    return () => {
+      clearInterval(id);
+      videoEl.removeEventListener("seeked", onSeekOrLoad);
+      videoEl.removeEventListener("loadeddata", onSeekOrLoad);
+    };
+  }, [videoEl, activeTab]);
+
+  // Release any video object URL on unmount.
+  useEffect(
+    () => () => {
+      const t = targetRef.current;
+      if (t && t.kind === "video") {
+        try {
+          t.videoEl.pause();
+        } catch {
+          // ignore
+        }
+        if (t.videoUrl) URL.revokeObjectURL(t.videoUrl);
+      }
+    },
+    []
+  );
 
   const handleRunPipelineCalibration = () => {
     setCalibrationStatus((prev) => ({
@@ -828,20 +1253,143 @@ export default function App() {
 
   const handleResetParams = () => {
     setGradingParams({ ...DEFAULT_PARAMS });
+    setMatchStrength(100);
+    setSimulateLogInput(false);
     setStatusText("Reset");
   };
 
-  // Reload Analysis: instantly restores all 9 grading parameters + 3-Way Color Wheels from lastMatchedParams (or re-runs analysis)
+  const handleWheelChange = (prefix, [r, g, b]) => {
+    setGradingParams((prev) => ({
+      ...prev,
+      [`${prefix}R`]: r,
+      [`${prefix}G`]: g,
+      [`${prefix}B`]: b,
+    }));
+  };
+
+  const handleWheelReset = (prefix) => {
+    handleWheelChange(prefix, [0.5, 0.5, 0.5]);
+  };
+
+  const handleSwitchSlot = useCallback(
+    (nextSlot) => {
+      if (nextSlot === activeSlot) return;
+      setSlotSnapshots((prev) => {
+        const updated = { ...prev, [activeSlot]: { ...gradingParams } };
+        const loaded = updated[nextSlot] || { ...DEFAULT_PARAMS };
+        setGradingParams({ ...loaded });
+        return updated;
+      });
+      setActiveSlot(nextSlot);
+      setStatusText(`Slot ${nextSlot}`);
+    },
+    [activeSlot, gradingParams]
+  );
+
+  const handleSaveImage = async ({ format = "png", quality = 95, layout = "graded", splitPos = 50 } = {}) => {
+    if (isSavingFrame) return false;
+    const isVideo = targetImage?.kind === "video" && videoEl;
+    const activeImg = isVideo
+      ? null
+      : targetImage?.imgElement || referenceImage?.imgElement;
+    if (!isVideo && !activeImg) return false;
+
+    const w = isVideo ? videoEl.videoWidth : activeImg.naturalWidth;
+    const h = isVideo ? videoEl.videoHeight : activeImg.naturalHeight;
+    if (!w || !h) return false;
+
+    setIsSavingFrame(true);
+    try {
+      const baseName =
+        targetImage?.baseName || referenceImage?.baseName || presetName || "Target";
+      await exportGradedImage({
+        source: isVideo ? videoEl : activeImg,
+        width: w,
+        height: h,
+        params: effectiveParams,
+        format,
+        quality,
+        layout,
+        splitPos,
+        simulateLogInput,
+        baseName,
+      });
+      setStatusText(`Saved ${format.toUpperCase()}`);
+      return true;
+    } catch {
+      setStatusText("Export Error");
+      return false;
+    } finally {
+      setIsSavingFrame(false);
+    }
+  };
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
+        e.preventDefault();
+        setIsShortcutsOpen((v) => !v);
+      } else if (e.key === "1") {
+        handleSwitchSlot("A");
+      } else if (e.key === "2") {
+        handleSwitchSlot("B");
+      } else if (e.code === "Space" && videoEl) {
+        e.preventDefault();
+        if (videoEl.paused) {
+          videoEl.play().catch(() => {});
+        } else {
+          videoEl.pause();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handleSwitchSlot, videoEl]);
+
+  // Reload Analysis: restores all grading parameters + 3-Way Color Wheels from the last match.
+  // With a video target it re-matches against the CURRENT video frame instead.
   const handleReloadAnalysis = () => {
-    if (!referenceImage) return;
+    if (!referenceImage && !importedLook) return;
+
+    if (referenceImage?.imgElement && targetImage?.kind === "video") {
+      triggerReferenceAnalysis(referenceImage.imgElement);
+      return;
+    }
 
     if (lastMatchedParams) {
       setGradingParams({ ...lastMatchedParams });
       setStatusText("Matched");
       setReloadedFeedback(true);
       setTimeout(() => setReloadedFeedback(false), 1200);
-    } else if (referenceImage.imgElement) {
+    } else if (referenceImage?.imgElement) {
       triggerReferenceAnalysis(referenceImage.imgElement);
+    }
+  };
+
+  const hasLook = Boolean(referenceImage || importedLook);
+
+  const buildCalibratedParams = () =>
+    applyCalibrationToParams(effectiveParams, calibration);
+
+  const handleExportLut = (ext) => {
+    if (!hasLook) return;
+    try {
+      const safePreset = sanitizeMetadataText(
+        presetName,
+        referenceImage?.baseName || importedLook?.name || "Custom Look",
+        64
+      );
+      const { blob, fileName } = generateLutFile(
+        buildCalibratedParams(),
+        safePreset,
+        ext
+      );
+      downloadBlob(blob, fileName);
+      setStatusText(`Exported .${ext}`);
+    } catch {
+      setStatusText("Export Error");
     }
   };
 
@@ -850,17 +1398,17 @@ export default function App() {
   };
 
   const handleExport = async () => {
-    if (!referenceImage) return;
+    if (!hasLook) return;
     setIsExporting(true);
     setStatusText("Exporting...");
     try {
       const calibratedParams = applyCalibrationToParams(
-        gradingParams,
+        effectiveParams,
         calibration
       );
       const safePreset = sanitizeMetadataText(
         presetName,
-        referenceImage.baseName || "Custom Look",
+        referenceImage?.baseName || importedLook?.name || "Custom Look",
         64
       );
       const safeAuthor = sanitizeMetadataText(authorName, "TFBAGAS", 64);
@@ -931,24 +1479,34 @@ export default function App() {
           workspacePhase === "morphing-in" ? "m3-morph-topbar" : ""
         }`}
       >
-        {/* Left: Achromatic Keyflow Logo + Brand Title + Interactive v0.6.5 Beta Changelog Button */}
-        <div className="flex items-center gap-2.5">
-          <KeyflowLogo size={28} />
-          <div className="flex items-center gap-2">
+        {/* Left: Achromatic Keyflow Logo + Brand Title + v0.8.0 Beta Badge + Support Capsule */}
+        <div className="flex flex-wrap items-center gap-2">
+          <KeyflowLogo size={26} />
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <h1 className="text-sm sm:text-base font-bold font-display tracking-tight text-[#E2E4E9]">
               Color Match Tool
             </h1>
             <button
               type="button"
               onClick={handleOpenChangelog}
-              title="View What's New in v0.6.5 Beta"
-              className="m3-btn-morph inline-flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.04] hover:bg-white/[0.09] text-[#E2E4E9] border border-white/[0.09] hover:border-white/25 cursor-pointer"
+              title="View What's New in v0.8.0 Beta"
+              className="m3-btn-morph inline-flex items-center gap-1 text-[10px] font-mono px-1.5 sm:px-2 py-0.5 rounded-md bg-white/[0.04] hover:bg-white/[0.09] text-[#E2E4E9] border border-white/[0.09] hover:border-white/25 cursor-pointer"
             >
               {hasUnreadUpdate && (
                 <span className="w-1.5 h-1.5 rounded-full bg-[#6EE7B7] animate-pulse" />
               )}
-              <span>v0.6.5 Beta</span>
+              <span>v0.8.0 Beta</span>
             </button>
+            <a
+              href="https://sociabuzz.com/tfbagas/support"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Support development on SociaBuzz"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] text-[10px] sm:text-[11px] font-medium text-[#E2E4E9] transition-colors"
+            >
+              <Heart className="w-3 h-3 text-[#9CA3AF]" />
+              <span>Support</span>
+            </a>
           </div>
         </div>
 
@@ -991,6 +1549,16 @@ export default function App() {
             })}
           </nav>
 
+          <button
+            type="button"
+            onClick={() => setIsShortcutsOpen(true)}
+            title="Keyboard & Grading Shortcuts (?)"
+            aria-label="Keyboard Shortcuts"
+            className="m3-btn-morph inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] text-xs font-mono text-[#9CA3AF] hover:text-[#E2E4E9] cursor-pointer"
+          >
+            <HelpCircle className="w-3.5 h-3.5" />
+          </button>
+
           <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.09] text-[11px] font-mono text-[#E2E4E9]">
             <span
               className={`w-1.5 h-1.5 rounded-full ${
@@ -1009,31 +1577,18 @@ export default function App() {
       </header>
 
       {/* Main Content Container */}
-      <main className="flex-1 max-w-[1440px] w-full mx-auto px-3 sm:px-5 py-3.5">
+      <main className="flex-1 max-w-[1440px] w-full mx-auto px-3 sm:px-5 py-2.5">
         {/* WORKSPACE TAB */}
         <div
           key={cascadeKey}
           className={
-            activeTab === "home" ? "space-y-3" : "hidden"
+            activeTab === "home" ? "space-y-2.5" : "hidden"
           }
         >
-          {/* 2. Support Banner (delay: 60ms) */}
-          <div
-            className={workspacePhase === "morphing-in" ? "m3-morph-panel" : ""}
-            style={
-              workspacePhase === "morphing-in"
-                ? { "--morph-delay": "60ms" }
-                : undefined
-            }
-          >
-            <SupportBanner onOpenSupport={() => setActiveTab("support")} />
-          </div>
-
-          {/* 2-Column Workstation Grid (items-stretch aligns bottom edges of both columns, liquid shape-morph & bouncy cascade) */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
-            {/* LEFT COLUMN */}
-            <div className="lg:col-span-7 flex flex-col gap-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3">
+          {/* 2-Column Workstation Grid: Direct-child sticky VISUAL PREVIEW on <1024px, 38%/62% Left + 100vh Right on >=1024px */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[auto_1fr] gap-2.5 items-stretch">
+            {/* MEDIA DROPZONES (order-2 on mobile, row 1 col 1..7 on desktop) */}
+            <div className="order-2 lg:order-none lg:col-span-7 lg:col-start-1 lg:row-start-1 grid grid-cols-2 gap-2 lg:gap-2.5">
                 {/* 3. Panel REFERENCE (delay: 110ms) */}
                 <div
                   className={
@@ -1051,11 +1606,18 @@ export default function App() {
                     onSelectImage={(file) => loadImageFile(file, "reference")}
                     onClearImage={() => {
                       setReferenceImage(null);
-                      setLastMatchedParams(null);
+                      if (!importedLook) setLastMatchedParams(null);
                       setReferenceError("");
                       setStatusText("Ready");
                     }}
-                    onTrySample={() => handleTrySample("reference")}
+                    onTrySample={(id) => handleTrySample("reference", id)}
+                    sampleOptions={SAMPLE_LOOKS}
+                    allowPresets
+                    importedLook={importedLook}
+                    onClearImportedLook={() => {
+                      setImportedLook(null);
+                      setLastMatchedParams(null);
+                    }}
                     isAnalyzing={isAnalyzing}
                     isPasteTarget={
                       hoveredSlot === "reference" ||
@@ -1082,11 +1644,12 @@ export default function App() {
                   }
                 >
                   <ImageDropCard
-                    title="TARGET IMAGE"
+                    title="TARGET IMAGE / VIDEO"
+                    allowVideo
                     imageInfo={targetImage}
                     onSelectImage={(file) => loadImageFile(file, "target")}
                     onClearImage={() => {
-                      setTargetImage(null);
+                      replaceTarget(null);
                       setTargetError("");
                     }}
                     onTrySample={() => handleTrySample("target")}
@@ -1104,9 +1667,13 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 7. Panel VISUAL PREVIEW (delay: 270ms) */}
+              {/* 7. Panel VISUAL PREVIEW (direct child of workspace grid: sticky top-[48px] on <1024px, row 2 col 1..7 on >=1024px) */}
               <div
-                className={`flex-1 flex flex-col ${
+                className={`order-1 lg:order-none lg:col-span-7 lg:col-start-1 lg:row-start-2 flex flex-col ${
+                  isPreviewPinned
+                    ? "sticky top-[48px] z-30 bg-[#121216] pb-1 lg:static lg:z-auto lg:bg-transparent lg:pb-0"
+                    : ""
+                } ${
                   workspacePhase === "morphing-in" ? "m3-morph-panel" : ""
                 }`}
                 style={
@@ -1118,32 +1685,69 @@ export default function App() {
                 <ComparisonSlider
                   originalImage={activePreviewImageUrl}
                   gradedCanvasRef={gradedCanvasRef}
-                  hasImage={Boolean(activePreviewImageUrl)}
+                  hasImage={Boolean(activePreviewImageUrl) || Boolean(videoEl)}
                   mode={previewMode}
                   onModeChange={setPreviewMode}
+                  videoEl={videoEl}
+                  gradingParams={effectiveParams}
+                  onVideoError={(msg) => setTargetError(msg)}
+                  isPinned={isPreviewPinned}
+                  onTogglePin={() => setIsPreviewPinned((p) => !p)}
+                  onSaveImage={handleSaveImage}
+                  isSavingImage={isSavingFrame}
+                  nativeWidth={targetImage?.width || referenceImage?.width || 0}
+                  nativeHeight={targetImage?.height || referenceImage?.height || 0}
+                  targetBaseName={targetImage?.baseName || referenceImage?.baseName || "Target"}
+                  simulateLogInput={simulateLogInput}
+                  onToggleSimulateLogInput={setSimulateLogInput}
+                  footer={
+                    videoEl ? (
+                      <VideoTransportBar
+                        videoEl={videoEl}
+                        resolution={`${targetImage.width}×${targetImage.height}`}
+                      />
+                    ) : null
+                  }
                 />
               </div>
-            </div>
 
             {/* RIGHT COLUMN */}
-            <div className="lg:col-span-5 flex flex-col gap-3">
+            <div className="order-3 lg:order-none lg:col-span-5 lg:col-start-8 lg:row-start-1 lg:row-span-2 flex flex-col gap-2">
               {/* 4. Panel DETECTED PARAMETERS (delay: 150ms) */}
               <div
-                className={`m3-panel rounded-2xl p-3.5 ${
+                className={`m3-panel rounded-2xl p-2.5 ${
                   workspacePhase === "morphing-in" ? "m3-morph-panel" : ""
                 }`}
                 style={
                   workspacePhase === "morphing-in"
-                    ? { "--morph-delay": "150ms" }
-                    : undefined
+                    ? { "--morph-delay": "150ms", contain: "layout paint" }
+                    : { contain: "layout paint" }
                 }
               >
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                   <div className="flex items-center gap-2">
                     <Sliders className="w-3.5 h-3.5 text-[#9CA3AF]" />
                     <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF]">
                       DETECTED PARAMETERS
                     </h3>
+                    {/* A / B Grading Snapshot Slots */}
+                    <div className="inline-flex items-center p-0.5 rounded-md bg-[#0E0E12] border border-white/[0.08]">
+                      {["A", "B"].map((slot) => (
+                        <button
+                          key={slot}
+                          type="button"
+                          onClick={() => handleSwitchSlot(slot)}
+                          title={`Grading Snapshot Slot ${slot} (Shortcut: ${slot === "A" ? "1" : "2"})`}
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
+                            activeSlot === slot
+                              ? "bg-[#E2E4E9] text-[#0E0E11]"
+                              : "text-[#9CA3AF] hover:text-[#F4F5F7]"
+                          }`}
+                        >
+                          {slot}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   {/* Action Buttons: Reload Analysis + Reset All */}
@@ -1151,9 +1755,9 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleReloadAnalysis}
-                      disabled={!referenceImage || isAnalyzing}
+                      disabled={!hasLook || isAnalyzing}
                       className={`m3-btn-morph flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md border ${
-                        !referenceImage || isAnalyzing
+                        !hasLook || isAnalyzing
                           ? "bg-white/[0.025] text-[#9CA3AF]/35 border-white/[0.05] cursor-not-allowed"
                           : reloadedFeedback
                           ? "bg-[#E2E4E9] text-[#0E0E11] border-[#E2E4E9] font-semibold cursor-pointer"
@@ -1186,33 +1790,29 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Real-Time Mini RGB / Rec.709 Luma Histogram Telemetry */}
-                <div className="mb-3 rounded-lg bg-[#0A0A0D]/38 border border-white/[0.09] p-2">
-                  <div className="flex items-center justify-between text-[10px] font-mono text-[#9CA3AF] mb-1">
-                    <span className="inline-flex items-center gap-1 uppercase tracking-wider">
-                      <BarChart3 className="w-3 h-3 text-[#9CA3AF]" />
-                      RGB / Rec.709 Luma Scope
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-red-400/90">R</span>
-                      <span className="text-green-400/90">G</span>
-                      <span className="text-blue-400/90">B</span>
-                      <span className="text-[#E2E4E9]/90">Y</span>
-                    </div>
-                  </div>
-                  <div className="relative h-14 w-full overflow-hidden rounded">
-                    <canvas
-                      ref={histogramCanvasRef}
-                      width={340}
-                      height={56}
-                      className="w-full h-full block"
-                    />
-                    {!activePreviewImageUrl && (
-                      <div className="absolute inset-0 flex items-center justify-center text-[11px] font-mono text-[#9CA3AF]/50">
-                        NO SIGNAL — LOAD IMAGE OR CLICK SAMPLE
-                      </div>
-                    )}
-                  </div>
+                {/* Master Match Strength (0% - 150%, default 100%) */}
+                <div className="mb-2">
+                  <ParameterControl
+                    paramKey="matchStrength"
+                    label="Match Strength"
+                    min={0}
+                    max={150}
+                    step={5}
+                    value={matchStrength}
+                    defaultValue={100}
+                    isBipolar={false}
+                    valueSuffix="%"
+                    onChange={(_, val) => setMatchStrength(Math.round(val))}
+                    icon={Gauge}
+                  />
+                </div>
+
+                {/* Pro Scopes (Luma/RGB, RGB Parade, Vectorscope with Skin-Tone Line) */}
+                <div className="mb-2.5">
+                  <ProScopes
+                    imageData={scopeImageData}
+                    hasMedia={Boolean(activePreviewImageUrl || videoEl)}
+                  />
                 </div>
 
                 {/* Bipolar Sliders List (staggered row cascade during morphing-in) */}
@@ -1345,6 +1945,8 @@ export default function App() {
                             gradingParams.liftG,
                             gradingParams.liftB,
                           ]}
+                          onChange={(rgb) => handleWheelChange("lift", rgb)}
+                          onReset={() => handleWheelReset("lift")}
                         />
                         <ColorSwatchCard
                           title="Midtones (Gamma)"
@@ -1353,6 +1955,8 @@ export default function App() {
                             gradingParams.gammaG,
                             gradingParams.gammaB,
                           ]}
+                          onChange={(rgb) => handleWheelChange("gamma", rgb)}
+                          onReset={() => handleWheelReset("gamma")}
                         />
                         <ColorSwatchCard
                           title="Highs (Gain)"
@@ -1361,6 +1965,8 @@ export default function App() {
                             gradingParams.gainG,
                             gradingParams.gainB,
                           ]}
+                          onChange={(rgb) => handleWheelChange("gain", rgb)}
+                          onReset={() => handleWheelReset("gain")}
                         />
                       </div>
                     </div>
@@ -1388,7 +1994,9 @@ export default function App() {
                   setDescription={setDescription}
                   onExport={handleExport}
                   isExporting={isExporting}
-                  disabled={!referenceImage}
+                  disabled={!hasLook}
+                  onExportCube={() => handleExportLut("cube")}
+                  onExportLut={() => handleExportLut("lut")}
                   isCalibrationActive={isCalibrationActive}
                   onOpenCalibration={() => setActiveTab("settings")}
                 />
@@ -1586,10 +2194,10 @@ export default function App() {
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-lg font-bold font-display text-[#E2E4E9]">
-                        Color Match for Keyflow V.0.6.5 Beta
+                        Color Match for Keyflow V.0.8.0 Beta
                       </h2>
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.05] text-[#6EE7B7] border border-white/[0.09]">
-                        v0.6.5 Beta
+                        v0.8.0 Beta
                       </span>
                     </div>
                     <p className="text-xs text-[#9CA3AF] mt-0.5">
@@ -1646,7 +2254,7 @@ export default function App() {
                   </h3>
                 </div>
                 <span className="text-[11px] font-mono text-[#9CA3AF]">
-                  v0.5.0 - v0.6.5 Beta
+                  v0.5.0 - v0.8.0 Beta
                 </span>
               </div>
 
@@ -1663,11 +2271,17 @@ export default function App() {
         )}
       </main>
 
-      {/* Interactive "What's New in v0.6.5 Beta" Modal Dialog */}
+      {/* Interactive "What's New in v0.8.0 Beta" Modal Dialog */}
       <ChangelogModal
         open={isChangelogOpen}
         onClose={() => setIsChangelogOpen(false)}
         onViewFullHistory={() => setActiveTab("about")}
+      />
+
+      {/* Keyboard & Grading Shortcuts Modal */}
+      <ShortcutsModal
+        isOpen={isShortcutsOpen}
+        onClose={() => setIsShortcutsOpen(false)}
       />
 
       {/* Post-Export Support Toast */}

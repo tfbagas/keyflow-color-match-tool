@@ -1,6 +1,8 @@
-import React, { useState, useRef, useEffect } from "react";
-import { Columns, MoveHorizontal, Eye } from "lucide-react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
+import { Columns, MoveHorizontal, Eye, Pin, PinOff, Camera, Download, Check } from "lucide-react";
 import { usePillIndicator } from "../hooks/usePillIndicator";
+import { prepareGrade, gradeRGB, applyLogInputRGB } from "../utils/gradeEngine";
+import VideoGLCanvas from "./VideoGLCanvas";
 
 const PREVIEW_MODES = [
   { id: "split", label: "Split Slider" },
@@ -14,11 +16,96 @@ export default function ComparisonSlider({
   hasImage,
   mode = "split",
   onModeChange,
+  videoEl = null,
+  gradingParams,
+  onVideoError,
+  isPinned = true,
+  onTogglePin,
+  onSaveImage,
+  isSavingImage = false,
+  nativeWidth = 0,
+  nativeHeight = 0,
+  targetBaseName = "Target",
+  simulateLogInput = false,
+  onToggleSimulateLogInput,
+  footer = null,
 }) {
   const [splitPos, setSplitPos] = useState(50); // percentage 0..100
   const [isDragging, setIsDragging] = useState(false);
   const [isHoldingBefore, setIsHoldingBefore] = useState(false);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState("png");
+  const [exportQuality, setExportQuality] = useState(95);
+  const [exportLayout, setExportLayout] = useState("graded");
+  const [savedLabel, setSavedLabel] = useState("");
+  const exportPopoverRef = useRef(null);
+  const savedTimerRef = useRef(null);
+  const [pixelReadout, setPixelReadout] = useState(null);
   const containerRef = useRef(null);
+  const mediaBoxRef = useRef(null);
+  const [mediaBox, setMediaBox] = useState(null);
+  const sampleBufferRef = useRef({ data: null, w: 0, h: 0 });
+
+  const preparedGrade = useMemo(
+    () => (gradingParams ? prepareGrade(gradingParams) : null),
+    [gradingParams]
+  );
+
+  // Build lightweight <=320px CPU pixel buffer for zero-stall hover RGB/IRE readout
+  useEffect(() => {
+    if (videoEl) {
+      const c = document.createElement("canvas");
+      const ctx = c.getContext("2d", { willReadFrequently: true });
+      const syncVideoSample = () => {
+        if (videoEl.readyState < 2 || !videoEl.videoWidth) return;
+        const scale = Math.min(1, 320 / Math.max(videoEl.videoWidth, videoEl.videoHeight));
+        const w = Math.max(1, Math.round(videoEl.videoWidth * scale));
+        const h = Math.max(1, Math.round(videoEl.videoHeight * scale));
+        if (c.width !== w || c.height !== h) {
+          c.width = w;
+          c.height = h;
+        }
+        try {
+          ctx.drawImage(videoEl, 0, 0, w, h);
+          sampleBufferRef.current = { data: ctx.getImageData(0, 0, w, h).data, w, h };
+        } catch {
+          // frame not ready
+        }
+      };
+      syncVideoSample();
+      videoEl.addEventListener("loadeddata", syncVideoSample);
+      videoEl.addEventListener("seeked", syncVideoSample);
+      videoEl.addEventListener("pause", syncVideoSample);
+      return () => {
+        videoEl.removeEventListener("loadeddata", syncVideoSample);
+        videoEl.removeEventListener("seeked", syncVideoSample);
+        videoEl.removeEventListener("pause", syncVideoSample);
+      };
+    }
+
+    if (!originalImage) {
+      sampleBufferRef.current = { data: null, w: 0, h: 0 };
+      return undefined;
+    }
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => {
+      if (cancelled) return;
+      const scale = Math.min(1, 320 / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const c = document.createElement("canvas");
+      c.width = w;
+      c.height = h;
+      const ctx = c.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, w, h);
+      sampleBufferRef.current = { data: ctx.getImageData(0, 0, w, h).data, w, h };
+    };
+    img.src = originalImage;
+    return () => {
+      cancelled = true;
+    };
+  }, [originalImage, videoEl]);
 
   const {
     containerRef: modeContainerRef,
@@ -26,11 +113,107 @@ export default function ComparisonSlider({
     pillStyle: modePillStyle,
   } = usePillIndicator(mode);
 
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !nativeWidth || !nativeHeight || mode === "side") {
+      setMediaBox(null);
+      return undefined;
+    }
+    const computeBox = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const containerAspect = rect.width / rect.height;
+      const mediaAspect = nativeWidth / nativeHeight;
+      let w = rect.width;
+      let h = rect.height;
+      if (mediaAspect > containerAspect) {
+        h = rect.width / mediaAspect;
+      } else {
+        w = rect.height * mediaAspect;
+      }
+      setMediaBox({ width: Math.round(w), height: Math.round(h) });
+    };
+    computeBox();
+    const ro = new ResizeObserver(computeBox);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [nativeWidth, nativeHeight, isPinned, mode]);
+
   const updatePosition = (clientX) => {
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
+    const targetEl = (mode === "split" && mediaBoxRef.current) || containerRef.current;
+    if (!targetEl) return;
+    const rect = targetEl.getBoundingClientRect();
     const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
-    setSplitPos((x / rect.width) * 100);
+    let pct = (x / rect.width) * 100;
+    if (pct >= 48.2 && pct <= 51.8) {
+      pct = 50;
+    }
+    setSplitPos(pct);
+  };
+
+  const handlePointerSample = (clientX, clientY) => {
+    const buf = sampleBufferRef.current;
+    if (!hasImage || !containerRef.current || mode === "side" || !buf.data || !buf.w || !buf.h) {
+      setPixelReadout(null);
+      return;
+    }
+    const rect = containerRef.current.getBoundingClientRect();
+    const srcW = buf.w;
+    const srcH = buf.h;
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    // Compute object-contain rendered box inside containerRef
+    const containerAspect = rect.width / rect.height;
+    const mediaAspect = srcW / srcH;
+    let renderW = rect.width;
+    let renderH = rect.height;
+    let offsetX = 0;
+    let offsetY = 0;
+    if (mediaAspect > containerAspect) {
+      renderH = rect.width / mediaAspect;
+      offsetY = (rect.height - renderH) / 2;
+    } else {
+      renderW = rect.height * mediaAspect;
+      offsetX = (rect.width - renderW) / 2;
+    }
+
+    const relX = clientX - rect.left - offsetX;
+    const relY = clientY - rect.top - offsetY;
+    if (relX < 0 || relY < 0 || relX > renderW || relY > renderH) {
+      setPixelReadout(null);
+      return;
+    }
+
+    const sx = Math.min(srcW - 1, Math.max(0, Math.floor((relX / renderW) * srcW)));
+    const sy = Math.min(srcH - 1, Math.max(0, Math.floor((relY / renderH) * srcH)));
+    const idx = (sy * srcW + sx) * 4;
+    const r = buf.data[idx];
+    const g = buf.data[idx + 1];
+    const b = buf.data[idx + 2];
+
+    const beforeIre = Math.round((0.2126 * r + 0.7152 * g + 0.0722 * b) / 2.55);
+    let gr = r;
+    let gg = g;
+    let gb = b;
+    if (preparedGrade) {
+      let inR = r / 255;
+      let inG = g / 255;
+      let inB = b / 255;
+      if (simulateLogInput) {
+        const logOut = [0, 0, 0];
+        applyLogInputRGB(inR, inG, inB, logOut);
+        inR = logOut[0];
+        inG = logOut[1];
+        inB = logOut[2];
+      }
+      const out = [0, 0, 0];
+      gradeRGB(preparedGrade, inR, inG, inB, out);
+      gr = Math.round(Math.max(0, Math.min(255, out[0] * 255)));
+      gg = Math.round(Math.max(0, Math.min(255, out[1] * 255)));
+      gb = Math.round(Math.max(0, Math.min(255, out[2] * 255)));
+    }
+    const gradedIre = Math.round((0.2126 * gr + 0.7152 * gg + 0.0722 * gb) / 2.55);
+    setPixelReadout({ r, g, b, beforeIre, gr, gg, gb, gradedIre });
   };
 
   useEffect(() => {
@@ -79,10 +262,53 @@ export default function ComparisonSlider({
     };
   }, []);
 
+  // Close Save Image popover on outside click or Escape
+  useEffect(() => {
+    if (!isExportOpen) return undefined;
+    const onPointerDown = (e) => {
+      if (exportPopoverRef.current && !exportPopoverRef.current.contains(e.target)) {
+        setIsExportOpen(false);
+      }
+    };
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setIsExportOpen(false);
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isExportOpen]);
+
+  const cleanExportBase =
+    String(targetBaseName || "Target")
+      .trim()
+      .replace(/[^a-zA-Z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "Target";
+  const previewExportFilename = `${cleanExportBase}-${
+    exportLayout === "split" ? "split" : "graded"
+  }.${exportFormat}`;
+
+  const handleDownloadClick = async () => {
+    if (!onSaveImage || isSavingImage) return;
+    const ok = await onSaveImage({
+      format: exportFormat,
+      quality: exportQuality,
+      layout: exportLayout,
+      splitPos,
+    });
+    if (ok !== false) {
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      setSavedLabel(`Saved ${exportFormat.toUpperCase()}`);
+      savedTimerRef.current = setTimeout(() => setSavedLabel(""), 1200);
+    }
+  };
+
   return (
-    <div className="m3-panel rounded-2xl p-3.5 flex-1 flex flex-col">
+    <div className="m3-panel !bg-[#121216] lg:!bg-transparent rounded-2xl p-2.5 lg:p-3.5 flex-1 flex flex-col">
       {/* Header Row */}
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5 shrink-0">
+      <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2 shrink-0">
         <div className="flex items-center gap-2">
           <Columns className="w-3.5 h-3.5 text-[#9CA3AF]" />
           <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF]">
@@ -90,7 +316,187 @@ export default function ComparisonSlider({
           </h3>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {/* Mobile Sticky Pin Toggle */}
+          {onTogglePin && (
+            <button
+              type="button"
+              onClick={onTogglePin}
+              title={isPinned ? "Unpin sticky preview on mobile" : "Pin preview to top on mobile"}
+              className={`lg:hidden m3-btn-morph inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium border cursor-pointer select-none ${
+                isPinned
+                  ? "bg-white/[0.12] text-[#F4F5F7] border-white/25"
+                  : "bg-white/[0.04] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.09]"
+              }`}
+            >
+              {isPinned ? <Pin className="w-3 h-3" /> : <PinOff className="w-3 h-3" />}
+              <span>{isPinned ? "Pinned" : "Pin"}</span>
+            </button>
+          )}
+
+          {/* Save Graded Image Popover (PNG, JPG, WEBP & Split) */}
+          {hasImage && onSaveImage && (
+            <div ref={exportPopoverRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setIsExportOpen((v) => !v)}
+                aria-expanded={isExportOpen}
+                title="Export full-resolution graded image or video frame"
+                className={`m3-btn-morph inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border cursor-pointer select-none ${
+                  isExportOpen
+                    ? "bg-[#E2E4E9] text-[#0E0E11] border-[#E2E4E9]"
+                    : "bg-white/[0.04] hover:bg-white/[0.09] text-[#E2E4E9] border-white/[0.09]"
+                }`}
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Save Image</span>
+              </button>
+
+              {isExportOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40 bg-black/65 sm:hidden"
+                    onClick={() => setIsExportOpen(false)}
+                  />
+                  <div className="fixed inset-x-3 top-1/2 -translate-y-1/2 max-w-[400px] mx-auto z-50 sm:inset-auto sm:translate-y-0 sm:right-0 sm:top-full sm:mt-2 sm:w-72 rounded-xl bg-[#131419] border border-white/[0.16] shadow-2xl p-3 space-y-2.5 text-left">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono uppercase tracking-[0.12em] text-[#9CA3AF]">
+                      Export Native Resolution
+                    </span>
+                    {nativeWidth > 0 && nativeHeight > 0 && (
+                      <span className="text-[10px] font-mono text-[#E2E4E9]">
+                        {nativeWidth} x {nativeHeight} px
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 1. Format Selector */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-[#9CA3AF]">Format</span>
+                    <div className="grid grid-cols-3 gap-1 p-0.5 rounded-lg bg-[#0A0A0D]/70 border border-white/[0.08]">
+                      {[
+                        { id: "png", label: "PNG", sub: "Lossless" },
+                        { id: "jpg", label: "JPG", sub: "Standard" },
+                        { id: "webp", label: "WEBP", sub: "Compact" },
+                      ].map((fmt) => (
+                        <button
+                          key={fmt.id}
+                          type="button"
+                          onClick={() => setExportFormat(fmt.id)}
+                          className={`py-1 px-1.5 rounded-md text-center transition-colors cursor-pointer ${
+                            exportFormat === fmt.id
+                              ? "bg-[#E2E4E9] text-[#0E0E11] font-semibold"
+                              : "text-[#9CA3AF] hover:text-[#F4F5F7]"
+                          }`}
+                        >
+                          <div className="text-[11px] leading-tight">{fmt.label}</div>
+                          <div className="text-[9px] opacity-75 leading-tight">{fmt.sub}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 2. Quality Slider (JPG / WEBP only) */}
+                  {exportFormat !== "png" && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-[#9CA3AF]">Quality</span>
+                        <span className="font-mono text-[#E2E4E9]">{exportQuality}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={60}
+                        max={100}
+                        step={1}
+                        value={exportQuality}
+                        onChange={(e) => setExportQuality(Number(e.target.value))}
+                        className="w-full accent-[#E2E4E9] cursor-pointer h-1.5"
+                      />
+                    </div>
+                  )}
+
+                  {/* 3. Layout Output Toggle */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-[#9CA3AF]">Layout Output</span>
+                    <div className="grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-[#0A0A0D]/70 border border-white/[0.08]">
+                      {[
+                        { id: "graded", label: "Graded Only" },
+                        { id: "split", label: "Before / After Split" },
+                      ].map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setExportLayout(opt.id)}
+                          className={`py-1 px-2 rounded-md text-[10px] font-medium transition-colors cursor-pointer truncate ${
+                            exportLayout === opt.id
+                              ? "bg-white/[0.14] text-[#F4F5F7]"
+                              : "text-[#9CA3AF] hover:text-[#F4F5F7]"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 4. Filename Preview */}
+                  <div className="px-2 py-1 rounded-md bg-white/[0.03] border border-white/[0.07] text-[10px] font-mono text-[#9CA3AF] truncate">
+                    {previewExportFilename}
+                  </div>
+
+                  {/* 5. Download Action with In-Button Morph */}
+                  <button
+                    type="button"
+                    onClick={handleDownloadClick}
+                    disabled={isSavingImage}
+                    className={`w-full py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-[opacity,transform] duration-200 cursor-pointer ${
+                      savedLabel
+                        ? "bg-[#86EFAC] text-[#042F1E] scale-[0.99]"
+                        : "bg-[#6EE7B7] hover:bg-[#86EFAC] text-[#042F1E]"
+                    } disabled:opacity-50`}
+                  >
+                    {savedLabel ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                        <span>{savedLabel}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-3.5 h-3.5 stroke-[2.25]" />
+                        <span>
+                          {isSavingImage
+                            ? "Rendering..."
+                            : `Download ${exportFormat.toUpperCase()}`}
+                        </span>
+                      </>
+                    )}
+                  </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Simulate Log Input Checkbox (Preview-Only, Never Exported to .kfplug) */}
+          {hasImage && onToggleSimulateLogInput && (
+            <label
+              title="Preview grade on simulated flat Log footage without changing the exported .kfplug"
+              className={`m3-btn-morph inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-medium border cursor-pointer select-none ${
+                simulateLogInput
+                  ? "bg-white/[0.12] text-[#F4F5F7] border-white/25"
+                  : "bg-white/[0.04] hover:bg-white/[0.08] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.09]"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={simulateLogInput}
+                onChange={(e) => onToggleSimulateLogInput(e.target.checked)}
+                className="w-3 h-3 accent-[#E2E4E9] rounded cursor-pointer"
+              />
+              <span>Simulate Log Input</span>
+            </label>
+          )}
+
           {/* Hold Before Peek Button */}
           {hasImage && (
             <button
@@ -154,19 +560,75 @@ export default function ComparisonSlider({
             updatePosition(e.clientX);
           }
         }}
+        onMouseMove={(e) => handlePointerSample(e.clientX, e.clientY)}
+        onMouseLeave={() => setPixelReadout(null)}
         onTouchStart={(e) => {
           if (mode === "split" && hasImage && !isHoldingBefore && e.touches?.[0]) {
             setIsDragging(true);
             updatePosition(e.touches[0].clientX);
           }
         }}
-        className={`relative w-full flex-1 min-h-[240px] sm:min-h-[280px] rounded-lg bg-[#0A0A0D]/38 border border-white/[0.09] overflow-hidden flex items-center justify-center select-none ${
+        className={`relative w-full flex-1 ${
+          isPinned ? "h-[30vh] min-h-[200px] max-h-[245px]" : "min-h-[210px]"
+        } lg:h-auto lg:min-h-[300px] lg:max-h-none rounded-lg bg-[#0A0A0D]/38 border border-white/[0.09] overflow-hidden flex items-center justify-center select-none ${
           mode === "split" && hasImage ? "cursor-ew-resize" : ""
         }`}
       >
         {!hasImage ? (
           <div className="text-center p-6 text-[#9CA3AF]/60 text-xs">
             Load a Reference or Target image above to inspect Before / After grading
+          </div>
+        ) : videoEl ? (
+          /* WebGL fragment-shader video preview (identical grading to .kfplug) */
+          <div className="relative w-full h-full flex items-center justify-center">
+            <div
+              ref={mode === "split" ? mediaBoxRef : undefined}
+              style={
+                mode !== "side" && mediaBox
+                  ? { width: `${mediaBox.width}px`, height: `${mediaBox.height}px` }
+                  : undefined
+              }
+              className={`relative flex items-center justify-center shrink-0 ${
+                mode !== "side" && mediaBox ? "" : "w-full h-full"
+              }`}
+            >
+              <VideoGLCanvas
+                videoEl={videoEl}
+                params={gradingParams}
+                mode={mode}
+                splitPos={splitPos}
+                hold={isHoldingBefore}
+                simulateLogInput={simulateLogInput}
+                onError={onVideoError}
+                className="w-full h-full object-contain pointer-events-none"
+              />
+
+              {mode === "split" && !isHoldingBefore && (
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-[#E2E4E9] shadow-[0_0_8px_rgba(0,0,0,0.8)] pointer-events-none"
+                  style={{ left: `${splitPos}%` }}
+                >
+                  <div
+                    className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-[#1E1E24] border border-[#E2E4E9] flex items-center justify-center shadow-lg transition-transform duration-100 ${
+                      isDragging ? "scale-110" : "scale-100"
+                    }`}
+                  >
+                    <MoveHorizontal className="w-3.5 h-3.5 text-[#E2E4E9]" />
+                  </div>
+                </div>
+              )}
+
+              {mode !== "result" && (
+                <span className="absolute top-2.5 left-2.5 bg-[#151519]/90 text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#9CA3AF] border border-white/[0.08] pointer-events-none">
+                  {isHoldingBefore ? "BEFORE (HOLD PEEK)" : "BEFORE"}
+                </span>
+              )}
+              {!isHoldingBefore && (
+                <span className="absolute top-2.5 right-2.5 bg-[#1E1E24]/90 text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#E2E4E9] border border-white/15 pointer-events-none">
+                  {mode === "result" ? "GRADED RESULT" : mode === "side" ? "AFTER" : "GRADED"}
+                </span>
+              )}
+            </div>
           </div>
         ) : mode === "side" ? (
           <div className="grid grid-cols-2 gap-1.5 w-full h-full min-h-[240px] sm:min-h-[280px] p-2 items-center">
@@ -219,52 +681,82 @@ export default function ComparisonSlider({
             </span>
           </div>
         ) : (
-          /* Interactive Split Slider Mode */
-          <div className="relative w-full h-full min-h-[240px] sm:min-h-[280px] flex items-center justify-center">
-            {/* Layer 1: Graded After Canvas (Full Width underneath) */}
-            <canvas
-              ref={gradedCanvasRef}
-              className="w-full h-full max-h-[360px] object-contain pointer-events-none"
-            />
-
-            {/* Layer 2: Original Before Image (Clipped to left side, or 100% when holding before) */}
+          /* Interactive Split Slider Mode (0px offset: wrapped to exact mediaBox) */
+          <div className="relative w-full h-full flex items-center justify-center">
             <div
-              className="absolute inset-0 flex items-center justify-center overflow-hidden pointer-events-none"
-              style={{
-                clipPath: `inset(0 ${isHoldingBefore ? 0 : 100 - splitPos}% 0 0)`,
-              }}
+              ref={mediaBoxRef}
+              style={
+                mediaBox
+                  ? { width: `${mediaBox.width}px`, height: `${mediaBox.height}px` }
+                  : undefined
+              }
+              className={`relative flex items-center justify-center shrink-0 ${
+                mediaBox ? "" : "w-full h-full"
+              }`}
             >
-              <img
-                src={originalImage}
-                alt="Original Before"
-                className="w-full h-full max-h-[360px] object-contain"
+              {/* Layer 1: Graded After Canvas (Full Width underneath) */}
+              <canvas
+                ref={gradedCanvasRef}
+                className="w-full h-full object-contain pointer-events-none"
               />
-            </div>
 
-            {/* Divider Line & Handle */}
-            {!isHoldingBefore && (
+              {/* Layer 2: Original Before Image (Clipped to left side, or 100% when holding before) */}
               <div
-                className="absolute top-0 bottom-0 w-0.5 bg-[#E2E4E9] shadow-[0_0_8px_rgba(0,0,0,0.8)] pointer-events-none"
-                style={{ left: `${splitPos}%` }}
+                className="absolute inset-0 flex items-center justify-center overflow-hidden pointer-events-none"
+                style={{
+                  clipPath: `inset(0 ${isHoldingBefore ? 0 : 100 - splitPos}% 0 0)`,
+                }}
               >
-                <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-[#1E1E24] border border-[#E2E4E9] flex items-center justify-center shadow-lg">
-                  <MoveHorizontal className="w-3.5 h-3.5 text-[#E2E4E9]" />
-                </div>
+                <img
+                  src={originalImage}
+                  alt="Original Before"
+                  className="w-full h-full object-contain"
+                />
               </div>
-            )}
 
-            {/* Corner Badges */}
-            <span className="absolute top-2.5 left-2.5 bg-[#151519]/90 backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#9CA3AF] border border-white/[0.08] pointer-events-none">
-              {isHoldingBefore ? "BEFORE (HOLD PEEK)" : "BEFORE"}
-            </span>
-            {!isHoldingBefore && (
-              <span className="absolute top-2.5 right-2.5 bg-[#1E1E24]/90 backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#E2E4E9] border border-white/15 pointer-events-none">
-                GRADED
+              {/* Divider Line & Handle */}
+              {!isHoldingBefore && (
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-[#E2E4E9] shadow-[0_0_8px_rgba(0,0,0,0.8)] pointer-events-none"
+                  style={{ left: `${splitPos}%` }}
+                >
+                  <div
+                    className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-[#1E1E24] border border-[#E2E4E9] flex items-center justify-center shadow-lg transition-transform duration-100 ${
+                      isDragging ? "scale-110" : "scale-100"
+                    }`}
+                  >
+                    <MoveHorizontal className="w-3.5 h-3.5 text-[#E2E4E9]" />
+                  </div>
+                </div>
+              )}
+
+              {/* Corner Badges */}
+              <span className="absolute top-2.5 left-2.5 bg-[#151519]/90 backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#9CA3AF] border border-white/[0.08] pointer-events-none">
+                {isHoldingBefore ? "BEFORE (HOLD PEEK)" : "BEFORE"}
               </span>
-            )}
+              {!isHoldingBefore && (
+                <span className="absolute top-2.5 right-2.5 bg-[#1E1E24]/90 backdrop-blur-md text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#E2E4E9] border border-white/15 pointer-events-none">
+                  GRADED
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Hover Pixel Readout (RGB & IRE) */}
+        {pixelReadout && hasImage && mode !== "side" && (
+          <div className="pointer-events-none absolute bottom-2 left-2 z-20 px-2 py-1 rounded-md bg-[#0E0E12]/88 border border-white/[0.12] text-[10px] font-mono tabular-nums text-[#E2E4E9] flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span className="text-[#9CA3AF]">
+              BEFORE {pixelReadout.r}/{pixelReadout.g}/{pixelReadout.b} ({pixelReadout.beforeIre} IRE)
+            </span>
+            <span className="text-white/25">|</span>
+            <span className="text-[#6EE7B7]">
+              GRADED {pixelReadout.gr}/{pixelReadout.gg}/{pixelReadout.gb} ({pixelReadout.gradedIre} IRE)
+            </span>
           </div>
         )}
       </div>
+      {footer}
     </div>
   );
 }

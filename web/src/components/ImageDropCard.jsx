@@ -7,7 +7,11 @@ import {
   Image as ImageIcon,
   ChevronDown,
   AlertCircle,
+  FileCog,
+  X,
+  Film,
 } from "lucide-react";
+import { IMAGE_ACCEPT, VIDEO_ACCEPT, PRESET_ACCEPT } from "../utils/rawDecoder";
 
 export const ALLOWED_IMAGE_MIMES = [
   "image/jpeg",
@@ -28,21 +32,28 @@ export default function ImageDropCard({
   onFocusSlot,
   errorMessage = "",
   onFileRejected,
+  allowVideo = false,
+  allowPresets = false,
+  sampleOptions = null,
+  importedLook = null,
+  onClearImportedLook,
 }) {
+  const [showSamples, setShowSamples] = useState(false);
+  const acceptList = [IMAGE_ACCEPT, allowVideo ? VIDEO_ACCEPT : "", allowPresets ? PRESET_ACCEPT : ""]
+    .filter(Boolean)
+    .join(",");
+  const formatHint = allowVideo
+    ? "Image, RAW or video (MP4, WEBM, MOV, MKV)"
+    : allowPresets
+    ? "Image, RAW, .cube, .lut or .kfplug"
+    : "Image or Camera RAW";
   const inputRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   const handleFile = (file) => {
     if (!file) return;
-    if (!ALLOWED_IMAGE_MIMES.includes(file.type)) {
-      if (onFileRejected) {
-        onFileRejected(
-          `Unsupported file format (${file.type || "unknown"}). Please upload JPG, PNG, or WEBP.`
-        );
-      }
-      return;
-    }
+    // Extension + magic-byte validation happens in the app (RAW files often have an empty MIME type).
     onSelectImage(file);
   };
 
@@ -67,7 +78,7 @@ export default function ImageDropCard({
       <input
         ref={inputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept={acceptList}
         className="hidden"
         onChange={(e) => {
           handleFile(e.target.files?.[0]);
@@ -79,21 +90,21 @@ export default function ImageDropCard({
         onClick={() => setIsExpanded((prev) => !prev)}
         className="flex items-center justify-between cursor-pointer select-none group"
       >
-        <div className="flex items-center gap-2">
-          <ImageIcon className="w-3.5 h-3.5 text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors" />
-          <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <ImageIcon className="w-3.5 h-3.5 text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors shrink-0" />
+          <h3 className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.06em] sm:tracking-[0.08em] text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors truncate">
             {title}
           </h3>
           {isPasteTarget && (
-            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/[0.04] text-[#9CA3AF] border border-white/[0.09]">
+            <span className="hidden lg:inline-block text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/[0.04] text-[#9CA3AF] border border-white/[0.09] shrink-0">
               Ctrl+V Target
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
           <span
-            className={`text-[11px] font-mono px-2 py-0.5 rounded-md border ${
+            className={`text-[10px] sm:text-[11px] font-mono px-1.5 sm:px-2 py-0.5 rounded-md border ${
               isAnalyzing
                 ? "bg-white/[0.06] text-[#E2E4E9] border-white/15 animate-pulse"
                 : imageInfo
@@ -144,7 +155,7 @@ export default function ImageDropCard({
                 {imageInfo.name}
               </div>
               <div className="text-[10px] font-mono text-[#9CA3AF] truncate">
-                {imageInfo.width}×{imageInfo.height} px • {imageInfo.ext} •{" "}
+                {imageInfo.width}×{imageInfo.height} px • {imageInfo.formatBadge || imageInfo.ext} •{" "}
                 {imageInfo.sizeMB} MB
               </div>
             </div>
@@ -169,7 +180,7 @@ export default function ImageDropCard({
         data-expanded={isExpanded}
       >
         <div className="m3-collapse-inner">
-          <div className="flex flex-col sm:flex-row gap-2.5 items-stretch">
+          <div className="flex flex-col lg:flex-row gap-2 items-stretch">
             <div
               onClick={() => inputRef.current?.click()}
               onDragOver={(e) => {
@@ -178,7 +189,7 @@ export default function ImageDropCard({
               }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
-              className={`relative flex-1 min-h-[140px] sm:min-h-[154px] rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center overflow-hidden bg-[#0A0A0D]/38 ${
+              className={`relative flex-1 min-h-[84px] lg:min-h-[210px] rounded-lg border transition-all cursor-pointer flex flex-col items-center justify-center overflow-hidden bg-[#0A0A0D]/38 ${
                 isDragging
                   ? "border-[#E2E4E9]/50 bg-white/[0.06]"
                   : imageInfo
@@ -187,33 +198,41 @@ export default function ImageDropCard({
               }`}
             >
               {imageInfo ? (
-                <img
-                  src={imageInfo.dataUrl}
-                  alt={title}
-                  className="w-full h-[154px] object-contain p-1.5 select-none"
-                />
+                <>
+                  <img
+                    src={imageInfo.dataUrl}
+                    alt={title}
+                    className="w-full h-[84px] lg:h-[210px] object-contain p-1 lg:p-1.5 select-none"
+                  />
+                  {imageInfo.formatBadge && (
+                    <span className="absolute top-1 left-1 lg:top-1.5 lg:left-1.5 inline-flex items-center gap-1 text-[9px] lg:text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#151519]/90 text-[#E2E4E9] border border-white/[0.12] pointer-events-none">
+                      {imageInfo.kind === "video" && <Film className="w-2.5 h-2.5" />}
+                      {imageInfo.formatBadge}
+                    </span>
+                  )}
+                </>
               ) : (
-                <div className="flex flex-col items-center text-center p-3">
-                  <div className="w-9 h-9 rounded-lg bg-white/[0.04] border border-white/[0.09] flex items-center justify-center mb-2 text-[#E2E4E9]">
-                    <Upload className="w-4 h-4" />
+                <div className="flex flex-col items-center text-center p-2 lg:p-3">
+                  <div className="w-7 h-7 lg:w-8 lg:h-8 rounded-lg bg-white/[0.04] border border-white/[0.09] flex items-center justify-center mb-1 lg:mb-1.5 text-[#E2E4E9]">
+                    <Upload className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
                   </div>
-                  <p className="text-xs font-medium text-[#E2E4E9]">
-                    Drop image or click to browse
+                  <p className="text-[11px] lg:text-xs font-medium text-[#E2E4E9] leading-tight">
+                    {allowVideo ? "Drop image, RAW or video" : allowPresets ? "Drop image, RAW or LUT" : "Drop image or click"}
                   </p>
-                  <span className="text-[11px] text-[#9CA3AF]/70 mt-1.5 font-mono">
-                    JPG, PNG, WEBP
+                  <span className="hidden lg:inline text-[10px] text-[#9CA3AF]/70 mt-1 font-mono">
+                    {formatHint}
                   </span>
                 </div>
               )}
             </div>
 
-            <div className="flex sm:flex-col gap-2 sm:w-24 shrink-0">
+            <div className="flex lg:flex-col gap-1.5 lg:w-24 shrink-0">
               <button
                 type="button"
                 onClick={() => inputRef.current?.click()}
-                className="m3-btn-morph flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] text-xs font-medium text-[#E2E4E9] cursor-pointer"
+                className="m3-btn-morph flex-1 flex items-center justify-center gap-1 px-2 py-1.5 lg:py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] text-[11px] lg:text-xs font-medium text-[#E2E4E9] cursor-pointer"
               >
-                <RefreshCw className="w-3.5 h-3.5 text-[#9CA3AF]" />
+                <RefreshCw className="w-3 h-3 lg:w-3.5 lg:h-3.5 text-[#9CA3AF]" />
                 <span>{imageInfo ? "Replace" : "Browse"}</span>
               </button>
 
@@ -221,19 +240,19 @@ export default function ImageDropCard({
                 <button
                   type="button"
                   onClick={onClearImage}
-                  className="m3-btn-morph flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-white/[0.04] hover:bg-red-500/15 border border-white/[0.09] hover:border-red-500/30 text-xs font-medium text-[#9CA3AF] hover:text-red-300 cursor-pointer"
+                  className="m3-btn-morph flex-1 flex items-center justify-center gap-1 px-2 py-1.5 lg:py-2 rounded-lg bg-white/[0.04] hover:bg-red-500/15 border border-white/[0.09] hover:border-red-500/30 text-[11px] lg:text-xs font-medium text-[#9CA3AF] hover:text-red-300 cursor-pointer"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Trash2 className="w-3 h-3 lg:w-3.5 lg:h-3.5" />
                   <span>Remove</span>
                 </button>
               ) : (
                 onTrySample && (
                   <button
                     type="button"
-                    onClick={onTrySample}
-                    className="m3-btn-morph flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.09] text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] cursor-pointer"
+                    onClick={() => (sampleOptions ? setShowSamples((v) => !v) : onTrySample())}
+                    className="m3-btn-morph flex-1 flex items-center justify-center gap-1 px-2 py-1.5 lg:py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.09] text-[11px] lg:text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] cursor-pointer"
                   >
-                    <Sparkles className="w-3.5 h-3.5" />
+                    <Sparkles className="w-3 h-3 lg:w-3.5 lg:h-3.5" />
                     <span>Sample</span>
                   </button>
                 )
@@ -241,13 +260,51 @@ export default function ImageDropCard({
             </div>
           </div>
 
+          {sampleOptions && showSamples && !imageInfo && (
+            <div className="mt-2 grid grid-cols-2 gap-1.5 m3-tab-enter">
+              {sampleOptions.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    setShowSamples(false);
+                    onTrySample(opt.id);
+                  }}
+                  className="m3-btn-morph px-2 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.1] border border-white/[0.09] text-[11px] font-medium text-[#E2E4E9] cursor-pointer text-left"
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {importedLook && (
+            <div className="mt-2 px-2.5 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.09] flex items-center gap-2 text-[11px] text-[#E2E4E9]">
+              <FileCog className="w-3.5 h-3.5 text-[#9CA3AF] shrink-0" />
+              <span className="truncate min-w-0">
+                <span className="font-mono text-[#9CA3AF]">{importedLook.kind}</span> {importedLook.name}
+                {typeof importedLook.rms === "number" && (
+                  <span className="font-mono text-[#9CA3AF]"> (fit {importedLook.rms.toFixed(3)})</span>
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={onClearImportedLook}
+                aria-label="Clear imported look"
+                className="ml-auto p-0.5 rounded text-[#9CA3AF] hover:text-[#E2E4E9] hover:bg-white/10 cursor-pointer"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
           {imageInfo && (
             <div className="mt-2 pt-2 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-[#9CA3AF] font-mono truncate">
               <span className="truncate max-w-[180px] sm:max-w-[240px] text-[#E2E4E9]/80">
                 {imageInfo.name}
               </span>
               <span>
-                {imageInfo.width}×{imageInfo.height} px • {imageInfo.ext} •{" "}
+                {imageInfo.width}×{imageInfo.height} px • {imageInfo.formatBadge || imageInfo.ext} •{" "}
                 {imageInfo.sizeMB} MB
               </span>
             </div>

@@ -1,32 +1,11 @@
 import { simulateGradePixels } from "./previewRenderer.js";
+import {
+  DEFAULT_PARAMS,
+  sanitizeParams,
+  clamp,
+} from "./gradeEngine.js";
 
-export { simulateGradePixels };
-
-export const DEFAULT_PARAMS = {
-  gradeMix: 1.0,
-  exposure: 0.0,
-  contrast: 1.0,
-  pivot: 0.435,
-  shadows: 0.0,
-  highlights: 0.0,
-  temp: 0.0,
-  tint: 0.0,
-  sat: 1.0,
-  vib: 0.0,
-  liftR: 0.5,
-  liftG: 0.5,
-  liftB: 0.5,
-  gammaR: 0.5,
-  gammaG: 0.5,
-  gammaB: 0.5,
-  gainR: 0.5,
-  gainG: 0.5,
-  gainB: 0.5,
-};
-
-function clamp(val, min, max) {
-  return Math.min(max, Math.max(min, val));
-}
+export { simulateGradePixels, DEFAULT_PARAMS };
 
 function round2(val) {
   return Math.round(val * 100) / 100;
@@ -48,217 +27,368 @@ function checkRuntimeHost() {
   );
 }
 
-export function analyzeImagePixels(rgbaArray, numPixels, onStage) {
+// ---------------------------------------------------------------------------
+// Color Match Engine v2 (Hybrid Reference-Signature + Target-Delta)
+// ---------------------------------------------------------------------------
+
+const Y_BINS = 1024;
+const C_BINS = 600;
+const C_MAX = 0.3;
+
+const GAMMA_MAX = 26 / 255; // +-26 RGB around #808080
+const WHEEL_MAX = 34 / 255; // +-34 RGB for Lift / Gain
+
+const SRGB_TO_LINEAR = (() => {
+  const t = new Float32Array(256);
+  for (let i = 0; i < 256; i++) {
+    const c = i / 255;
+    t[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  }
+  return t;
+})();
+
+function oklabAB(lr, lg, lb, out) {
+  const l = Math.cbrt(0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb);
+  const m = Math.cbrt(0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb);
+  const s = Math.cbrt(0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb);
+  out[0] = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  out[1] = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+}
+
+function histPercentile(hist, lo, hi, pct, binsDivisor) {
+  let total = 0;
+  for (let i = lo; i <= hi; i++) total += hist[i];
+  if (total <= 0) return null;
+  const target = (pct / 100) * total;
+  let acc = 0;
+  for (let i = lo; i <= hi; i++) {
+    acc += hist[i];
+    if (acc >= target) return (i + 0.5) / binsDivisor;
+  }
+  return hi / binsDivisor;
+}
+
+export function computeLookStats(rgba, numPixels) {
+  const yHist = new Uint32Array(Y_BINS);
+  const cHist = new Uint32Array(C_BINS);
+
+  const zone = {
+    s: { r: 0, g: 0, b: 0, y: 0, n: 0 },
+    m: { r: 0, g: 0, b: 0, y: 0, n: 0 },
+    h: { r: 0, g: 0, b: 0, y: 0, n: 0 },
+  };
+
+  let midA = 0;
+  let midB = 0;
+  let midN = 0;
+  let cSum = 0;
+  let cN = 0;
+  const ab = [0, 0];
+  const stride = numPixels > 800000 ? 2 : 1;
+
+  for (let p = 0; p < numPixels; p += 1) {
+    const i = p * 4;
+    const r8 = rgba[i];
+    const g8 = rgba[i + 1];
+    const b8 = rgba[i + 2];
+    const r = r8 / 255;
+    const g = g8 / 255;
+    const b = b8 / 255;
+    const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+    yHist[Math.min(Y_BINS - 1, Math.floor(y * Y_BINS))]++;
+
+    if (y < 0.02 || y > 0.98) continue;
+
+    // 3-way zone means: Shadows (< 0.30), Midtones (0.30..0.70), Highlights (> 0.70).
+    const z = y < 0.3 ? zone.s : y > 0.7 ? zone.h : zone.m;
+    z.r += r;
+    z.g += g;
+    z.b += b;
+    z.y += y;
+    z.n++;
+
+    if (stride === 2 && (p & 1) === 1) continue;
+
+    oklabAB(SRGB_TO_LINEAR[r8], SRGB_TO_LINEAR[g8], SRGB_TO_LINEAR[b8], ab);
+    const chroma = Math.sqrt(ab[0] * ab[0] + ab[1] * ab[1]);
+    cHist[Math.min(C_BINS - 1, Math.floor((chroma / C_MAX) * C_BINS))]++;
+    cSum += chroma;
+    cN++;
+
+    if (y >= 0.22 && y <= 0.78) {
+      midA += ab[0];
+      midB += ab[1];
+      midN++;
+    }
+  }
+
+  const loBin = Math.floor(0.02 * Y_BINS);
+  const hiBin = Math.floor(0.98 * Y_BINS);
+  let inlier = 0;
+  for (let i = loBin; i <= hiBin; i++) inlier += yHist[i];
+  const useFull = inlier < numPixels * 0.08;
+  const lo = useFull ? 0 : loBin;
+  const hi = useFull ? Y_BINS - 1 : hiBin;
+
+  const pc = (pct, fb) => histPercentile(yHist, lo, hi, pct, Y_BINS) ?? fb;
+  const cp = (pct, fb) => {
+    const v = histPercentile(cHist, 0, C_BINS - 1, pct, C_BINS);
+    return v === null ? fb : v * C_MAX;
+  };
+
+  const zoneChroma = (z) =>
+    z.n > 48
+      ? [z.r / z.n - z.y / z.n, z.g / z.n - z.y / z.n, z.b / z.n - z.y / z.n]
+      : [0, 0, 0];
+
+  return {
+    p10: pc(10, 0.07),
+    p25: pc(25, 0.2),
+    p50: pc(50, 0.44),
+    p75: pc(75, 0.66),
+    p85: pc(85, 0.78),
+    p90: pc(90, 0.84),
+    midA: midN > 64 ? midA / midN : 0,
+    midB: midN > 64 ? midB / midN : 0,
+    cMean: cN > 0 ? cSum / cN : 0.07,
+    c50: cp(50, 0.05),
+    c90: cp(90, 0.15),
+    zoneS: zoneChroma(zone.s),
+    zoneM: zoneChroma(zone.m),
+    zoneH: zoneChroma(zone.h),
+    hasTarget: true,
+  };
+}
+
+// Jacobian of the engine's multiplicative temp/tint controls in OKLab (a, b),
+// measured across a neutral ramp so the matcher matches the shader's exact response.
+const WB_J = (() => {
+  const lin = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  const ab = [0, 0];
+  const avgAB = (temp, tint) => {
+    let sa = 0;
+    let sb = 0;
+    const levels = [0.35, 0.45, 0.55, 0.65];
+    const wbR = Math.max(1.0 + temp * 0.28 + tint * 0.14, 0.25);
+    const wbG = Math.max(1.0 - tint * 0.24, 0.25);
+    const wbB = Math.max(1.0 - temp * 0.28 + tint * 0.14, 0.25);
+    for (const y of levels) {
+      oklabAB(
+        lin(clamp(y * wbR, 0, 1)),
+        lin(clamp(y * wbG, 0, 1)),
+        lin(clamp(y * wbB, 0, 1)),
+        ab
+      );
+      sa += ab[0];
+      sb += ab[1];
+    }
+    return [sa / levels.length, sb / levels.length];
+  };
+  const base = avgAB(0, 0);
+  const t = avgAB(0.5, 0);
+  const i = avgAB(0, 0.5);
+  const ta = (t[0] - base[0]) / 0.5;
+  const tb = (t[1] - base[1]) / 0.5;
+  const ia = (i[0] - base[0]) / 0.5;
+  const ib = (i[1] - base[1]) / 0.5;
+  return { ta, tb, ia, ib, det: ta * ib - ia * tb || 1e-6 };
+})();
+
+// Representative neutral photo when only a Reference is loaded.
+const NOMINAL_TARGET = {
+  p10: 0.07,
+  p25: 0.2,
+  p50: 0.44,
+  p75: 0.66,
+  p85: 0.78,
+  p90: 0.84,
+  midA: 0,
+  midB: 0,
+  cMean: 0.07,
+  c50: 0.05,
+  c90: 0.15,
+  zoneS: [0, 0, 0],
+  zoneM: [0, 0, 0],
+  zoneH: [0, 0, 0],
+  hasTarget: false,
+};
+
+export function matchLooks(ref, tgt, mediaType = "image") {
+  const isImage = mediaType !== "video";
+  const spreadRef = Math.max(ref.p90 - ref.p10, 0.05);
+  const spreadTgt = Math.max(tgt.p90 - tgt.p10, 0.05);
+  const ratio = clamp(spreadRef / spreadTgt, 0.3, 2.5);
+
+  // Flat/Log profiles (e.g. Sully) have lifted blacks (P10 > 0.11) or compressed dynamic range.
+  const isFlat = ref.p10 > 0.11 || spreadRef < 0.56 || ratio < 0.85;
+  const filmBias = !isFlat && ratio > 1.0 ? 0.04 : 0.0;
+  const contrast = isImage
+    ? isFlat
+      ? clamp(ratio, 0.85, 0.96)
+      : clamp(ratio + 0.08, 1.14, 1.40)
+    : isFlat
+    ? clamp(ratio, 0.85, 0.96)
+    : clamp(ratio + filmBias, 0.95, 1.28);
+
+  const pivot = isImage
+    ? clamp(0.54 + (ref.p50 - 0.44) * 0.12, 0.52, 0.56)
+    : clamp(ref.p50, 0.2, 0.8);
+
+  // Image mode uses shadow-midtone P25+P50 anchor so bright lamps/reflections don't over-brighten moody grades.
+  let exposure;
+  if (isImage) {
+    const lAnchorRef = Math.max(0.14, 0.45 * ref.p25 + 0.55 * ref.p50);
+    const lAnchorTgt = Math.max(0.14, 0.45 * tgt.p25 + 0.55 * tgt.p50);
+    const evBias = ref.p50 < 0.45 ? -0.10 : 0.0;
+    const evRaw = 0.55 * Math.log2(lAnchorRef / lAnchorTgt) + evBias;
+    exposure = clamp(evRaw, -0.65, 0.20);
+  } else {
+    const lAnchorRef = Math.max(0.24, 0.4 * ref.p50 + 0.6 * ref.p75);
+    const lAnchorTgt = Math.max(0.24, 0.4 * tgt.p50 + 0.6 * tgt.p75);
+    const evRaw = 0.42 * Math.log2(lAnchorRef / lAnchorTgt);
+    const maxEv = (tgt.p85 ?? 0.78) >= 0.7 ? 0.15 : 0.35;
+    exposure = clamp(evRaw, -0.35, maxEv);
+  }
+  const m = Math.pow(2, exposure);
+
+  const post = (x) => (x * m - pivot) * contrast + pivot;
+
+  // Black floor (P10) via Shadows and highlight ceiling (P90) via Highlights.
+  const isDarkTarget = tgt.hasTarget && tgt.p50 < 0.25;
+  const d10 = ref.p10 - post(tgt.p10);
+  const w10 = clamp(1 - tgt.p10 * m * 2.5, 0.25, 1);
+  const shadowsRaw = d10 / (0.3 * w10 * contrast);
+  let shadows;
+  if (isImage) {
+    const deepRef = ref.p25 < tgt.p25 || ref.p10 < 0.12;
+    shadows = deepRef
+      ? clamp(shadowsRaw, -0.24, 0.02)
+      : clamp(shadowsRaw, -0.24, 0.04);
+  } else {
+    const shadowsCap = 0.04;
+    shadows = isFlat
+      ? clamp(shadowsRaw, isDarkTarget ? 0.0 : 0.02, shadowsCap)
+      : clamp(shadowsRaw, -0.3, shadowsCap);
+  }
+
+  const d90 = ref.p90 - post(tgt.p90);
+  const w90 = clamp((tgt.p90 * m - 0.48) * 2, 0.25, 1);
+  const highlightsRaw = d90 / (0.3 * w90 * contrast);
+  const highlights = isFlat
+    ? clamp(highlightsRaw, -0.42, -0.22)
+    : clamp(highlightsRaw, -0.45, 0.2);
+
+  // Hybrid Chromatic Transfer: 70% Reference Signature (vs D65) + 30% Target-to-Reference Delta.
+  // Prevents dominant colored objects on the Target from cancelling or reversing the look.
+  const hybAB = (rVal, tVal) =>
+    tgt.hasTarget ? 0.7 * rVal + 0.3 * (rVal - tVal) : rVal;
+
+  const hybA = hybAB(ref.midA, tgt.midA);
+  const hybB = hybAB(ref.midB, tgt.midB);
+  const cComp = Math.pow(contrast, 0.6);
+  const dA = hybA / cComp;
+  const dB = hybB / cComp;
+
+  // Scale ~1.06 (~25% boost) to WB so Reference mood carries strongly at 100% Match Strength.
+  const temp = clamp(((dA * WB_J.ib - WB_J.ia * dB) / WB_J.det) * 1.06, -1, 1);
+  const tint = clamp(((WB_J.ta * dB - WB_J.tb * dA) / WB_J.det) * 1.06, -1, 1);
+
+  const hybZone = (rz, tz) =>
+    [0, 1, 2].map((k) =>
+      tgt.hasTarget ? 0.7 * rz[k] + 0.3 * (rz[k] - tz[k]) : rz[k]
+    );
+  const hS = hybZone(ref.zoneS, tgt.zoneS);
+  const hM = hybZone(ref.zoneM, tgt.zoneM);
+  const hH = hybZone(ref.zoneH, tgt.zoneH);
+
+  // Midtones (Gamma): ~25% stronger response around neutral #808080.
+  const gamma = hM.map((v) =>
+    clamp(0.5 + v * 1.81, 0.5 - GAMMA_MAX, 0.5 + GAMMA_MAX)
+  );
+
+  // Shadows (Lift) & Highlights (Gain): residual split-toning relative to midtone.
+  const diff = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const resS = diff(hS, hM);
+  const resH = diff(hH, hM).map((v, k) => v * 0.8 + hH[k] * 0.25);
+
+  const wheel = (res, lim, mult = 2.0) =>
+    res.map((v) => clamp(0.5 + v * mult, 0.5 - lim, 0.5 + lim));
+  const liftLim = isDarkTarget ? Math.min(WHEEL_MAX, 12 / 255) : WHEEL_MAX;
+  const lift = wheel(resS, liftLim, 2.0);
+  const gain = wheel(resH, WHEEL_MAX, 2.5);
+
+  // Saturation & Vibrance: hybrid chroma transfer so pastel/vivid looks carry cleanly.
+  const refTargetChroma = tgt.hasTarget
+    ? 0.7 * (ref.cMean / 0.065) + 0.3 * (ref.cMean / Math.max(tgt.cMean, 0.01))
+    : ref.cMean / Math.max(tgt.cMean, 0.01);
+  const satFloor = isImage ? 0.90 : isFlat ? 0.85 : 0.88;
+  const satMax = isImage ? 1.28 : 1.26;
+  const sat = clamp(
+    refTargetChroma / Math.pow(contrast, isImage ? 0.35 : 0.45),
+    satFloor,
+    satMax
+  );
+
+  const r50 = ref.c50 / Math.max(tgt.c50, 0.015) / cComp;
+  const r90 = ref.c90 / Math.max(tgt.c90, 0.02) / cComp;
+  const pastelBias = ref.p50 > 0.52 ? 0.14 : 0;
+  const vib = clamp(
+    (r50 - r90) * 0.85 + pastelBias,
+    isImage ? 0.05 : -0.25,
+    0.42
+  );
+
+  return {
+    gradeMix: 1.0,
+    exposure,
+    contrast,
+    pivot,
+    shadows,
+    highlights,
+    temp,
+    tint,
+    sat,
+    vib,
+    liftR: lift[0],
+    liftG: lift[1],
+    liftB: lift[2],
+    gammaR: gamma[0],
+    gammaG: gamma[1],
+    gammaB: gamma[2],
+    gainR: gain[0],
+    gainG: gain[1],
+    gainB: gain[2],
+  };
+}
+
+export function analyzeImagePixels(
+  rgbaArray,
+  numPixels,
+  onStage,
+  targetRgba = null,
+  targetNumPixels = 0,
+  mediaType = "image"
+) {
   if (!checkRuntimeHost()) {
     throw new Error("Unauthorized host environment.");
   }
 
-  if (onStage) onStage("Analyzing colors & luminance...");
+  if (onStage) onStage("Analyzing reference luminance & chroma...");
+  const ref = computeLookStats(rgbaArray, numPixels);
 
-  const rArr = new Float32Array(numPixels);
-  const gArr = new Float32Array(numPixels);
-  const bArr = new Float32Array(numPixels);
-  const lumArr = new Float32Array(numPixels);
-
-  const hist = new Uint32Array(256);
-
-  for (let i = 0, p = 0; i < rgbaArray.length; i += 4, p++) {
-    const r = rgbaArray[i] / 255.0;
-    const g = rgbaArray[i + 1] / 255.0;
-    const b = rgbaArray[i + 2] / 255.0;
-
-    rArr[p] = r;
-    gArr[p] = g;
-    bArr[p] = b;
-
-    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    lumArr[p] = lum;
-
-    const bin = clamp(Math.round(lum * 255), 0, 255);
-    hist[bin]++;
+  let tgt = NOMINAL_TARGET;
+  if (targetRgba && targetNumPixels > 0) {
+    if (onStage) onStage("Analyzing target for dynamic range spread...");
+    tgt = computeLookStats(targetRgba, targetNumPixels);
   }
 
-  if (onStage) onStage("Extracting grading characteristics...");
+  if (onStage) onStage("Matching tone, white balance & 3-way wheels...");
+  const matched = matchLooks(ref, tgt, mediaType);
 
-  function getPercentile(targetPct) {
-    const targetCount = (targetPct / 100.0) * numPixels;
-    let accumulated = 0;
-    for (let b = 0; b < 256; b++) {
-      accumulated += hist[b];
-      if (accumulated >= targetCount) {
-        return b / 255.0;
-      }
-    }
-    return 1.0;
+  const rounded = {};
+  for (const key of Object.keys(matched)) {
+    rounded[key] = round2(matched[key]);
   }
-
-  const p5 = getPercentile(5);
-  const p50 = getPercentile(50);
-  const p95 = getPercentile(95);
-
-  const exposure = clamp(Math.log2(Math.max(p50, 0.02) / 0.435), -1.5, 1.5);
-  const dynRange = p95 - p5;
-  const contrast = clamp(dynRange / 0.65, 0.5, 1.8);
-  const pivot = clamp((p5 + p95) / 2.0, 0.2, 0.8);
-
-  const shadows = clamp((p5 - 0.04) * 2.5, -0.5, 0.5);
-  const highlights = clamp((0.96 - p95) * -2.5, -0.5, 0.5);
-
-  let neutRSum = 0,
-    neutGSum = 0,
-    neutBSum = 0,
-    neutCount = 0;
-  let allRSum = 0,
-    allGSum = 0,
-    allBSum = 0;
-
-  for (let i = 0; i < numPixels; i++) {
-    const r = rArr[i],
-      g = gArr[i],
-      b = bArr[i],
-      l = lumArr[i];
-    allRSum += r;
-    allGSum += g;
-    allBSum += b;
-
-    const chromaDiff = Math.abs(r - g) + Math.abs(g - b);
-    if (chromaDiff < 0.18 && l > 0.2 && l < 0.8) {
-      neutRSum += r;
-      neutGSum += g;
-      neutBSum += b;
-      neutCount++;
-    }
-  }
-
-  const neutR = neutCount > 100 ? neutRSum / neutCount : allRSum / numPixels;
-  const neutG = neutCount > 100 ? neutGSum / neutCount : allGSum / numPixels;
-  const neutB = neutCount > 100 ? neutBSum / neutCount : allBSum / numPixels;
-
-  const temp = clamp((neutR - neutB) * 2.2, -1.0, 1.0);
-  const tint = clamp(((neutR + neutB) * 0.5 - neutG) * 2.5, -1.0, 1.0);
-
-  if (onStage) onStage("Calculating grading parameters...");
-
-  let shadowR = 0,
-    shadowG = 0,
-    shadowB = 0,
-    shadowL = 0,
-    shadowCount = 0;
-  let midR = 0,
-    midG = 0,
-    midB = 0,
-    midL = 0,
-    midCount = 0;
-  let highR = 0,
-    highG = 0,
-    highB = 0,
-    highL = 0,
-    highCount = 0;
-
-  for (let i = 0; i < numPixels; i++) {
-    const r = rArr[i],
-      g = gArr[i],
-      b = bArr[i],
-      l = lumArr[i];
-    if (l < 0.33) {
-      shadowR += r;
-      shadowG += g;
-      shadowB += b;
-      shadowL += l;
-      shadowCount++;
-    } else if (l <= 0.66) {
-      midR += r;
-      midG += g;
-      midB += b;
-      midL += l;
-      midCount++;
-    } else {
-      highR += r;
-      highG += g;
-      highB += b;
-      highL += l;
-      highCount++;
-    }
-  }
-
-  function getSwatchTint(sr, sg, sb, sl, sc) {
-    if (sc > 64) {
-      const mr = sr / sc,
-        mg = sg / sc,
-        mb = sb / sc,
-        ml = sl / sc;
-      const tr = clamp(0.5 + (mr - ml) * 1.6, 0.05, 0.95);
-      const tg = clamp(0.5 + (mg - ml) * 1.6, 0.05, 0.95);
-      const tb = clamp(0.5 + (mb - ml) * 1.6, 0.05, 0.95);
-      return [tr, tg, tb];
-    }
-    return [0.5, 0.5, 0.5];
-  }
-
-  const [liftR, liftG, liftB] = getSwatchTint(
-    shadowR,
-    shadowG,
-    shadowB,
-    shadowL,
-    shadowCount
-  );
-  const [gammaR, gammaG, gammaB] = getSwatchTint(
-    midR,
-    midG,
-    midB,
-    midL,
-    midCount
-  );
-  const [gainR, gainG, gainB] = getSwatchTint(
-    highR,
-    highG,
-    highB,
-    highL,
-    highCount
-  );
-
-  let satSum = 0;
-  const satArr = new Float32Array(numPixels);
-  for (let i = 0; i < numPixels; i++) {
-    const r = rArr[i],
-      g = gArr[i],
-      b = bArr[i];
-    const maxC = Math.max(r, g, b);
-    const minC = Math.min(r, g, b);
-    const s = (maxC - minC) / Math.max(maxC, 1e-4);
-    satArr[i] = s;
-    satSum += s;
-  }
-
-  const meanSat = satSum / numPixels;
-  let satVarSum = 0;
-  for (let i = 0; i < numPixels; i++) {
-    const diff = satArr[i] - meanSat;
-    satVarSum += diff * diff;
-  }
-  const stdSat = Math.sqrt(satVarSum / numPixels);
-  const sat = clamp(meanSat / 0.32, 0.1, 2.0);
-  const vib = clamp((stdSat - 0.15) * 2.0, -0.8, 0.8);
-
-  return {
-    gradeMix: 1.0,
-    exposure: round2(exposure),
-    contrast: round2(contrast),
-    pivot: round2(pivot),
-    shadows: round2(shadows),
-    highlights: round2(highlights),
-    temp: round2(temp),
-    tint: round2(tint),
-    sat: round2(sat),
-    vib: round2(vib),
-    liftR: round2(liftR),
-    liftG: round2(liftG),
-    liftB: round2(liftB),
-    gammaR: round2(gammaR),
-    gammaG: round2(gammaG),
-    gammaB: round2(gammaB),
-    gainR: round2(gainR),
-    gainG: round2(gainG),
-    gainB: round2(gainB),
-  };
+  return sanitizeParams(rounded);
 }

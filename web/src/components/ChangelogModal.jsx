@@ -14,9 +14,21 @@ import KeyflowLogo from "./KeyflowLogo";
 
 export const CHANGELOG_HISTORY = [
   {
-    version: "v0.6.5 Beta",
-    subtitle: "Latest: Performance Fix & Minimalist Intro",
+    version: "v0.8.0 Beta",
+    subtitle: "Latest: Color Match Engine v2, RAW & Video Support, Mobile Sticky Preview, Pro Scopes & Multi-Format Export",
     isLatest: true,
+    icon: Sparkles,
+    items: [
+      "Rebuilt the color matching engine with dynamic range spread detection for flat and Log-like references, OKLab residual split-toning, soft highlight roll-off, and strict Keyflow-safe GLSL clamping.",
+      "Added client-side support for Camera RAW (DNG, CR2, CR3, NEF, ARW, RAF, ORF, RW2), extended raster formats, and real-time 60fps WebGL video target previews (MP4, WEBM, MOV, M4V, MKV).",
+      "Added full-resolution graded image and video frame export (PNG, JPG, WEBP) with quality control and Before/After split export, alongside two-way 3D LUT .cube and .lut I/O and .kfplug re-importing.",
+      "Redesigned mobile viewports with a sticky top preview and compact dual-column media slots, paired with desktop 100vh fit, circular 3-Way Color Wheels, RGB Parade and Vectorscope scopes, Master Match Strength (0% to 150%), A/B snapshot slots, live RGB/IRE pixel readout, and a preview-only Simulate Log Input toggle.",
+    ],
+  },
+  {
+    version: "v0.6.5 Beta",
+    subtitle: "Performance Fix & Minimalist Intro",
+    isLatest: false,
     icon: Cpu,
     items: [
       "Removed heavy full-screen SVG filters, animated blur passes, and nested backdrop blurs to restore smooth 60fps rendering across mid-range laptops and mobile devices.",
@@ -90,7 +102,7 @@ export const CHANGELOG_HISTORY = [
 
 export function ReleaseHistoryAccordion() {
   const [expandedMap, setExpandedMap] = useState({
-    "v0.6.5 Beta": true,
+    "v0.8.0 Beta": true,
   });
 
   const toggleVersion = (ver) => {
@@ -264,11 +276,11 @@ export default function ChangelogModal({ open, onClose, onViewFullHistory }) {
               className="inline-flex items-center gap-1.5 text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] transition-colors cursor-pointer"
             >
               <History className="w-3.5 h-3.5" />
-              <span>View Full Release History (v0.5 - v0.6.5)</span>
+              <span>View Full Release History (v0.5 - v0.8.0)</span>
             </button>
           ) : (
             <span className="text-[11px] font-mono text-[#9CA3AF]">
-              Build v0.6.5-beta • 100% Client-Side
+              Build v0.8.0-beta • 100% Client-Side
             </span>
           )}
 

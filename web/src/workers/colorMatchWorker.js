@@ -2,7 +2,7 @@ import { analyzeImagePixels } from "../utils/colorGrading.js";
 
 self.onmessage = function (e) {
   const data = e.data || {};
-  const { type, rgbaData, numPixels } = data;
+  const { type, rgbaData, numPixels, targetRgbaData, targetNumPixels, mediaType } = data;
 
   if (type === "analyze") {
     try {
@@ -15,9 +15,16 @@ self.onmessage = function (e) {
         stage: "Analyzing colors & luminance...",
       });
 
-      const params = analyzeImagePixels(rgbaData, numPixels, (stageText) => {
-        self.postMessage({ type: "stage", stage: stageText });
-      });
+      const params = analyzeImagePixels(
+        rgbaData,
+        numPixels,
+        (stageText) => {
+          self.postMessage({ type: "stage", stage: stageText });
+        },
+        targetRgbaData || null,
+        targetNumPixels || 0,
+        mediaType || "image"
+      );
 
       self.postMessage({
         type: "stage",

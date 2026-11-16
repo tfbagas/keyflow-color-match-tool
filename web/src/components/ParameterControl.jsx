@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ChevronUp, ChevronDown } from "lucide-react";
 
 export default function ParameterControl({
@@ -16,6 +16,27 @@ export default function ParameterControl({
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [shiftHeld, setShiftHeld] = useState(false);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === "Shift") setShiftHeld(true);
+    };
+    const onKeyUp = (e) => {
+      if (e.key === "Shift") setShiftHeld(false);
+    };
+    const onBlur = () => setShiftHeld(false);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
+
+  const effectiveStep = shiftHeld ? 0.01 : step;
 
   const clamp = (val) => Math.max(min, Math.min(max, val));
   const range = max - min || 1;
@@ -73,7 +94,7 @@ export default function ParameterControl({
         setIsDragging(false);
       }}
       title="Double-click to reset parameter to default"
-      className="flex items-center gap-2.5 py-1.5 px-2 rounded-lg hover:bg-white/[0.035] transition-colors group select-none"
+      className="flex items-center gap-2.5 py-[3px] px-2 rounded-lg hover:bg-white/[0.035] transition-colors group select-none"
     >
       {/* Label & Icon + Modified Indicator Dot */}
       <div
@@ -150,10 +171,16 @@ export default function ParameterControl({
           type="range"
           min={min}
           max={max}
-          step={step}
+          step={effectiveStep}
           value={value}
           onChange={handleSliderChange}
-          onMouseDown={() => setIsDragging(true)}
+          onMouseDown={(e) => {
+            setIsDragging(true);
+            setShiftHeld(Boolean(e.shiftKey));
+          }}
+          onMouseMove={(e) => {
+            if (isDragging) setShiftHeld(Boolean(e.shiftKey));
+          }}
           onMouseUp={() => setIsDragging(false)}
           onTouchStart={() => setIsDragging(true)}
           onTouchEnd={() => setIsDragging(false)}
@@ -167,7 +194,11 @@ export default function ParameterControl({
       <div
         onDoubleClick={(e) => e.stopPropagation()}
         className={`flex items-center bg-[#0A0A0D]/38 border rounded-md overflow-hidden shrink-0 transition-colors ${
-          isDragging ? "border-white/25" : "border-white/[0.09]"
+          isDragging && shiftHeld
+            ? "border-[#6EE7B7]/60"
+            : isDragging
+            ? "border-white/25"
+            : "border-white/[0.09]"
         }`}
       >
         <span className="w-13 text-right px-1.5 py-1 text-[11px] font-mono tabular-nums text-[#E2E4E9]">
