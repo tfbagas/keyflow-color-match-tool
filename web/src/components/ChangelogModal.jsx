@@ -14,9 +14,21 @@ import KeyflowLogo from "./KeyflowLogo";
 
 export const CHANGELOG_HISTORY = [
   {
-    version: "v0.8.1 Beta",
-    subtitle: "Latest: Mobile 60fps Video & Pro Scopes Performance Hotfix",
+    version: "v0.9.0 Beta",
+    subtitle: "Engine v3 Punch Calibration, UI Hierarchy Overhaul, Monitoring Scopes & Touch UX",
     isLatest: true,
+    icon: Sparkles,
+    items: [
+      "Calibrated Engine v3 (Cinema Hybrid Pro) default 100% punch by relaxing hue retention to 36%, expanding max hue rotation to 40 degrees, widening primary slider clamps, and tightening shadowMask to smoothstep(0.015, 0.16) so deep blacks stay anchored while midtones receive richer film split-toning.",
+      "Overhauled workstation hierarchy with a dedicated top ENGINE & MATCH STRENGTH card, 3-column interactive engine cards, a Live Engine Info Strip with side-by-side comparison popover, collapsible TONE & CONTRAST / COLOR & SATURATION slider groups, and a sticky desktop preview column.",
+      "Added WebGL preview-only Monitoring Scopes (Zebra/Clipping and False Color IRE), Touch Eyedropper (RGB/IRE), Fine (0.01) slider mode, Tap-to-Edit numeric readouts, and individual parameter/wheel reset buttons.",
+      "Added in-memory Undo/Redo (up to 25 steps with Ctrl+Z / Ctrl+Shift+Z), upgraded A/B snapshots with Copy to B and auto-backup on engine switch, 1-frame video stepping (-1f/+1f) with Match Current Frame, engine-suffixed exports, and optional Web Share for .kfplug.",
+    ],
+  },
+  {
+    version: "v0.8.1 Beta",
+    subtitle: "Mobile 60fps Video & Pro Scopes Performance Hotfix",
+    isLatest: false,
     icon: Sparkles,
     items: [
       "Optimized Pro Scopes (Luma/RGB, RGB Parade, Vectorscope) by locking 2D canvas backing to 1x DPR, deferring calculations during slider drags, downsampling to 96x54 integer math, throttling video scope updates to 6fps, and adding a collapsible toggle.",
@@ -114,7 +126,7 @@ export const CHANGELOG_HISTORY = [
 
 export function ReleaseHistoryAccordion() {
   const [expandedMap, setExpandedMap] = useState({
-    "v0.8.1 Beta": true,
+    "v0.9.0 Beta": true,
   });
 
   const toggleVersion = (ver) => {
@@ -288,11 +300,11 @@ export default function ChangelogModal({ open, onClose, onViewFullHistory }) {
               className="inline-flex items-center gap-1.5 text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] transition-colors cursor-pointer"
             >
               <History className="w-3.5 h-3.5" />
-              <span>View Full Release History (v0.5 - v0.8.1)</span>
+              <span>View Full Release History (v0.5 - v0.9.0)</span>
             </button>
           ) : (
             <span className="text-[11px] font-mono text-[#9CA3AF]">
-              Build v0.8.1-beta • 100% Client-Side
+              Build v0.9.0-beta • 100% Client-Side
             </span>
           )}
 

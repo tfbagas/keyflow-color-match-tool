@@ -7,6 +7,7 @@ export default function SaveImagePopover({
   nativeWidth = 0,
   nativeHeight = 0,
   targetBaseName = "Target",
+  engineId = "v3",
   splitPos = 50,
 }) {
   const [isExportOpen, setIsExportOpen] = useState(false);
@@ -47,7 +48,11 @@ export default function SaveImagePopover({
       .trim()
       .replace(/[^a-zA-Z0-9._-]+/g, "-")
       .replace(/^-+|-+$/g, "") || "Target";
-  const previewExportFilename = `${cleanExportBase}-${
+  const engineSuffix = engineId ? `_${engineId}` : "";
+  const baseWithEngine = cleanExportBase.endsWith(engineSuffix)
+    ? cleanExportBase
+    : `${cleanExportBase}${engineSuffix}`;
+  const previewExportFilename = `${baseWithEngine}-${
     exportLayout === "split" ? "split" : "graded"
   }.${exportFormat}`;
 

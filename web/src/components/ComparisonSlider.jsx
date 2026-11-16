@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Columns, MoveHorizontal, Eye, Pin, PinOff } from "lucide-react";
+import { Columns, MoveHorizontal, Eye, Pin, PinOff, Pipette, ScanEye } from "lucide-react";
 import { usePillIndicator } from "../hooks/usePillIndicator";
 import { usePixelReadout } from "../hooks/usePixelReadout";
 import WebGLPreviewCanvas from "./WebGLPreviewCanvas";
@@ -8,7 +8,13 @@ import SaveImagePopover from "./SaveImagePopover";
 const PREVIEW_MODES = [
   { id: "split", label: "Split Slider" },
   { id: "side", label: "Side by Side" },
-  { id: "result", label: "Split Result" },
+  { id: "result", label: "Graded Only" },
+];
+
+const MONITOR_MODES = [
+  { id: "off", label: "Off" },
+  { id: "zebra", label: "Zebra" },
+  { id: "falsecolor", label: "IRE" },
 ];
 
 function SplitDivider({ splitPos, splitLineWrapperRef, splitHandleRef }) {
@@ -70,6 +76,7 @@ export default function ComparisonSlider({
   nativeWidth = 0,
   nativeHeight = 0,
   targetBaseName = "Target",
+  engineId = "v3",
   simulateLogInput = false,
   onToggleSimulateLogInput,
   isTabActive = true,
@@ -78,6 +85,9 @@ export default function ComparisonSlider({
   const [splitPos, setSplitPos] = useState(50);
   const [isHoldingBefore, setIsHoldingBefore] = useState(false);
   const [isContextLost, setIsContextLost] = useState(false);
+  const [monitorMode, setMonitorMode] = useState("off");
+  const [isEyedropperActive, setIsEyedropperActive] = useState(false);
+  const isEyedropperDraggingRef = useRef(false);
   const containerRef = useRef(null);
   const mediaBoxRef = useRef(null);
   const [mediaBox, setMediaBox] = useState(null);
@@ -170,8 +180,35 @@ export default function ComparisonSlider({
   );
 
   const handleSplitPointerDown = (e) => {
-    if (mode !== "split" || !hasImage || isHoldingBefore) return;
+    if (!hasImage || isHoldingBefore) return;
     if (e.pointerType === "mouse" && e.button !== 0) return;
+
+    if (isEyedropperActive && e.pointerType !== "mouse" && mode !== "side") {
+      e.preventDefault();
+      isEyedropperDraggingRef.current = true;
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        // Ignore
+      }
+      samplePixelAt(e.clientX, e.clientY);
+      return;
+    }
+
+    if (mode !== "split") return;
+
+    // On touch, only start split-drag when touching near the center handle/divider line
+    // so touching anywhere else on the image scrolls the page naturally.
+    if (e.pointerType === "touch") {
+      const targetEl = mediaBoxRef.current || containerRef.current;
+      if (!targetEl) return;
+      const rect = targetEl.getBoundingClientRect();
+      const dividerX = rect.left + (splitPosRef.current / 100) * rect.width;
+      if (Math.abs(e.clientX - dividerX) > 32) {
+        return;
+      }
+    }
+
     e.preventDefault();
     isDraggingSplitRef.current = true;
     try {
@@ -187,6 +224,10 @@ export default function ComparisonSlider({
   };
 
   const handleSplitPointerMove = (e) => {
+    if (isEyedropperDraggingRef.current) {
+      samplePixelAt(e.clientX, e.clientY);
+      return;
+    }
     if (isDraggingSplitRef.current) {
       pendingSplitXRef.current = e.clientX;
       if (!splitRafRef.current) {
@@ -207,6 +248,17 @@ export default function ComparisonSlider({
   };
 
   const handleSplitPointerEnd = (e) => {
+    if (isEyedropperDraggingRef.current) {
+      isEyedropperDraggingRef.current = false;
+      try {
+        if (e?.currentTarget?.hasPointerCapture?.(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+      } catch {
+        // Ignore
+      }
+      return;
+    }
     if (!isDraggingSplitRef.current) return;
     if (splitRafRef.current) {
       cancelAnimationFrame(splitRafRef.current);
@@ -292,14 +344,62 @@ export default function ComparisonSlider({
               nativeWidth={nativeWidth}
               nativeHeight={nativeHeight}
               targetBaseName={targetBaseName}
+              engineId={engineId}
               splitPos={splitPos}
             />
+          )}
+
+          {hasImage && showWebGL && (
+            <div
+              title="WebGL Monitoring Overlay (Preview Only)"
+              className="inline-flex items-center gap-0.5 bg-[#0A0A0D]/55 border border-white/[0.09] rounded-lg p-0.5 text-[10px] font-mono"
+            >
+              <ScanEye className="w-3 h-3 text-[#9CA3AF] mx-1 shrink-0 hidden sm:block" />
+              {MONITOR_MODES.map((mm) => (
+                <button
+                  key={mm.id}
+                  type="button"
+                  onClick={() => setMonitorMode(mm.id)}
+                  className={`px-1.5 py-0.5 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                    monitorMode === mm.id
+                      ? mm.id === "off"
+                        ? "bg-white/[0.14] text-[#F4F5F7] font-semibold"
+                        : "bg-[#6EE7B7]/20 text-[#6EE7B7] font-semibold"
+                      : "text-[#9CA3AF] hover:text-[#E2E4E9]"
+                  }`}
+                >
+                  {mm.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {hasImage && mode !== "side" && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsEyedropperActive((v) => {
+                  if (v) clearPixelReadout();
+                  return !v;
+                });
+              }}
+              aria-pressed={isEyedropperActive}
+              title="Touch Eyedropper: tap or drag on preview to inspect RGB / IRE"
+              className={`lg:hidden m3-btn-morph inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium border cursor-pointer select-none ${
+                isEyedropperActive
+                  ? "bg-[#6EE7B7]/20 text-[#6EE7B7] border-[#6EE7B7]/40"
+                  : "bg-white/[0.04] hover:bg-white/[0.08] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.09]"
+              }`}
+            >
+              <Pipette className="w-3 h-3" />
+              <span>RGB</span>
+            </button>
           )}
 
           {hasImage && onToggleSimulateLogInput && (
             <label
               title="Preview grade on simulated flat Log footage without changing the exported .kfplug"
-              className={`m3-btn-morph inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-medium border cursor-pointer select-none ${
+              className={`m3-btn-morph inline-flex items-center gap-1 sm:gap-1.5 px-2 py-1 rounded-lg text-[10px] sm:text-[11px] font-medium border cursor-pointer select-none ${
                 simulateLogInput
                   ? "bg-white/[0.12] text-[#F4F5F7] border-white/25"
                   : "bg-white/[0.04] hover:bg-white/[0.08] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.09]"
@@ -311,7 +411,7 @@ export default function ComparisonSlider({
                 onChange={(e) => onToggleSimulateLogInput(e.target.checked)}
                 className="w-3 h-3 accent-[#E2E4E9] rounded cursor-pointer"
               />
-              <span>Simulate Log Input</span>
+              <span className="whitespace-nowrap">Log Input</span>
             </label>
           )}
 
@@ -323,15 +423,17 @@ export default function ComparisonSlider({
               onMouseLeave={() => setIsHoldingBefore(false)}
               onTouchStart={() => setIsHoldingBefore(true)}
               onTouchEnd={() => setIsHoldingBefore(false)}
+              onTouchCancel={() => setIsHoldingBefore(false)}
+              onContextMenu={(e) => e.preventDefault()}
               title="Hold to peek at original ungraded image (Shortcut: Hold \)"
-              className={`m3-btn-morph inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border cursor-pointer select-none ${
+              className={`m3-btn-morph inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-medium border cursor-pointer select-none ${
                 isHoldingBefore
                   ? "bg-[#E2E4E9] text-[#0E0E11] border-[#E2E4E9]"
                   : "bg-white/[0.04] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.09]"
               }`}
             >
               <Eye className="w-3.5 h-3.5" />
-              <span>Hold Before</span>
+              <span className="whitespace-nowrap">Hold Before</span>
             </button>
           )}
 
@@ -375,11 +477,21 @@ export default function ComparisonSlider({
         onPointerUp={handleSplitPointerEnd}
         onPointerCancel={handleSplitPointerEnd}
         onPointerLeave={clearPixelReadout}
-        style={mode === "split" && hasImage ? { touchAction: "none", userSelect: "none" } : undefined}
+        style={
+          isEyedropperActive && hasImage
+            ? { touchAction: "none", userSelect: "none" }
+            : mode === "split" && hasImage
+            ? { touchAction: "pan-y", userSelect: "none" }
+            : undefined
+        }
         className={`relative w-full flex-1 ${
           isPinned ? "h-[30vh] min-h-[200px] max-h-[245px]" : "min-h-[210px]"
         } lg:h-auto lg:min-h-[300px] lg:max-h-none rounded-lg bg-[#0A0A0D]/38 border border-white/[0.09] overflow-hidden flex items-center justify-center select-none ${
-          mode === "split" && hasImage ? "cursor-ew-resize touch-none" : ""
+          isEyedropperActive && hasImage
+            ? "cursor-crosshair touch-none"
+            : mode === "split" && hasImage
+            ? "cursor-ew-resize touch-pan-y"
+            : ""
         }`}
       >
         {!hasImage ? (
@@ -415,6 +527,7 @@ export default function ComparisonSlider({
                     splitPos={splitPos}
                     hold={isHoldingBefore}
                     simulateLogInput={simulateLogInput}
+                    monitorMode={monitorMode}
                     maxSide={videoEl ? 0 : previewMaxDim}
                     previewRef={activeGLRef}
                     onError={videoEl ? onVideoError : onWebGLPhotoError}

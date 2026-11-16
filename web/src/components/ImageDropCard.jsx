@@ -229,30 +229,30 @@ const ImageDropCard = memo(function ImageDropCard({
               <button
                 type="button"
                 onClick={() => inputRef.current?.click()}
-                className="m3-btn-morph flex-1 flex items-center justify-center gap-1 px-2 py-1.5 lg:py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] text-[11px] lg:text-xs font-medium text-[#E2E4E9] cursor-pointer"
+                className="m3-btn-morph flex-1 min-w-0 flex items-center justify-center gap-1 px-1.5 sm:px-2 py-1.5 lg:py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] text-[10px] sm:text-[11px] lg:text-xs font-medium text-[#E2E4E9] cursor-pointer"
               >
-                <RefreshCw className="w-3 h-3 lg:w-3.5 lg:h-3.5 text-[#9CA3AF]" />
-                <span>{imageInfo ? "Replace" : "Browse"}</span>
+                <RefreshCw className="w-3 h-3 lg:w-3.5 lg:h-3.5 text-[#9CA3AF] shrink-0" />
+                <span className="truncate">{imageInfo ? "Replace" : "Browse"}</span>
               </button>
 
               {imageInfo ? (
                 <button
                   type="button"
                   onClick={onClearImage}
-                  className="m3-btn-morph flex-1 flex items-center justify-center gap-1 px-2 py-1.5 lg:py-2 rounded-lg bg-white/[0.04] hover:bg-red-500/15 border border-white/[0.09] hover:border-red-500/30 text-[11px] lg:text-xs font-medium text-[#9CA3AF] hover:text-red-300 cursor-pointer"
+                  className="m3-btn-morph flex-1 min-w-0 flex items-center justify-center gap-1 px-1.5 sm:px-2 py-1.5 lg:py-2 rounded-lg bg-white/[0.04] hover:bg-red-500/15 border border-white/[0.09] hover:border-red-500/30 text-[10px] sm:text-[11px] lg:text-xs font-medium text-[#9CA3AF] hover:text-red-300 cursor-pointer"
                 >
-                  <Trash2 className="w-3 h-3 lg:w-3.5 lg:h-3.5" />
-                  <span>Remove</span>
+                  <Trash2 className="w-3 h-3 lg:w-3.5 lg:h-3.5 shrink-0" />
+                  <span className="truncate">Remove</span>
                 </button>
               ) : (
                 onTrySample && (
                   <button
                     type="button"
                     onClick={() => (sampleOptions ? setShowSamples((v) => !v) : onTrySample())}
-                    className="m3-btn-morph flex-1 flex items-center justify-center gap-1 px-2 py-1.5 lg:py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.09] text-[11px] lg:text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] cursor-pointer"
+                    className="m3-btn-morph flex-1 min-w-0 flex items-center justify-center gap-1 px-1.5 sm:px-2 py-1.5 lg:py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.09] text-[10px] sm:text-[11px] lg:text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] cursor-pointer"
                   >
-                    <Sparkles className="w-3 h-3 lg:w-3.5 lg:h-3.5" />
-                    <span>Sample</span>
+                    <Sparkles className="w-3 h-3 lg:w-3.5 lg:h-3.5 shrink-0" />
+                    <span className="truncate">Sample</span>
                   </button>
                 )
               )}
@@ -298,12 +298,12 @@ const ImageDropCard = memo(function ImageDropCard({
           )}
 
           {imageInfo && (
-            <div className="mt-2 pt-2 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-[#9CA3AF] font-mono truncate">
-              <span className="truncate max-w-[180px] sm:max-w-[240px] text-[#E2E4E9]/80">
+            <div className="mt-2 pt-2 border-t border-white/[0.06] flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[10px] sm:text-[11px] text-[#9CA3AF] font-mono">
+              <span className="truncate max-w-full sm:max-w-[200px] text-[#E2E4E9]/80">
                 {imageInfo.name}
               </span>
-              <span>
-                {imageInfo.width}×{imageInfo.height} px • {imageInfo.formatBadge || imageInfo.ext} •{" "}
+              <span className="truncate">
+                {imageInfo.width}x{imageInfo.height} px • {imageInfo.formatBadge || imageInfo.ext} •{" "}
                 {imageInfo.sizeMB} MB
               </span>
             </div>

@@ -1,8 +1,39 @@
-// Single source of truth for the Color Match Engine v2 grading equation (CPU side).
+// Single source of truth for the Color Match Engine v1 / v2 / v3 (Cinema Hybrid Pro)
+// grading equation (CPU side).
 // The GLSL twin lives in gradeShader.js and must stay 1:1 with gradeRGB().
 import { DEFAULT_PARAMS, PARAM_LIMITS } from "./paramSchema.js";
 
 export { DEFAULT_PARAMS, PARAM_LIMITS };
+
+// Identity polynomial coefficients (20 coeffs per channel: 5 vec4s).
+// Basis order:
+//   v0: [1, R, G, B]
+//   v1: [R^2, G^2, B^2, R*G]
+//   v2: [R*B, G*B, R^3, G^3]
+//   v3: [B^3, R^2*G, R^2*B, G^2*R]
+//   v4: [G^2*B, B^2*R, B^2*G, R*G*B]
+export const IDENTITY_POLY_R = Object.freeze([
+  0, 1, 0, 0,
+  0, 0, 0, 0,
+  0, 0, 0, 0,
+  0, 0, 0, 0,
+  0, 0, 0, 0,
+]);
+export const IDENTITY_POLY_G = Object.freeze([
+  0, 0, 1, 0,
+  0, 0, 0, 0,
+  0, 0, 0, 0,
+  0, 0, 0, 0,
+  0, 0, 0, 0,
+]);
+export const IDENTITY_POLY_B = Object.freeze([
+  0, 0, 0, 1,
+  0, 0, 0, 0,
+  0, 0, 0, 0,
+  0, 0, 0, 0,
+  0, 0, 0, 0,
+]);
+export const IDENTITY_HUE6 = Object.freeze([0, 0, 0, 0, 0, 0]);
 
 export const WB_COEFFS = {
   tempRB: 0.28,
@@ -33,6 +64,25 @@ export function clamp(val, min, max) {
   return Math.min(max, Math.max(min, val));
 }
 
+function round6(val) {
+  const r = Math.round(val * 1e6) / 1e6;
+  return r === 0 ? 0 : r;
+}
+
+function sanitizeArray(arr, fallback, lo = -4.0, hi = 4.0) {
+  const len = fallback.length;
+  if (!Array.isArray(arr) && !(arr instanceof Float32Array)) {
+    return fallback.slice();
+  }
+  const out = new Array(len);
+  for (let i = 0; i < len; i++) {
+    const raw = i < arr.length ? Number(arr[i]) : fallback[i];
+    const v = Number.isFinite(raw) ? clamp(raw, lo, hi) : fallback[i];
+    out[i] = round6(v);
+  }
+  return out;
+}
+
 // Number.isFinite guard + strict clamp + removal of -0, rounded to 6 decimals.
 export function sanitizeValue(key, raw) {
   const [lo, hi] = PARAM_LIMITS[key] || [-Infinity, Infinity];
@@ -50,20 +100,39 @@ export function sanitizeParams(params) {
   for (const key of Object.keys(DEFAULT_PARAMS)) {
     out[key] = sanitizeValue(key, src[key]);
   }
+  const rawAutoMix =
+    typeof src.autoGradeMix === "number" ? src.autoGradeMix : Number(src.autoGradeMix);
+  out.autoGradeMix = Number.isFinite(rawAutoMix)
+    ? round6(clamp(rawAutoMix, 0.0, 1.5))
+    : 0.0;
+  out.polyR = sanitizeArray(src.polyR, IDENTITY_POLY_R, -4.0, 4.0);
+  out.polyG = sanitizeArray(src.polyG, IDENTITY_POLY_G, -4.0, 4.0);
+  out.polyB = sanitizeArray(src.polyB, IDENTITY_POLY_B, -4.0, 4.0);
+  // Zero-intercept constraint: P(0,0,0) = (0,0,0) so deep blacks never lift.
+  out.polyR[0] = 0;
+  out.polyG[0] = 0;
+  out.polyB[0] = 0;
+  out.hueShift = sanitizeArray(src.hueShift, IDENTITY_HUE6, -0.5, 0.5);
+  out.hueSat = sanitizeArray(src.hueSat, IDENTITY_HUE6, -0.8, 0.8);
+  out.hueLuma = sanitizeArray(src.hueLuma, IDENTITY_HUE6, -0.5, 0.5);
   return out;
 }
 
-// Scales all grading parameters & 3-Way Color Wheel offsets proportionally from neutral
-// by Match Strength (0..150%), keeping every value clamped within Keyflow Mobile bounds.
+// Scales all grading parameters, 3-Way Color Wheel offsets, and Cinema Hybrid Pro
+// autoGradeMix proportionally from neutral by Match Strength (0..150%).
 export function scaleParamsByStrength(params, strengthPct = 100) {
   const f = clamp((Number.isFinite(strengthPct) ? strengthPct : 100) / 100, 0.0, 1.5);
-  if (Math.abs(f - 1.0) < 1e-4) return sanitizeParams(params);
-  const src = params || {};
-  const scaled = { gradeMix: src.gradeMix ?? 1.0 };
+  const san = sanitizeParams(params);
+  if (Math.abs(f - 1.0) < 1e-4) return san;
+  const scaled = {
+    ...san,
+    gradeMix: san.gradeMix ?? 1.0,
+    autoGradeMix: round6(clamp((san.autoGradeMix ?? 0.0) * f, 0.0, 1.5)),
+  };
   for (const key of Object.keys(DEFAULT_PARAMS)) {
     if (key === "gradeMix") continue;
     const def = DEFAULT_PARAMS[key];
-    const val = Number.isFinite(src[key]) ? src[key] : def;
+    const val = Number.isFinite(san[key]) ? san[key] : def;
     scaled[key] = def + (val - def) * f;
   }
   return sanitizeParams(scaled);
@@ -93,6 +162,13 @@ export function prepareGrade(params) {
       (p.gammaB - 0.5) * 2.0,
     ],
     gain: [(p.gainR - 0.5) * 2.0, (p.gainG - 0.5) * 2.0, (p.gainB - 0.5) * 2.0],
+    autoGradeMix: p.autoGradeMix,
+    polyR: p.polyR,
+    polyG: p.polyG,
+    polyB: p.polyB,
+    hueShift: p.hueShift,
+    hueSat: p.hueSat,
+    hueLuma: p.hueLuma,
   };
 }
 
@@ -106,6 +182,156 @@ function rollShoulder(v, shoulderMix) {
 function smoothstep(edge0, edge1, x) {
   const t = clamp((x - edge0) / Math.max(edge1 - edge0, 1e-5), 0.0, 1.0);
   return t * t * (3.0 - 2.0 * t);
+}
+
+function evalPoly20(c, b0, b1, b2, b3, b4) {
+  return (
+    c[0] * b0[0] + c[1] * b0[1] + c[2] * b0[2] + c[3] * b0[3] +
+    c[4] * b1[0] + c[5] * b1[1] + c[6] * b1[2] + c[7] * b1[3] +
+    c[8] * b2[0] + c[9] * b2[1] + c[10] * b2[2] + c[11] * b2[3] +
+    c[12] * b3[0] + c[13] * b3[1] + c[14] * b3[2] + c[15] * b3[3] +
+    c[16] * b4[0] + c[17] * b4[1] + c[18] * b4[2] + c[19] * b4[3]
+  );
+}
+
+const HUE_CENTERS = [
+  0.0,
+  1.04719755,
+  2.0943951,
+  3.14159265,
+  -2.0943951,
+  -1.04719755,
+];
+
+function hueSectorWeight(h, center) {
+  const d = Math.atan2(Math.sin(h - center), Math.cos(h - center));
+  const w = clamp(1.0 - Math.abs(d) / 1.04719755, 0.0, 1.0);
+  return w * w * (3.0 - 2.0 * w);
+}
+
+function agxChannel(x) {
+  const v = Math.max(x, 0.0);
+  const k = 0.72;
+  if (v <= k) return v;
+  const over = v - k;
+  const room = 1.0 - k;
+  return k + (room * over) / Math.max(room + over * 0.88, 1e-5);
+}
+
+// Applies the Cinema Hybrid Pro residual layer (1:1 twin of kfHybridLayer in gradeShader.js).
+export function applyHybridLayerRGB(G, baseR, baseG, baseB, out) {
+  const autoMix = clamp(G.autoGradeMix ?? 0.0, 0.0, 1.5);
+  if (autoMix <= 1e-5) {
+    out[0] = baseR;
+    out[1] = baseG;
+    out[2] = baseB;
+    return;
+  }
+
+  const r = clamp(baseR, 0.0, 1.0);
+  const g = clamp(baseG, 0.0, 1.0);
+  const b = clamp(baseB, 0.0, 1.0);
+  const baseLuma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const shadowMask = smoothstep(0.015, 0.16, baseLuma);
+  const r2 = r * r;
+  const g2 = g * g;
+  const b2 = b * b;
+
+  // Constant intercept basis term is strictly 0.0 so P(0,0,0) = (0,0,0).
+  const b0 = [0.0, r, g, b];
+  const b1 = [r2, g2, b2, r * g];
+  const b2v = [r * b, g * b, r2 * r, g2 * g];
+  const b3 = [b2 * b, r2 * g, r2 * b, g2 * r];
+  const b4 = [g2 * b, b2 * r, b2 * g, r * g * b];
+
+  let pr = clamp(evalPoly20(G.polyR, b0, b1, b2v, b3, b4), 0.0, 1.15);
+  let pg = clamp(evalPoly20(G.polyG, b0, b1, b2v, b3, b4), 0.0, 1.15);
+  let pb = clamp(evalPoly20(G.polyB, b0, b1, b2v, b3, b4), 0.0, 1.15);
+
+  // 6-sector Hue curves (Hue-vs-Hue, Hue-vs-Sat, Hue-vs-Luma) in opponent chroma space.
+  const y0 = 0.2126 * pr + 0.7152 * pg + 0.0722 * pb;
+  const c1 = pr - y0;
+  const c2 = pb - y0;
+  const chr = Math.sqrt(c1 * c1 + c2 * c2 + 1e-10);
+  const hueGate =
+    smoothstep(0.015, 0.08, chr) *
+    smoothstep(0.03, 0.14, y0) *
+    (1.0 - smoothstep(0.86, 0.99, y0));
+  const hAngle = Math.atan2(c2, c1);
+
+  let dHue = 0.0;
+  let dSat = 0.0;
+  let dLum = 0.0;
+  for (let s = 0; s < 6; s++) {
+    const w = hueSectorWeight(hAngle, HUE_CENTERS[s]);
+    dHue += w * G.hueShift[s];
+    dSat += w * G.hueSat[s];
+    dLum += w * G.hueLuma[s];
+  }
+  dHue *= hueGate;
+  dSat *= hueGate;
+  dLum *= hueGate;
+
+  const cs = Math.cos(dHue);
+  const sn = Math.sin(dHue);
+  const rc1 = c1 * cs - c2 * sn;
+  const rc2 = c1 * sn + c2 * cs;
+  const satScale = clamp(1.0 + dSat, 0.25, 1.85);
+  const nc1 = rc1 * satScale;
+  const nc2 = rc2 * satScale;
+  const ny = clamp(y0 + dLum * 0.24, 0.0, 1.15);
+  const ng = ny - (0.2126 * nc1 + 0.0722 * nc2) / 0.7152;
+  pr = ny + nc1;
+  pg = ng;
+  pb = ny + nc2;
+
+  // Luma-vs-Sat roll-off at extreme black & white ends.
+  const y1 = 0.2126 * pr + 0.7152 * pg + 0.0722 * pb;
+  const endRoll = 0.75 + 0.25 * (smoothstep(0.0, 0.10, y1) * (1.0 - smoothstep(0.85, 1.0, y1)));
+  pr = y1 + (pr - y1) * endRoll;
+  pg = y1 + (pg - y1) * endRoll;
+  pb = y1 + (pb - y1) * endRoll;
+
+  // Subtractive Film Density (Beer-Lambert saturation darkening for rich colors).
+  const maxC = Math.max(pr, pg, pb);
+  const minC = Math.min(pr, pg, pb);
+  const satEst = clamp((maxC - minC) / Math.max(maxC, 1e-4), 0.0, 1.0);
+  const midMask = smoothstep(0.08, 0.30, y1) * (1.0 - smoothstep(0.68, 0.92, y1));
+  const density = 1.0 - satEst * midMask * 0.065;
+  pr *= density;
+  pg *= density;
+  pb *= density;
+
+  // Soft Rec.709 Gamut Clamp + Analytical AgX Filmic Highlight Roll-Off.
+  const y2 = clamp(0.2126 * pr + 0.7152 * pg + 0.0722 * pb, 0.0, 1.0);
+  const dr = pr - y2;
+  const dg = pg - y2;
+  const db = pb - y2;
+  const maxSpan = Math.max(Math.abs(dr), Math.abs(dg), Math.abs(db), 1e-4);
+  const softSpan = Math.tanh(maxSpan * 1.35) / 1.35;
+  const gScale = softSpan / maxSpan;
+  pr = Math.max(y2 + dr * gScale, 0.0);
+  pg = Math.max(y2 + dg * gScale, 0.0);
+  pb = Math.max(y2 + db * gScale, 0.0);
+
+  // Analytical AgX inset -> sigmoid shoulder -> outset.
+  const ir = 0.856 * pr + 0.095 * pg + 0.049 * pb;
+  const ig = 0.070 * pr + 0.875 * pg + 0.055 * pb;
+  const ib = 0.048 * pr + 0.102 * pg + 0.850 * pb;
+  const ar = agxChannel(ir);
+  const ag = agxChannel(ig);
+  const ab = agxChannel(ib);
+  const or = clamp(1.182 * ar - 0.128 * ag - 0.054 * ab, 0.0, 1.0);
+  const og = clamp(-0.094 * ar + 1.158 * ag - 0.064 * ab, 0.0, 1.0);
+  const ob = clamp(-0.055 * ar - 0.125 * ag + 1.180 * ab, 0.0, 1.0);
+
+  const hybridDeltaR = (or - baseR) * autoMix;
+  const hybridDeltaG = (og - baseG) * autoMix;
+  const hybridDeltaB = (ob - baseB) * autoMix;
+
+  out[0] = clamp(baseR + shadowMask * hybridDeltaR, 0.0, 1.0);
+  out[1] = clamp(baseG + shadowMask * hybridDeltaG, 0.0, 1.0);
+  out[2] = clamp(baseB + shadowMask * hybridDeltaB, 0.0, 1.0);
 }
 
 // Grades one RGB triplet (0..1 display values). Writes into out[0..2].
@@ -177,14 +403,21 @@ export function gradeRGB(G, origR, origG, origB, out) {
   g = rollShoulder(g, G.shoulderMix);
   b = rollShoulder(b, G.shoulderMix);
 
-  r = clamp(r, 0.0, 1.0);
-  g = clamp(g, 0.0, 1.0);
-  b = clamp(b, 0.0, 1.0);
+  let baseR = clamp(r, 0.0, 1.0);
+  let baseG = clamp(g, 0.0, 1.0);
+  let baseB = clamp(b, 0.0, 1.0);
+
+  if ((G.autoGradeMix ?? 0.0) > 1e-5) {
+    applyHybridLayerRGB(G, baseR, baseG, baseB, out);
+    baseR = out[0];
+    baseG = out[1];
+    baseB = out[2];
+  }
 
   const mix = p.gradeMix;
-  out[0] = origR * (1.0 - mix) + r * mix;
-  out[1] = origG * (1.0 - mix) + g * mix;
-  out[2] = origB * (1.0 - mix) + b * mix;
+  out[0] = origR * (1.0 - mix) + baseR * mix;
+  out[1] = origG * (1.0 - mix) + baseG * mix;
+  out[2] = origB * (1.0 - mix) + baseB * mix;
 }
 
 // Preview-only Rec.709 -> Gentle Flat Log input curve (never exported to .kfplug).
@@ -200,10 +433,10 @@ export function applyLogInputRGB(r, g, b, out) {
   out[2] = clamp(toe + Math.pow(db, 0.84) * 0.88, 0.0, 0.92);
 }
 
-// Evaluates gradeRGB() with 1:1 shadow blackProtect (smoothstep(0.0, 0.06, srcLuma)).
+// Evaluates gradeRGB() with 1:1 shadow-toe protection.
 // Matches PREVIEW_FRAGMENT and KFPLUG_FRAGMENT identically.
 export function evaluateGradeRGB(G, rawR, rawG, rawB, out, simulateLogInput = false) {
-  const srcLuma = 0.2126 * rawR + 0.7152 * rawG + 0.0722 * rawB;
+  const baseLuma = 0.2126 * rawR + 0.7152 * rawG + 0.0722 * rawB;
   let inR = rawR;
   let inG = rawG;
   let inB = rawB;
@@ -214,7 +447,8 @@ export function evaluateGradeRGB(G, rawR, rawG, rawB, out, simulateLogInput = fa
     inB = out[2];
   }
   gradeRGB(G, inR, inG, inB, out);
-  const blackProtect = smoothstep(0.0, 0.06, srcLuma);
+  const shadowMask = smoothstep(0.015, 0.16, baseLuma);
+  const blackProtect = smoothstep(0.0, 0.06, baseLuma) * (0.15 + 0.85 * shadowMask);
   out[0] = rawR * (1.0 - blackProtect) + out[0] * blackProtect;
   out[1] = rawG * (1.0 - blackProtect) + out[1] * blackProtect;
   out[2] = rawB * (1.0 - blackProtect) + out[2] * blackProtect;

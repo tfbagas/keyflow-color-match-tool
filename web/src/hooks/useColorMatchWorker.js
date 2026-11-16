@@ -6,9 +6,10 @@ const ANALYSIS_TIMEOUT_MS = 6000;
 const LUT_FIT_TIMEOUT_MS = 15000;
 const FALLBACK_MAX_DIM = 320;
 
-function toTransferableBuffer(uint8Clamped) {
+function toTransferableBuffer(uint8Clamped, clone = false) {
   if (!uint8Clamped) return null;
   if (
+    !clone &&
     uint8Clamped.byteOffset === 0 &&
     uint8Clamped.byteLength === uint8Clamped.buffer.byteLength
   ) {
@@ -203,7 +204,14 @@ export function useColorMatchWorker({
   }, []);
 
   const dispatchAnalysis = useCallback(
-    ({ jobId, ref, tgt, mediaType = "image", engineId = DEFAULT_ENGINE_ID }) => {
+    ({
+      jobId,
+      ref,
+      tgt,
+      mediaType = "image",
+      engineId = DEFAULT_ENGINE_ID,
+      preserveBuffers = true,
+    }) => {
       if (!ref || !ref.data || !ref.numPixels) return;
 
       pendingAnalysisRef.current = {
@@ -224,8 +232,8 @@ export function useColorMatchWorker({
       }, ANALYSIS_TIMEOUT_MS);
 
       try {
-        const refBuffer = toTransferableBuffer(ref.data);
-        const tgtBuffer = tgt?.data ? toTransferableBuffer(tgt.data) : null;
+        const refBuffer = toTransferableBuffer(ref.data, preserveBuffers);
+        const tgtBuffer = tgt?.data ? toTransferableBuffer(tgt.data, preserveBuffers) : null;
         const transferables = [refBuffer];
         if (tgtBuffer && tgtBuffer !== refBuffer) {
           transferables.push(tgtBuffer);

@@ -1,13 +1,28 @@
 import JSZip from "jszip";
-import { KFPLUG_FRAGMENT } from "./gradeShader.js";
+import {
+  PRECISION_HEADER,
+  GRADE_FUNCTION,
+} from "./gradeShader.js";
 import { sanitizeParams } from "./gradeEngine.js";
-import { KFPLUG_BASE_PARAMS } from "./paramSchema.js";
+import { KFPLUG_BASE_PARAMS, DEFAULT_PARAMS } from "./paramSchema.js";
 import { checkAllowedHost, sanitizeMetadataText } from "./hostGuard.js";
 
 export { checkAllowedHost, sanitizeMetadataText };
 
-const SHADER_PASS0 = KFPLUG_FRAGMENT;
-const BASE_PARAMS = KFPLUG_BASE_PARAMS;
+const BASE_PARAMS = [
+  ...KFPLUG_BASE_PARAMS,
+  {
+    id: "autoGradeMix",
+    label: "Auto-Grade Layer",
+    type: "scalar",
+    default: 1.0,
+    min: 0.0,
+    max: 1.5,
+    displayScale: 100.0,
+    decimals: 0,
+    group: "Master",
+  },
+];
 
 const BASE_COLORS = [
   { label: "Shadows Tint", r: "liftR", g: "liftG", b: "liftB" },
@@ -38,6 +53,104 @@ const PRESETS = [
   }
 ];
 
+function fmtFloat(v) {
+  const n = Number.isFinite(v) ? v : 0;
+  const s = (n === 0 ? 0 : n).toFixed(6);
+  return s;
+}
+
+function fmtVec4(arr, offset = 0) {
+  return `vec4(${fmtFloat(arr[offset])}, ${fmtFloat(arr[offset + 1])}, ${fmtFloat(
+    arr[offset + 2]
+  )}, ${fmtFloat(arr[offset + 3])})`;
+}
+
+function fmtVec2(arr, offset = 0) {
+  return `vec2(${fmtFloat(arr[offset])}, ${fmtFloat(arr[offset + 1])})`;
+}
+
+// Builds pass0.frag for .kfplug with pure GLSL ES 1.00 and packed vec4 hybrid
+// constants + uAutoGradeMix uniform so Keyflow Mobile renders 1:1 with preview.
+export function buildKfplugFragmentShader(safeParams) {
+  const p = sanitizeParams(safeParams);
+  const polyBlock = [0, 1, 2, 3, 4]
+    .map(
+      (i) =>
+        `    uPolyR[${i}] = ${fmtVec4(p.polyR, i * 4)};\n` +
+        `    uPolyG[${i}] = ${fmtVec4(p.polyG, i * 4)};\n` +
+        `    uPolyB[${i}] = ${fmtVec4(p.polyB, i * 4)};`
+    )
+    .join("\n");
+
+  const kfplugUniforms = `uniform float uGradeMix;
+uniform float uAutoGradeMix;
+uniform float uExposure;
+uniform float uContrast;
+uniform float uPivot;
+uniform float uHighlights;
+uniform float uShadows;
+uniform float uTemp;
+uniform float uTint;
+uniform float uSat;
+uniform float uVib;
+
+uniform float uLiftR;
+uniform float uLiftG;
+uniform float uLiftB;
+
+uniform float uGammaR;
+uniform float uGammaG;
+uniform float uGammaB;
+
+uniform float uGainR;
+uniform float uGainG;
+uniform float uGainB;
+
+vec4 uPolyR[5];
+vec4 uPolyG[5];
+vec4 uPolyB[5];
+const vec4 uHueShiftA = ${fmtVec4(p.hueShift, 0)};
+const vec2 uHueShiftB = ${fmtVec2(p.hueShift, 4)};
+const vec4 uHueSatA = ${fmtVec4(p.hueSat, 0)};
+const vec2 uHueSatB = ${fmtVec2(p.hueSat, 4)};
+const vec4 uHueLumaA = ${fmtVec4(p.hueLuma, 0)};
+const vec2 uHueLumaB = ${fmtVec2(p.hueLuma, 4)};
+`;
+
+  return `${PRECISION_HEADER}
+uniform sampler2D uTexture;
+varying vec2 vTex;
+
+${kfplugUniforms}
+${GRADE_FUNCTION}
+void main() {
+    vec4 c = texture2D(uTexture, vTex);
+    float a = clamp(c.a, 0.0, 1.0);
+    if (a <= 1e-5) {
+        gl_FragColor = vec4(0.0);
+        return;
+    }
+
+${polyBlock}
+
+    vec3 origRgb = clamp(c.rgb / max(a, 1e-5), 0.0, 1.0);
+    float srcLuma = dot(origRgb, vec3(0.2126, 0.7152, 0.0722));
+    float blackProtect = smoothstep(0.0, 0.06, srcLuma);
+    vec3 graded = mix(origRgb, kfGrade(origRgb), blackProtect);
+    gl_FragColor = vec4(graded * a, a);
+}
+`;
+}
+
+function toScalarValues(sanitized) {
+  const out = {};
+  for (const key of Object.keys(DEFAULT_PARAMS)) {
+    out[key] = sanitized[key];
+  }
+  out.autoGradeMix = sanitized.autoGradeMix ?? 0.0;
+  return out;
+}
+
 export async function generateKfplug(params, presetName, author, description) {
   if (!checkAllowedHost()) {
     throw new Error("Export is restricted to the official domain.");
@@ -57,13 +170,21 @@ export async function generateKfplug(params, presetName, author, description) {
   const cleanPresetId = "preset" + (words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join("").slice(0, 24) || "Match");
 
   // Strict sanitation: finite, no -0, clamped to Keyflow slider ranges.
-  const safeValues = sanitizeParams(params);
-  const safePresets = PRESETS.map((pr) => ({
-    ...pr,
-    values: Object.fromEntries(
-      Object.keys(pr.values).map((k) => [k, sanitizeParams({ ...pr.values })[k]])
-    ),
-  }));
+  const fullSafe = sanitizeParams(params);
+  const safeValues = toScalarValues(fullSafe);
+  const shaderPass0 = buildKfplugFragmentShader(fullSafe);
+
+  const safePresets = PRESETS.map((pr) => {
+    const sanPr = sanitizeParams({ ...pr.values });
+    const vals = { autoGradeMix: 0.0 };
+    for (const k of Object.keys(pr.values)) {
+      vals[k] = sanPr[k];
+    }
+    return {
+      ...pr,
+      values: vals,
+    };
+  });
 
   const effectData = {
     id: effectId,
@@ -83,7 +204,15 @@ export async function generateKfplug(params, presetName, author, description) {
     ],
     newInstanceValues: { ...safeValues },
     thumbnailValues: { ...safeValues },
-    passes: [{ shader: "pass0.frag", scale: 1.0 }]
+    passes: [{ shader: "pass0.frag", scale: 1.0 }],
+    cinemaHybrid: {
+      polyR: fullSafe.polyR,
+      polyG: fullSafe.polyG,
+      polyB: fullSafe.polyB,
+      hueShift: fullSafe.hueShift,
+      hueSat: fullSafe.hueSat,
+      hueLuma: fullSafe.hueLuma,
+    },
   };
 
   const manifestData = {
@@ -102,7 +231,7 @@ export async function generateKfplug(params, presetName, author, description) {
   const zip = new JSZip();
   zip.file("manifest.json", JSON.stringify(manifestData, null, 2));
   zip.file(`effects/${effectId}/effect.json`, JSON.stringify(effectData, null, 2));
-  zip.file(`effects/${effectId}/pass0.frag`, SHADER_PASS0);
+  zip.file(`effects/${effectId}/pass0.frag`, shaderPass0);
 
   const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
   const safeFileName = cleanName.replace(/[^a-zA-Z0-9_-]/g, "_") || "Grade";

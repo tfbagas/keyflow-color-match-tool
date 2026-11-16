@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useRef, useState } from "react";
-import { Check } from "lucide-react";
+import { Check, RotateCcw } from "lucide-react";
 
 const WHEEL_SCALE = 0.42;
 const SQRT3 = Math.sqrt(3);
@@ -175,10 +175,26 @@ const ColorSwatchCard = memo(function ColorSwatchCard({
     Math.abs(safeRgb[2] - 0.5) < 0.004;
 
   return (
-    <div className="flex flex-col items-center gap-1 px-1.5 py-1.5 rounded-xl bg-white/[0.02] border border-white/[0.08] hover:border-white/[0.16] transition-[border-color] duration-150 select-none">
-      <span className="text-[10px] font-medium text-[#9CA3AF] tracking-wide truncate max-w-full">
-        {title}
-      </span>
+    <div className="relative flex flex-col items-center gap-1 px-1.5 py-1.5 rounded-xl bg-white/[0.02] border border-white/[0.08] hover:border-white/[0.16] transition-[border-color] duration-150 select-none">
+      <div className="w-full flex items-center justify-center gap-1 relative">
+        <span className="text-[10px] font-medium text-[#9CA3AF] tracking-wide truncate max-w-full">
+          {title}
+        </span>
+        {!isNeutral && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDoubleClick();
+            }}
+            title={`Reset ${title} to neutral`}
+            aria-label={`Reset ${title}`}
+            className="absolute right-0 p-0.5 rounded text-[#9CA3AF] hover:text-[#E2E4E9] hover:bg-white/[0.08] transition-colors cursor-pointer"
+          >
+            <RotateCcw className="w-2.5 h-2.5" />
+          </button>
+        )}
+      </div>
 
       <div
         ref={wheelRef}
@@ -198,6 +214,20 @@ const ColorSwatchCard = memo(function ColorSwatchCard({
             "radial-gradient(circle at center, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 55%, rgba(0,0,0,0.38) 100%)",
         }}
       >
+        {/* Subtle radial color spectrum ring hint when neutral */}
+        {isNeutral && (
+          <div
+            className="pointer-events-none absolute inset-0 rounded-full opacity-25"
+            style={{
+              background:
+                "conic-gradient(from 90deg, rgba(248,113,113,0.45), rgba(250,204,21,0.4), rgba(74,222,128,0.45), rgba(56,189,248,0.45), rgba(167,139,250,0.45), rgba(244,114,182,0.45), rgba(248,113,113,0.45))",
+              WebkitMaskImage:
+                "radial-gradient(circle, transparent 58%, black 72%, transparent 98%)",
+              maskImage:
+                "radial-gradient(circle, transparent 58%, black 72%, transparent 98%)",
+            }}
+          />
+        )}
         {/* Subtle inner ring */}
         <div className="pointer-events-none absolute inset-[24%] rounded-full border border-white/[0.07]" />
         {/* Fine crosshair axes */}

@@ -1,9 +1,17 @@
 import React, { useEffect, useRef } from "react";
-import { UNIFIED_PREVIEW_VERTEX, PREVIEW_FRAGMENT, UNIFORM_MAP } from "../utils/gradeShader";
+import {
+  UNIFIED_PREVIEW_VERTEX,
+  PREVIEW_FRAGMENT,
+  UNIFORM_MAP,
+  getHybridUniformLocations,
+  bindHybridUniforms,
+} from "../utils/gradeShader";
 import { sanitizeParams } from "../utils/gradeEngine";
 
-// Matches PREVIEW_FRAGMENT u_viewMode: 0 = Split Slider, 1 = Side by Side, 2 = Split Result
+// Matches PREVIEW_FRAGMENT u_viewMode: 0 = Split Slider, 1 = Side by Side, 2 = Graded Only
 const VIEW_MODE_VALUE = { split: 0, side: 1, result: 2 };
+// Matches PREVIEW_FRAGMENT uMonitorMode: 0 = Off, 1 = Zebra/Clipping, 2 = False Color IRE
+const MONITOR_MODE_VALUE = { off: 0, zebra: 1, falsecolor: 2 };
 
 function compileShader(gl, type, src) {
   const sh = gl.createShader(type);
@@ -39,6 +47,7 @@ export default function WebGLPreviewCanvas({
   splitPos = 50,
   hold = false,
   simulateLogInput = false,
+  monitorMode = "off",
   maxSide = 0,
   previewRef = null,
   onError,
@@ -57,9 +66,18 @@ export default function WebGLPreviewCanvas({
     splitPos,
     hold,
     simulateLogInput,
+    monitorMode,
     maxSide,
   });
-  stateRef.current = { params, mode, splitPos, hold, simulateLogInput, maxSide };
+  stateRef.current = {
+    params,
+    mode,
+    splitPos,
+    hold,
+    simulateLogInput,
+    monitorMode,
+    maxSide,
+  };
 
   const sanitizedParamsRef = useRef(sanitizeParams(params));
   const callbacksRef = useRef({ onError, onContextLost, onContextRestored });
@@ -151,11 +169,13 @@ export default function WebGLPreviewCanvas({
         UNIFORM_MAP.forEach(([, uName]) => {
           loc[uName] = gl.getUniformLocation(program, uName);
         });
+        const hybridLoc = getHybridUniformLocations(gl, program);
         const uViewMode = gl.getUniformLocation(program, "u_viewMode");
         const uResolution = gl.getUniformLocation(program, "u_resolution");
         const uSplit = gl.getUniformLocation(program, "uSplit");
         const uHold = gl.getUniformLocation(program, "uHold");
         const uLogInput = gl.getUniformLocation(program, "uLogInput");
+        const uMonitorMode = gl.getUniformLocation(program, "uMonitorMode");
         const uFlipY = gl.getUniformLocation(program, "uFlipY");
         gl.uniform1i(gl.getUniformLocation(program, "uTexture"), 0);
 
@@ -169,11 +189,13 @@ export default function WebGLPreviewCanvas({
           buffer,
           texture,
           loc,
+          hybridLoc,
           uViewMode,
           uResolution,
           uSplit,
           uHold,
           uLogInput,
+          uMonitorMode,
           uFlipY,
           maxTex,
         };
@@ -340,6 +362,7 @@ export default function WebGLPreviewCanvas({
           gl.uniform1f(res.loc[uName], safe[key]);
         }
       });
+      bindHybridUniforms(gl, res.hybridLoc, safe);
       if (res.uFlipY !== null) {
         gl.uniform1f(res.uFlipY, ms.videoEl ? 0.0 : 1.0);
       }
@@ -357,6 +380,9 @@ export default function WebGLPreviewCanvas({
       }
       if (res.uLogInput !== null) {
         gl.uniform1f(res.uLogInput, st.simulateLogInput ? 1 : 0);
+      }
+      if (res.uMonitorMode !== null) {
+        gl.uniform1f(res.uMonitorMode, MONITOR_MODE_VALUE[st.monitorMode] ?? 0);
       }
 
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -651,7 +677,7 @@ export default function WebGLPreviewCanvas({
   // Coalesced redraw when view options change.
   useEffect(() => {
     scheduleDrawRef.current();
-  }, [mode, splitPos, hold, simulateLogInput, maxSide]);
+  }, [mode, splitPos, hold, simulateLogInput, monitorMode, maxSide]);
 
   // Stop WebGL video loop when leaving Home tab; render 1 frame & resume when returning.
   useEffect(() => {

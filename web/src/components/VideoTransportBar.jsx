@@ -1,5 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Play, Pause, Repeat, Volume2, VolumeX } from "lucide-react";
+import {
+  Play,
+  Pause,
+  Repeat,
+  Volume2,
+  VolumeX,
+  ChevronLeft,
+  ChevronRight,
+  Crosshair,
+} from "lucide-react";
 
 function fmt(t) {
   if (!Number.isFinite(t) || t < 0) t = 0;
@@ -9,7 +18,13 @@ function fmt(t) {
 }
 
 // Minimalist achromatic transport bar bound to the target <video> (zero React re-renders during playback).
-export default function VideoTransportBar({ videoEl, resolution }) {
+export default function VideoTransportBar({
+  videoEl,
+  resolution,
+  onMatchCurrentFrame,
+  canMatchFrame = false,
+  isAnalyzing = false,
+}) {
   const [playing, setPlaying] = useState(false);
   const [loop, setLoop] = useState(true);
   const [muted, setMuted] = useState(true);
@@ -84,11 +99,26 @@ export default function VideoTransportBar({ videoEl, resolution }) {
     scrubbingRef.current = false;
   };
 
+  const stepFrame = (dir) => {
+    if (!videoEl) return;
+    if (!videoEl.paused) videoEl.pause();
+    const dur = Number.isFinite(videoEl.duration) ? videoEl.duration : 0;
+    const next = Math.max(
+      0,
+      Math.min(dur || Infinity, (videoEl.currentTime || 0) + dir * (1 / 30))
+    );
+    videoEl.currentTime = next;
+    if (rangeRef.current) rangeRef.current.value = String(next);
+    if (timeTextRef.current) {
+      timeTextRef.current.textContent = `${fmt(next)} / ${fmt(durationRef.current)}`;
+    }
+  };
+
   const btn =
-    "m3-btn-morph inline-flex items-center justify-center w-7 h-7 rounded-lg border cursor-pointer";
+    "m3-btn-morph inline-flex items-center justify-center w-7 h-7 rounded-lg border cursor-pointer shrink-0";
 
   return (
-    <div className="mt-2.5 flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-[#0A0A0D]/55 border border-white/[0.09]">
+    <div className="mt-2.5 flex flex-wrap items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 rounded-lg bg-[#0A0A0D]/55 border border-white/[0.09]">
       <button
         type="button"
         onClick={togglePlay}
@@ -98,32 +128,57 @@ export default function VideoTransportBar({ videoEl, resolution }) {
         {playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
       </button>
 
-      <input
-        ref={rangeRef}
-        type="range"
-        min={0}
-        max={0}
-        step={0.01}
-        defaultValue={0}
-        onPointerDown={() => {
-          scrubbingRef.current = true;
-        }}
-        onPointerUp={endScrub}
-        onPointerCancel={endScrub}
-        onTouchStart={() => {
-          scrubbingRef.current = true;
-        }}
-        onTouchEnd={endScrub}
-        onChange={(e) => {
-          const v = Number(e.target.value);
-          videoEl.currentTime = v;
-          if (timeTextRef.current) {
-            timeTextRef.current.textContent = `${fmt(v)} / ${fmt(durationRef.current)}`;
-          }
-        }}
-        aria-label="Video timeline"
-        className="flex-1 min-w-[60px] h-1 accent-[#E2E4E9] cursor-pointer"
-      />
+      <div className="flex items-center gap-0.5 shrink-0">
+        <button
+          type="button"
+          onClick={() => stepFrame(-1)}
+          title="Step back 1 frame (-1/30s)"
+          aria-label="Previous frame"
+          className="m3-btn-morph inline-flex items-center justify-center px-1.5 h-7 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] text-[10px] font-mono cursor-pointer"
+        >
+          <ChevronLeft className="w-3 h-3" />
+          <span>1f</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => stepFrame(1)}
+          title="Step forward 1 frame (+1/30s)"
+          aria-label="Next frame"
+          className="m3-btn-morph inline-flex items-center justify-center px-1.5 h-7 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] text-[10px] font-mono cursor-pointer"
+        >
+          <span>1f</span>
+          <ChevronRight className="w-3 h-3" />
+        </button>
+      </div>
+
+      <div className="flex-1 min-w-[80px] py-2 flex items-center">
+        <input
+          ref={rangeRef}
+          type="range"
+          min={0}
+          max={0}
+          step={0.01}
+          defaultValue={0}
+          onPointerDown={() => {
+            scrubbingRef.current = true;
+          }}
+          onPointerUp={endScrub}
+          onPointerCancel={endScrub}
+          onTouchStart={() => {
+            scrubbingRef.current = true;
+          }}
+          onTouchEnd={endScrub}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            videoEl.currentTime = v;
+            if (timeTextRef.current) {
+              timeTextRef.current.textContent = `${fmt(v)} / ${fmt(durationRef.current)}`;
+            }
+          }}
+          aria-label="Video timeline"
+          className="w-full h-1.5 accent-[#E2E4E9] cursor-pointer"
+        />
+      </div>
 
       <span
         ref={timeTextRef}
@@ -131,6 +186,23 @@ export default function VideoTransportBar({ videoEl, resolution }) {
       >
         00:00 / 00:00
       </span>
+
+      {onMatchCurrentFrame && (
+        <button
+          type="button"
+          onClick={onMatchCurrentFrame}
+          disabled={!canMatchFrame || isAnalyzing}
+          title="Match Reference colors directly to the current video frame"
+          className={`m3-btn-morph inline-flex items-center gap-1 px-2 h-7 rounded-lg text-[10px] sm:text-[11px] font-medium border whitespace-nowrap ${
+            !canMatchFrame || isAnalyzing
+              ? "bg-white/[0.025] text-[#9CA3AF]/35 border-white/[0.05] cursor-not-allowed"
+              : "bg-white/[0.06] hover:bg-white/[0.12] text-[#E2E4E9] border-white/[0.14] cursor-pointer"
+          }`}
+        >
+          <Crosshair className="w-3 h-3 text-[#6EE7B7]" />
+          <span>Match Frame</span>
+        </button>
+      )}
 
       <button
         type="button"

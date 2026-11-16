@@ -1,5 +1,5 @@
 import React, { memo, useEffect, useRef, useState } from "react";
-import { ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronUp, ChevronDown, RotateCcw, Crosshair } from "lucide-react";
 
 const ParameterControl = memo(function ParameterControl({
   paramKey,
@@ -18,6 +18,10 @@ const ParameterControl = memo(function ParameterControl({
   const [isHovered, setIsHovered] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [shiftHeld, setShiftHeld] = useState(false);
+  const [fineMode, setFineMode] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState("");
+  const editInputRef = useRef(null);
   const draggingRef = useRef(false);
   const rafRef = useRef(0);
   const pendingValRef = useRef(null);
@@ -142,9 +146,38 @@ const ParameterControl = memo(function ParameterControl({
     []
   );
 
-  const effectiveStep = shiftHeld ? 0.01 : step;
+  const isFineActive = shiftHeld || fineMode;
+  const effectiveStep = isFineActive ? 0.01 : step;
 
   const clamp = (val) => Math.max(min, Math.min(max, val));
+
+  const startEditing = (e) => {
+    e.stopPropagation();
+    setEditDraft(Number(value).toFixed(2));
+    setIsEditing(true);
+    requestAnimationFrame(() => {
+      editInputRef.current?.select();
+    });
+  };
+
+  const commitEdit = () => {
+    setIsEditing(false);
+    const parsed = parseFloat(editDraft);
+    if (Number.isFinite(parsed)) {
+      const clamped = clamp(Math.round(parsed * 100) / 100);
+      onChange(paramKey, clamped);
+    }
+  };
+
+  const handleEditKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commitEdit();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setIsEditing(false);
+    }
+  };
 
   const handleSliderChange = (e) => {
     let nextVal = parseFloat(e.target.value);
@@ -183,8 +216,23 @@ const ParameterControl = memo(function ParameterControl({
   };
 
   const valPct = Math.max(0, Math.min(100, ((value - min) / range) * 100));
+  const pctNorm = Math.max(0, Math.min(1, (value - min) / range));
   const isModified = Math.abs(value - defaultValue) > 0.004;
+  const isNeutral = !isModified;
   const isActive = isHovered || isDragging;
+
+  let intensityLabel = "Mid";
+  let intensityClass = "bg-white/[0.06] text-[#E2E4E9]/85 border-white/[0.14]";
+  if (isNeutral) {
+    intensityLabel = paramKey === "matchStrength" ? "Normal" : "Neutral";
+    intensityClass = "bg-white/[0.03] text-[#9CA3AF]/75 border-white/[0.08]";
+  } else if (pctNorm <= 0.28) {
+    intensityLabel = "Low";
+    intensityClass = "bg-sky-500/10 text-sky-300/90 border-sky-400/25";
+  } else if (pctNorm >= 0.72) {
+    intensityLabel = "Strong";
+    intensityClass = "bg-[#6EE7B7]/15 text-[#6EE7B7] border-[#6EE7B7]/35";
+  }
 
   const fillLeft = isBipolar ? Math.min(valPct, defaultPct) : 0;
   const fillWidth = isBipolar ? Math.abs(valPct - defaultPct) : valPct;
@@ -208,141 +256,209 @@ const ParameterControl = memo(function ParameterControl({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       title="Double-click to reset parameter to default"
-      className="flex items-center gap-2.5 py-[3px] px-2 rounded-lg hover:bg-white/[0.035] transition-colors group select-none"
+      className="flex flex-col min-[480px]:flex-row min-[480px]:items-center gap-1 min-[480px]:gap-2 py-1 min-[480px]:py-[3px] px-2 rounded-lg hover:bg-white/[0.035] transition-colors group select-none touch-pan-y"
     >
-      {/* Label & Icon + Modified Indicator Dot */}
-      <div
-        onDoubleClick={handleReset}
-        className="flex items-center gap-2 w-36 sm:w-44 shrink-0 cursor-pointer"
-      >
-        {Icon && (
-          <Icon className="w-3.5 h-3.5 text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors shrink-0" />
-        )}
-        <span className="text-xs font-medium text-[#E2E4E9]/90 truncate">
-          {label}
-        </span>
-        {isModified && (
+      {/* Top row on <480px / Left column on >=480px: Label, Reset, Dynamic Intensity Pill */}
+      <div className="flex items-center justify-between min-[480px]:justify-start gap-1.5 min-[480px]:w-[218px] sm:w-[232px] shrink-0">
+        <div
+          onDoubleClick={handleReset}
+          className="flex items-center gap-1.5 min-w-0 cursor-pointer"
+        >
+          {Icon && (
+            <Icon className="w-3.5 h-3.5 text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors shrink-0" />
+          )}
+          <span className="text-xs font-medium text-[#E2E4E9]/90 min-[480px]:whitespace-nowrap">
+            {label}
+          </span>
+          {isModified && (
+            <span
+              className="w-1.5 h-1.5 rounded-full bg-[#E2E4E9] shrink-0 transition-transform duration-200 scale-100"
+              title={`Modified (Default: ${defaultValue.toFixed(2)})`}
+            />
+          )}
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0 min-[480px]:ml-auto">
+          {isModified && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleReset();
+              }}
+              title={`Reset ${label}`}
+              aria-label={`Reset ${label}`}
+              className="p-1 rounded hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] transition-colors cursor-pointer"
+            >
+              <RotateCcw className="w-3 h-3" />
+            </button>
+          )}
           <span
-            className="w-1.5 h-1.5 rounded-full bg-[#E2E4E9] shrink-0 transition-transform duration-200 scale-100"
-            title={`Modified (Default: ${defaultValue.toFixed(2)})`}
-          />
-        )}
+            className={`px-1.5 py-0.5 rounded text-[9px] font-mono border transition-colors ${intensityClass}`}
+            title={`Current level: ${intensityLabel}`}
+          >
+            {intensityLabel}
+          </span>
+        </div>
       </div>
 
-      {/* Material 3 Bipolar Center-Zero Slider with Tactile Handle Morph */}
-      <div className="relative flex-1 flex items-center h-6">
-        {/* Track Background */}
-        <div
-          className={`w-full rounded-full relative overflow-hidden border border-white/[0.08] transition-[height,border-color] duration-200 ${
-            isDragging ? "h-2 border-white/20" : isActive ? "h-2" : "h-1.5"
-          }`}
-          style={{
-            ...trackBgStyle,
-            transitionTimingFunction: "var(--ease-m3-spring)",
-          }}
-        >
-          {/* Active Fill Bar (no transition on left/width for 0-lag 60fps drag) */}
+      {/* Track + Value Readout Row */}
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        {/* Material 3 Bipolar Center-Zero Slider with Tactile Handle Morph */}
+        <div className="relative flex-1 flex items-center h-6 touch-pan-y">
+          {/* Track Background */}
           <div
-            ref={fillRef}
-            className={`absolute top-0 bottom-0 transition-colors duration-150 ${
-              isDragging
-                ? "bg-white"
-                : isActive
-                ? "bg-[#E2E4E9]"
-                : "bg-[#9CA3AF]"
+            className={`w-full rounded-full relative overflow-hidden border border-white/[0.08] transition-[height,border-color] duration-200 ${
+              isDragging ? "h-2 border-white/20" : isActive ? "h-2" : "h-1.5"
             }`}
             style={{
-              left: `${fillLeft}%`,
-              width: `${fillWidth}%`,
+              ...trackBgStyle,
+              transitionTimingFunction: "var(--ease-m3-spring)",
             }}
+          >
+            {/* Active Fill Bar (no transition on left/width for 0-lag 60fps drag) */}
+            <div
+              ref={fillRef}
+              className={`absolute top-0 bottom-0 transition-colors duration-150 ${
+                isDragging
+                  ? "bg-white"
+                  : isActive
+                  ? "bg-[#E2E4E9]"
+                  : "bg-[#9CA3AF]"
+              }`}
+              style={{
+                left: `${fillLeft}%`,
+                width: `${fillWidth}%`,
+              }}
+            />
+          </div>
+
+          {/* Center / Default Tick Mark */}
+          <div
+            className={`absolute top-1/2 -translate-y-1/2 w-[1.5px] pointer-events-none z-10 transition-[height,background-color] duration-200 ${
+              !isModified ? "h-3.5 bg-[#E2E4E9]/60" : "h-3 bg-white/25"
+            }`}
+            style={{ left: `calc(${defaultPct}% - 0.75px)` }}
+          />
+
+          {/* Tactile Vertical Bar Thumb */}
+          <div
+            ref={thumbRef}
+            className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full ring-2 ring-[#0E0E12]/90 pointer-events-none z-20 transition-[width,height,box-shadow,background-color] duration-200 ${
+              isDragging
+                ? "w-2 h-5 bg-white shadow-[0_0_14px_rgba(255,255,255,0.58),0_0_0_3px_rgba(255,255,255,0.16)]"
+                : isHovered
+                ? "w-1.5 h-5 bg-white shadow-[0_0_10px_rgba(226,228,233,0.45)]"
+                : "w-1 h-4 bg-[#E2E4E9]"
+            }`}
+            style={{
+              left: `${valPct}%`,
+              transitionTimingFunction: "var(--ease-m3-spring)",
+            }}
+          />
+
+          {/* Native Range Input Overlay for Full Mouse/Touch Accessibility */}
+          <input
+            ref={inputRef}
+            type="range"
+            min={min}
+            max={max}
+            step={effectiveStep}
+            defaultValue={value}
+            onChange={handleSliderChange}
+            onPointerDown={(e) => {
+              startDrag();
+              setShiftHeld(Boolean(e.shiftKey));
+            }}
+            onPointerMove={(e) => {
+              if (draggingRef.current) setShiftHeld(Boolean(e.shiftKey));
+            }}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+            onTouchStart={startDrag}
+            onTouchEnd={endDrag}
+            onTouchCancel={endDrag}
+            onDoubleClick={handleReset}
+            aria-label={label}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-30 m-0 touch-pan-y"
           />
         </div>
 
-        {/* Center / Default Tick Mark */}
-        <div
-          className={`absolute top-1/2 -translate-y-1/2 w-[1.5px] pointer-events-none z-10 transition-[height,background-color] duration-200 ${
-            !isModified ? "h-3.5 bg-[#E2E4E9]/60" : "h-3 bg-white/25"
-          }`}
-          style={{ left: `calc(${defaultPct}% - 0.75px)` }}
-        />
-
-        {/* Tactile Vertical Bar Thumb */}
-        <div
-          ref={thumbRef}
-          className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full ring-2 ring-[#0E0E12]/90 pointer-events-none z-20 transition-[width,height,box-shadow,background-color] duration-200 ${
-            isDragging
-              ? "w-2 h-5 bg-white shadow-[0_0_14px_rgba(255,255,255,0.58),0_0_0_3px_rgba(255,255,255,0.16)]"
-              : isHovered
-              ? "w-1.5 h-5 bg-white shadow-[0_0_10px_rgba(226,228,233,0.45)]"
-              : "w-1 h-4 bg-[#E2E4E9]"
-          }`}
-          style={{
-            left: `${valPct}%`,
-            transitionTimingFunction: "var(--ease-m3-spring)",
-          }}
-        />
-
-        {/* Native Range Input Overlay for Full Mouse/Touch Accessibility */}
-        <input
-          ref={inputRef}
-          type="range"
-          min={min}
-          max={max}
-          step={effectiveStep}
-          defaultValue={value}
-          onChange={handleSliderChange}
-          onPointerDown={(e) => {
-            startDrag();
-            setShiftHeld(Boolean(e.shiftKey));
-          }}
-          onPointerMove={(e) => {
-            if (draggingRef.current) setShiftHeld(Boolean(e.shiftKey));
-          }}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
-          onTouchStart={startDrag}
-          onTouchEnd={endDrag}
-          onTouchCancel={endDrag}
-          onDoubleClick={handleReset}
-          aria-label={label}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-30 m-0 touch-none"
-        />
-      </div>
-
-      {/* Value Readout & Stepper */}
-      <div
-        onDoubleClick={(e) => e.stopPropagation()}
-        className={`flex items-center bg-[#0A0A0D]/38 border rounded-md overflow-hidden shrink-0 transition-colors ${
-          isDragging && shiftHeld
-            ? "border-[#6EE7B7]/60"
-            : isDragging
-            ? "border-white/25"
-            : "border-white/[0.09]"
-        }`}
-      >
-        <span
-          ref={readoutRef}
-          className="w-13 text-right px-1.5 py-1 text-[11px] font-mono tabular-nums text-[#E2E4E9]"
-        >
-          {formatReadout(value)}
-        </span>
-        <div className="flex flex-col border-l border-white/[0.08]">
+        {/* Value Readout (Tap-to-Edit) & Stepper + Fine Toggle */}
+        <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
-            onClick={() => handleStep(step * 2)}
-            className="px-1 py-0.5 hover:bg-white/10 active:scale-90 text-[#9CA3AF] hover:text-[#E2E4E9] transition-all cursor-pointer"
-            title="Increase"
+            onClick={(e) => {
+              e.stopPropagation();
+              setFineMode((v) => !v);
+            }}
+            title="Fine step (0.01)"
+            aria-label={`Fine step (0.01) for ${label}`}
+            aria-pressed={fineMode}
+            className={`p-1.5 rounded-md border transition-colors cursor-pointer ${
+              fineMode
+                ? "bg-[#6EE7B7]/15 text-[#6EE7B7] border-[#6EE7B7]/40"
+                : "bg-[#0A0A0D]/38 text-[#9CA3AF]/70 hover:text-[#E2E4E9] border-white/[0.09] hover:border-white/20"
+            }`}
           >
-            <ChevronUp className="w-2.5 h-2.5" />
+            <Crosshair className="w-3 h-3" />
           </button>
-          <button
-            type="button"
-            onClick={() => handleStep(-step * 2)}
-            className="px-1 py-0.5 hover:bg-white/10 active:scale-90 text-[#9CA3AF] hover:text-[#E2E4E9] transition-all border-t border-white/[0.06] cursor-pointer"
-            title="Decrease"
+
+          <div
+            onDoubleClick={(e) => e.stopPropagation()}
+            className={`flex items-center bg-[#0A0A0D]/38 border rounded-md overflow-hidden shrink-0 transition-colors ${
+              isFineActive
+                ? "border-[#6EE7B7]/60"
+                : isDragging
+                ? "border-white/25"
+                : "border-white/[0.09]"
+            }`}
           >
-            <ChevronDown className="w-2.5 h-2.5" />
-          </button>
+            {isEditing ? (
+              <input
+                ref={editInputRef}
+                type="number"
+                step={effectiveStep}
+                min={min}
+                max={max}
+                value={editDraft}
+                onChange={(e) => setEditDraft(e.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={handleEditKeyDown}
+                aria-label={`Edit ${label} value`}
+                className="w-14 text-right px-1.5 py-1 text-[11px] font-mono tabular-nums text-[#E2E4E9] bg-white/[0.08] outline-none"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={startEditing}
+                title="Tap to type exact value"
+                className="w-14 text-right px-1.5 py-1 text-[11px] font-mono tabular-nums text-[#E2E4E9] hover:bg-white/[0.06] cursor-text transition-colors"
+              >
+                <span ref={readoutRef}>{formatReadout(value)}</span>
+              </button>
+            )}
+            <div className="flex flex-col border-l border-white/[0.08]">
+              <button
+                type="button"
+                onClick={() => handleStep(effectiveStep)}
+                className="px-1.5 py-1 hover:bg-white/10 active:scale-90 text-[#9CA3AF] hover:text-[#E2E4E9] transition-all cursor-pointer"
+                title="Increase"
+                aria-label={`Increase ${label}`}
+              >
+                <ChevronUp className="w-2.5 h-2.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleStep(-effectiveStep)}
+                className="px-1.5 py-1 hover:bg-white/10 active:scale-90 text-[#9CA3AF] hover:text-[#E2E4E9] transition-all border-t border-white/[0.06] cursor-pointer"
+                title="Decrease"
+                aria-label={`Decrease ${label}`}
+              >
+                <ChevronDown className="w-2.5 h-2.5" />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

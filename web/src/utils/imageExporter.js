@@ -1,4 +1,10 @@
-import { PREVIEW_VERTEX, PREVIEW_FRAGMENT, UNIFORM_MAP } from "./gradeShader";
+import {
+  PREVIEW_VERTEX,
+  PREVIEW_FRAGMENT,
+  UNIFORM_MAP,
+  getHybridUniformLocations,
+  bindHybridUniforms,
+} from "./gradeShader";
 import { DEFAULT_PARAMS, sanitizeParams } from "./gradeEngine";
 import { simulateGradePixels } from "./colorGrading";
 
@@ -105,6 +111,7 @@ function renderViaWebGL(source, width, height, params, layout, splitPos, simulat
         gl.uniform1f(loc, safe[key] ?? DEFAULT_PARAMS[key] ?? 0);
       }
     }
+    bindHybridUniforms(gl, getHybridUniformLocations(gl, program), safe);
 
     gl.viewport(0, 0, width, height);
     gl.clearColor(0, 0, 0, 0);

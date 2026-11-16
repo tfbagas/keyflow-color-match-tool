@@ -5,10 +5,18 @@ const SHORTCUTS = [
   { keys: "\\", desc: "Hold to preview original ungraded source" },
   { keys: "Space", desc: "Play or pause video preview" },
   { keys: "1 / 2", desc: "Switch A / B grading snapshot slots" },
+  { keys: "Ctrl + Z", desc: "Undo last grading parameter change" },
+  { keys: "Ctrl + Shift + Z", desc: "Redo grading parameter change" },
   { keys: "Ctrl + V", desc: "Paste image from clipboard into active slot" },
   { keys: "Shift + Drag", desc: "Fine-tune parameter slider (0.01 step)" },
   { keys: "Double-Click", desc: "Reset slider or color wheel to neutral" },
   { keys: "?", desc: "Toggle this keyboard shortcuts reference" },
+];
+
+const TOUCH_TIPS = [
+  { gesture: "Center Handle", desc: "Drag the split handle to compare; swipe image to scroll" },
+  { gesture: "Tap Readout", desc: "Tap any slider number to type an exact value" },
+  { gesture: "RGB Button", desc: "Enable Touch Eyedropper to inspect pixel RGB / IRE" },
 ];
 
 export default function ShortcutsModal({ isOpen, onClose }) {
@@ -49,7 +57,7 @@ export default function ShortcutsModal({ isOpen, onClose }) {
           </button>
         </div>
 
-        <div className="p-4 space-y-2">
+        <div className="p-4 space-y-2 max-h-[75vh] overflow-y-auto">
           {SHORTCUTS.map((item) => (
             <div
               key={item.keys}
@@ -61,6 +69,23 @@ export default function ShortcutsModal({ isOpen, onClose }) {
               </kbd>
             </div>
           ))}
+
+          <div className="pt-2 mt-2 border-t border-white/[0.08] space-y-1.5">
+            <div className="text-[10px] font-mono uppercase tracking-[0.12em] text-[#9CA3AF] px-1">
+              Touch &amp; Mobile Tips
+            </div>
+            {TOUCH_TIPS.map((tip) => (
+              <div
+                key={tip.gesture}
+                className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-white/[0.02] border border-white/[0.06]"
+              >
+                <span className="text-xs text-[#D1D5DB]">{tip.desc}</span>
+                <span className="shrink-0 px-2 py-0.5 rounded-md bg-white/[0.05] border border-white/[0.12] text-[10px] font-mono text-[#6EE7B7]">
+                  {tip.gesture}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

@@ -282,7 +282,10 @@ export async function importKfplugFile(file) {
     throw new Error("This plugin does not use the Match Grade parameter set.");
   }
 
-  const params = sanitizeParams({ ...DEFAULT_PARAMS, ...source });
+  const hybridMeta = effect.cinemaHybrid && typeof effect.cinemaHybrid === "object"
+    ? effect.cinemaHybrid
+    : {};
+  const params = sanitizeParams({ ...DEFAULT_PARAMS, ...source, ...hybridMeta });
 
   const rawName = manifest.name || effect.name || file.name.replace(/\.[^/.]+$/, "");
   const wrapped = /^Match Grade \((.*)\)$/.exec(String(rawName));
