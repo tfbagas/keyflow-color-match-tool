@@ -1,4 +1,5 @@
 import React, { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X, Keyboard } from "lucide-react";
 
 const SHORTCUTS = [
@@ -21,26 +22,31 @@ const TOUCH_TIPS = [
 
 export default function ShortcutsModal({ isOpen, onClose }) {
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) return undefined;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const onKeyDown = (e) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl bg-[#131419] border border-white/[0.12] shadow-2xl overflow-hidden m3-modal-panel"
+        className="w-full max-w-2xl max-h-[85dvh] flex flex-col rounded-2xl bg-[#131419] border border-white/[0.12] shadow-2xl overflow-hidden m3-modal-panel"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.08]">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.08] shrink-0">
           <div className="flex items-center gap-2">
             <Keyboard className="w-4 h-4 text-[#F4F5F7]" />
             <h2 className="text-xs font-mono uppercase tracking-[0.14em] text-[#F4F5F7]">
@@ -57,7 +63,7 @@ export default function ShortcutsModal({ isOpen, onClose }) {
           </button>
         </div>
 
-        <div className="p-4 space-y-2 max-h-[75vh] overflow-y-auto">
+        <div className="p-4 space-y-2 flex-1 overflow-y-auto">
           {SHORTCUTS.map((item) => (
             <div
               key={item.keys}
@@ -88,6 +94,7 @@ export default function ShortcutsModal({ isOpen, onClose }) {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

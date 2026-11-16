@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   X,
   Sparkles,
@@ -219,29 +220,34 @@ export default function ChangelogModal({ open, onClose, onViewFullHistory }) {
   const latestRelease = CHANGELOG_HISTORY[0];
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) return undefined;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const handleKeyDown = (e) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, [open, onClose]);
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm transition-opacity"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm transition-opacity"
     >
       <div
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="changelog-modal-title"
-        className="m3-panel m3-modal-enter w-full max-w-lg rounded-2xl p-5 sm:p-6 shadow-[0_24px_60px_rgba(0,0,0,0.85)] bg-[#151519]/95"
+        className="m3-panel m3-modal-enter w-full max-w-2xl max-h-[85dvh] flex flex-col rounded-2xl p-5 sm:p-6 shadow-[0_24px_60px_rgba(0,0,0,0.85)] bg-[#151519]/95"
       >
-        <div className="flex items-start justify-between gap-3 pb-4 border-b border-white/[0.08]">
+        <div className="flex items-start justify-between gap-3 pb-4 border-b border-white/[0.08] shrink-0">
           <div className="flex items-center gap-3">
             <KeyflowLogo size={38} />
             <div>
@@ -273,7 +279,7 @@ export default function ChangelogModal({ open, onClose, onViewFullHistory }) {
           </button>
         </div>
 
-        <div className="my-4 space-y-2.5">
+        <div className="my-4 space-y-2.5 flex-1 overflow-y-auto pr-1">
           {latestRelease.items.map((point, idx) => (
             <div
               key={idx}
@@ -289,7 +295,7 @@ export default function ChangelogModal({ open, onClose, onViewFullHistory }) {
           ))}
         </div>
 
-        <div className="pt-3 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-3">
+        <div className="pt-3 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-3 shrink-0">
           {onViewFullHistory ? (
             <button
               type="button"
@@ -317,6 +323,7 @@ export default function ChangelogModal({ open, onClose, onViewFullHistory }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

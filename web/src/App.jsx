@@ -1756,10 +1756,10 @@ export default function App() {
             activeTab === "home" ? "space-y-2.5" : "hidden"
           }
         >
-          {/* 2-Column Workstation Grid: Sticky Left Column on >=1024px, Direct-child sticky VISUAL PREVIEW on <1024px */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-start">
-            {/* LEFT COLUMN WRAPPER: display:contents on <1024px so order-1/order-2 work directly in grid; sticky column on >=1024px */}
-            <div className="contents lg:flex lg:flex-col lg:gap-2.5 lg:col-span-7 lg:col-start-1 lg:sticky lg:top-20 lg:self-start">
+          {/* 2-Column Workstation Grid: Unified Page Scroll on >=1024px, Direct-child sticky VISUAL PREVIEW on <1024px */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-start lg:items-stretch">
+            {/* LEFT COLUMN WRAPPER: display:contents on <1024px so order-1/order-2 work directly in grid */}
+            <div className="contents lg:flex lg:flex-col lg:gap-2.5 lg:col-span-7 lg:col-start-1">
               {/* MEDIA DROPZONES (order-2 on mobile, top of left column on desktop) */}
               <div className="order-2 lg:order-none grid grid-cols-2 gap-2 lg:gap-2.5">
                 {/* 3. Panel REFERENCE (delay: 110ms) */}
@@ -1823,11 +1823,11 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 7. Panel VISUAL PREVIEW (hidden on <1024px when empty; sticky below header on mobile; bottom of sticky left col on desktop) */}
+              {/* 7. Panel VISUAL PREVIEW (hidden on <1024px when empty; sticky below header on mobile; expands to match right col on desktop) */}
               <div
                 className={`order-1 lg:order-none ${
                   !hasPreviewImage ? "hidden lg:flex" : "flex"
-                } flex-col min-h-[420px] lg:min-h-[490px] [&>*]:flex-1 ${
+                } lg:flex-1 flex-col min-h-[420px] lg:min-h-[490px] [&>*]:flex-1 ${
                   isPreviewPinned
                     ? "sticky top-[var(--kf-header-h,48px)] z-30 bg-[#121216] pb-1 lg:static lg:z-auto lg:bg-transparent lg:pb-0"
                     : ""
@@ -1880,7 +1880,7 @@ export default function App() {
                 />
               </div>
 
-              {/* Compact Quick Workflow & Tips Strip (balances sticky left column on desktop) */}
+              {/* Compact Quick Workflow & Tips Strip (balances left column on desktop) */}
               <div
                 className={`hidden lg:flex flex-col gap-2 m3-panel rounded-2xl px-3 py-2.5 ${
                   workspacePhase === "morphing-in" ? "m3-morph-panel" : ""
