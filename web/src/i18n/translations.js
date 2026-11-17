@@ -63,6 +63,12 @@ export const TRANSLATIONS = {
       presetImported: "PRESET IMPORTED",
       directConversionReady: "DIRECT PRESET CONVERSION READY",
     },
+    ffxImport: {
+      unsupportedWithEffects:
+        "No supported color grading effects found in {fileName}. Effects found: {effects}.",
+      unsupportedEmpty:
+        "No supported color grading effects found in {fileName}.",
+    },
     toasts: {
       backedUpSlotB: "Previous grade backed up to Slot B",
       autoNormOn: "Auto-Normalize Target: ON",
@@ -667,6 +673,12 @@ export const TRANSLATIONS = {
       matchingCurrentFrame: "MATCH FRAME INI...",
       presetImported: "PRESET DIIMPOR",
       directConversionReady: "KONVERSI PRESET SIAP",
+    },
+    ffxImport: {
+      unsupportedWithEffects:
+        "Tidak ada efek color grading yang didukung di {fileName}. Efek ditemukan: {effects}.",
+      unsupportedEmpty:
+        "Tidak ada efek color grading yang didukung di {fileName}.",
     },
     toasts: {
       backedUpSlotB: "Grade sebelumnya dicadangkan ke Slot B",
