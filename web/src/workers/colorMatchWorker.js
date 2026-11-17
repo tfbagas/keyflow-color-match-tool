@@ -8,6 +8,12 @@ import {
   gradeRGB,
   sanitizeParams,
 } from "../utils/gradeEngine.js";
+import {
+  compressOklabChroma,
+  autoNormalizeTargetPixels,
+  applyTargetAutoNormalizeOffsets,
+} from "../utils/colorMatcher.js";
+import { applyLogProfileToRgba, isLogProfileActive } from "../utils/logProfiles.js";
 
 const LATTICE_SIZE = 17;
 const LATTICE_COUNT = LATTICE_SIZE * LATTICE_SIZE * LATTICE_SIZE; // 4913
@@ -490,8 +496,12 @@ function buildResidualLatticeTargets(G_sliders, refSamples, tgtSamples) {
     const highlightLumaMask = 1.0 - 0.75 * smoothstep(0.80, 0.98, L0);
     const dL = clamp(Lot - L0, -0.065, 0.065) * 0.40 * shadowToeMask * highlightLumaMask;
     const finalL = clamp(L0 + dL, 0.0, 1.0);
-    const finalA = finalChroma * Math.cos(finalHue);
-    const finalB = finalChroma * Math.sin(finalHue);
+    const rawA = finalChroma * Math.cos(finalHue);
+    const rawB = finalChroma * Math.sin(finalHue);
+    const abComp = [0, 0];
+    compressOklabChroma(rawA, rawB, abComp);
+    const finalA = abComp[0];
+    const finalB = abComp[1];
 
     oklabToRgb(finalL, finalA, finalB, tmpRgb);
     // Anchor deep shadows strictly to baseR/G/B so P(0,0,0) = (0,0,0).
@@ -757,15 +767,39 @@ function fitResidualHue6(lattice, polyR, polyG, polyB) {
 }
 
 function analyzeEngineV3(refView, tgtView, options = {}) {
-  const { numPixels = 0, targetNumPixels = 0, onStage } = options;
+  const {
+    numPixels = 0,
+    targetNumPixels = 0,
+    autoNormalizeTarget = false,
+    inputProfile = "rec709",
+    onStage,
+  } = options;
   if (typeof onStage === "function") {
     onStage("Sampling illuminant-weighted OKLab distribution...");
   }
 
+  let effectiveTgtView = tgtView;
+  let effectiveTgtN = targetNumPixels;
+  let normStats = null;
+  if (effectiveTgtView && effectiveTgtN > 0) {
+    if (isLogProfileActive(inputProfile)) {
+      effectiveTgtView = applyLogProfileToRgba(effectiveTgtView, effectiveTgtN, inputProfile);
+    }
+    if (autoNormalizeTarget) {
+      if (typeof onStage === "function") {
+        onStage("Auto-normalizing target exposure & white balance...");
+      }
+      const norm = autoNormalizeTargetPixels(effectiveTgtView, effectiveTgtN);
+      effectiveTgtView = norm.data;
+      effectiveTgtN = norm.numPixels;
+      normStats = norm.normStats;
+    }
+  }
+
   const refSamples = extractSamples(refView, numPixels, 2048);
   const tgtSamples =
-    tgtView && targetNumPixels > 0
-      ? extractSamples(tgtView, targetNumPixels, 2048)
+    effectiveTgtView && effectiveTgtN > 0
+      ? extractSamples(effectiveTgtView, effectiveTgtN, 2048)
       : null;
 
   const refStats = computeStats(refSamples);
@@ -794,8 +828,12 @@ function analyzeEngineV3(refView, tgtView, options = {}) {
   const { polyR, polyG, polyB } = fitZeroInterceptPoly3(lattice);
   const { hueShift, hueSat, hueLuma } = fitResidualHue6(lattice, polyR, polyG, polyB);
 
+  const combined = normStats
+    ? applyTargetAutoNormalizeOffsets(sliderParams, normStats)
+    : sliderParams;
+
   return sanitizeParams({
-    ...sliderParams,
+    ...combined,
     autoGradeMix: 1.0,
     polyR,
     polyG,
@@ -819,6 +857,8 @@ self.onmessage = function (e) {
     targetRgbaData,
     targetNumPixels,
     mediaType,
+    autoNormalizeTarget,
+    inputProfile,
     lutText,
   } = data;
 
@@ -846,6 +886,8 @@ self.onmessage = function (e) {
         numPixels,
         targetNumPixels: targetNumPixels || 0,
         mediaType: mediaType || "image",
+        autoNormalizeTarget: Boolean(autoNormalizeTarget),
+        inputProfile: inputProfile || "rec709",
         onStage: (stageText) => {
           self.postMessage({ type: "stage", jobId, stage: stageText });
         },

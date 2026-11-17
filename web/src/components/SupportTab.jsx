@@ -7,6 +7,7 @@ import {
   Code2,
 } from "lucide-react";
 import { TfbagasWordmark } from "./KeyflowLogo";
+import { useLanguage } from "../i18n/LanguageContext";
 
 function YouTubeIcon({ className }) {
   return (
@@ -44,6 +45,8 @@ function InstagramIcon({ className }) {
 }
 
 export default function SupportTab() {
+  const { t } = useLanguage();
+
   const socialLinks = [
     {
       label: "YouTube",
@@ -58,7 +61,7 @@ export default function SupportTab() {
       icon: InstagramIcon,
     },
     {
-      label: "Portfolio & Presets",
+      label: t("support.portfolioLabel"),
       handle: "tfbagas.carrd.co",
       url: "https://tfbagas.carrd.co",
       icon: Globe,
@@ -70,7 +73,7 @@ export default function SupportTab() {
       {/* 1. Developer Profile Card (TFBAGAS) */}
       <div className="m3-panel rounded-2xl p-5 sm:p-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-5">
-          {/* Custom Geometric Wordmark (tfbagas•) */}
+          {/* Custom Geometric Wordmark */}
           <TfbagasWordmark />
 
           <div className="space-y-1">
@@ -83,10 +86,10 @@ export default function SupportTab() {
               </span>
             </div>
             <p className="text-xs sm:text-sm text-[#9CA3AF] leading-relaxed">
-              Editor &amp; Tool Developer — After Effects &amp; Keyflow{" "}
+              {t("support.roleText")}{" "}
               <span className="text-white/25">|</span>{" "}
               <span className="text-[#E2E4E9] font-medium">
-                Different vision, distinctive creation.
+                {t("support.mottoText")}
               </span>
             </p>
           </div>
@@ -97,8 +100,8 @@ export default function SupportTab() {
           {socialLinks.map((item) => {
             const Icon = item.icon;
             return (
-                <a
-                key={item.label}
+              <a
+                key={item.url}
                 href={item.url}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -130,24 +133,22 @@ export default function SupportTab() {
           </div>
           <div>
             <h3 className="text-base sm:text-lg font-bold font-display text-[#E2E4E9]">
-              Support Development
+              {t("support.supportHeading")}
             </h3>
             <p className="text-[11px] font-mono text-[#9CA3AF]">
-              100% Free &amp; Open Client-Side Web Tool
+              {t("support.supportSub")}
             </p>
           </div>
         </div>
 
         <p className="text-xs sm:text-sm text-[#9CA3AF] leading-relaxed mb-5">
-          This tool is 100% free with no ads or paywalls. If it helps your
-          editing workflow or saves you time, consider supporting future updates
-          and new tools!
+          {t("support.supportDesc")}
         </p>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-white/[0.08]">
           <div className="flex items-center gap-2 text-xs text-[#9CA3AF]">
             <Sparkles className="w-4 h-4 text-[#9CA3AF] shrink-0" />
-            <span>Every contribution fuels new presets &amp; Keyflow tools</span>
+            <span>{t("support.supportNote")}</span>
           </div>
 
           <a
@@ -156,7 +157,7 @@ export default function SupportTab() {
             rel="noopener noreferrer"
             className="m3-btn-primary-morph inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-xs bg-[#6EE7B7] hover:bg-[#86EFAC] text-[#042F1E] shrink-0"
           >
-            <span>Support on SociaBuzz</span>
+            <span>{t("support.supportBtn")}</span>
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
         </div>
@@ -165,7 +166,7 @@ export default function SupportTab() {
       {/* Footer Note */}
       <div className="flex items-center justify-center gap-2 text-xs text-[#9CA3AF]/60 py-1">
         <Code2 className="w-3.5 h-3.5" />
-        <span>Crafted by TFBAGAS for the Keyflow community</span>
+        <span>{t("support.footerNote")}</span>
       </div>
     </div>
   );

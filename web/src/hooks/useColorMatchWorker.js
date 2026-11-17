@@ -49,7 +49,9 @@ export function useColorMatchWorker({
 
       // Re-sample small (<= 320px) buffers on-demand instead of retaining large pixel buffers in RAM.
       const refSource = referenceRef.current?.imgElement;
-      const recRef = refSource ? captureRgba(refSource, FALLBACK_MAX_DIM) : null;
+      const recRef =
+        referenceRef.current?.sampledPixels ||
+        (refSource ? captureRgba(refSource, FALLBACK_MAX_DIM) : null);
 
       let recTgt = null;
       const tgtInfo = targetRef.current;
@@ -69,6 +71,8 @@ export function useColorMatchWorker({
               numPixels: recRef.numPixels,
               targetNumPixels: recTgt ? recTgt.numPixels : 0,
               mediaType: pending?.mediaType || "image",
+              autoNormalizeTarget: Boolean(pending?.autoNormalizeTarget),
+              inputProfile: pending?.inputProfile || "rec709",
             }
           );
           setIsAnalyzing(false);
@@ -210,6 +214,8 @@ export function useColorMatchWorker({
       tgt,
       mediaType = "image",
       engineId = DEFAULT_ENGINE_ID,
+      autoNormalizeTarget = false,
+      inputProfile = "rec709",
       preserveBuffers = true,
     }) => {
       if (!ref || !ref.data || !ref.numPixels) return;
@@ -218,6 +224,8 @@ export function useColorMatchWorker({
         jobId,
         mediaType,
         engineId,
+        autoNormalizeTarget: Boolean(autoNormalizeTarget),
+        inputProfile: inputProfile || "rec709",
       };
 
       clearAnalysisTimeout();
@@ -253,6 +261,8 @@ export function useColorMatchWorker({
             tgtBuffer,
             targetNumPixels: tgt ? tgt.numPixels : 0,
             mediaType,
+            autoNormalizeTarget: Boolean(autoNormalizeTarget),
+            inputProfile: inputProfile || "rec709",
           },
           transferables
         );

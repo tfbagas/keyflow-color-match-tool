@@ -6,6 +6,11 @@ import {
 import { sanitizeParams } from "./gradeEngine.js";
 import { KFPLUG_BASE_PARAMS, DEFAULT_PARAMS } from "./paramSchema.js";
 import { checkAllowedHost, sanitizeMetadataText } from "./hostGuard.js";
+import {
+  GLSL_LOG_PROFILE_FUNCTIONS,
+  getLogProfileCode,
+  resolveLogProfileId,
+} from "./logProfiles.js";
 
 export { checkAllowedHost, sanitizeMetadataText };
 
@@ -70,9 +75,11 @@ function fmtVec2(arr, offset = 0) {
 }
 
 // Builds pass0.frag for .kfplug with pure GLSL ES 1.00 and packed vec4 hybrid
-// constants + uAutoGradeMix uniform so Keyflow Mobile renders 1:1 with preview.
-export function buildKfplugFragmentShader(safeParams) {
+// constants + uAutoGradeMix uniform + optional Camera Log input transform
+// so Keyflow Mobile renders 1:1 with preview.
+export function buildKfplugFragmentShader(safeParams, inputProfile = "rec709") {
   const p = sanitizeParams(safeParams);
+  const logCode = getLogProfileCode(inputProfile || safeParams?.inputProfile);
   const polyBlock = [0, 1, 2, 3, 4]
     .map(
       (i) =>
@@ -115,14 +122,21 @@ const vec4 uHueSatA = ${fmtVec4(p.hueSat, 0)};
 const vec2 uHueSatB = ${fmtVec2(p.hueSat, 4)};
 const vec4 uHueLumaA = ${fmtVec4(p.hueLuma, 0)};
 const vec2 uHueLumaB = ${fmtVec2(p.hueLuma, 4)};
+const float uBakedLogProfile = ${fmtFloat(logCode)};
 `;
+
+  const logBlock = logCode > 0 ? `\n${GLSL_LOG_PROFILE_FUNCTIONS}\n` : "";
+  const inputTransformLine =
+    logCode > 0
+      ? "    vec3 origRgb = kfApplyLogProfile(rawRgb, uBakedLogProfile);"
+      : "    vec3 origRgb = rawRgb;";
 
   return `${PRECISION_HEADER}
 uniform sampler2D uTexture;
 varying vec2 vTex;
 
 ${kfplugUniforms}
-${GRADE_FUNCTION}
+${GRADE_FUNCTION}${logBlock}
 void main() {
     vec4 c = texture2D(uTexture, vTex);
     float a = clamp(c.a, 0.0, 1.0);
@@ -133,9 +147,11 @@ void main() {
 
 ${polyBlock}
 
-    vec3 origRgb = clamp(c.rgb / max(a, 1e-5), 0.0, 1.0);
+    vec3 rawRgb = clamp(c.rgb / max(a, 1e-5), 0.0, 1.0);
+${inputTransformLine}
     float srcLuma = dot(origRgb, vec3(0.2126, 0.7152, 0.0722));
-    float blackProtect = smoothstep(0.0, 0.06, srcLuma);
+    float shadowMask = smoothstep(0.015, 0.16, srcLuma);
+    float blackProtect = smoothstep(0.0, 0.06, srcLuma) * (0.15 + 0.85 * shadowMask);
     vec3 graded = mix(origRgb, kfGrade(origRgb), blackProtect);
     gl_FragColor = vec4(graded * a, a);
 }
@@ -151,11 +167,18 @@ function toScalarValues(sanitized) {
   return out;
 }
 
-export async function generateKfplug(params, presetName, author, description) {
+export async function generateKfplug(
+  params,
+  presetName,
+  author,
+  description,
+  inputProfile = "rec709"
+) {
   if (!checkAllowedHost()) {
     throw new Error("Export is restricted to the official domain.");
   }
 
+  const resolvedProfile = resolveLogProfileId(inputProfile || params?.inputProfile);
   const cleanName = sanitizeMetadataText(presetName, "Custom Grade", 64);
   const cleanAuthor = sanitizeMetadataText(author, "TFBAGAS", 64);
   const defaultDesc = `Grading preset matched from reference '${cleanName}'.`;
@@ -172,7 +195,7 @@ export async function generateKfplug(params, presetName, author, description) {
   // Strict sanitation: finite, no -0, clamped to Keyflow slider ranges.
   const fullSafe = sanitizeParams(params);
   const safeValues = toScalarValues(fullSafe);
-  const shaderPass0 = buildKfplugFragmentShader(fullSafe);
+  const shaderPass0 = buildKfplugFragmentShader(fullSafe, resolvedProfile);
 
   const safePresets = PRESETS.map((pr) => {
     const sanPr = sanitizeParams({ ...pr.values });
@@ -212,6 +235,7 @@ export async function generateKfplug(params, presetName, author, description) {
       hueShift: fullSafe.hueShift,
       hueSat: fullSafe.hueSat,
       hueLuma: fullSafe.hueLuma,
+      inputProfile: resolvedProfile,
     },
   };
 

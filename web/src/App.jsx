@@ -28,12 +28,19 @@ import {
   Undo2,
   Redo2,
   Copy,
+  Bookmark,
+  Share2,
+  Search,
+  X,
+  Globe,
 } from "lucide-react";
 
+import { useLanguage } from "./i18n/LanguageContext";
+import { translateStatusText } from "./i18n/translations";
 import ImageDropCard, { ALLOWED_IMAGE_MIMES } from "./components/ImageDropCard";
 import ComparisonSlider from "./components/ComparisonSlider";
-import ParameterControl from "./components/ParameterControl";
-import ColorSwatchCard from "./components/ColorSwatchCard";
+import ParameterSlider from "./components/ParameterSlider";
+import ColorWheel from "./components/ColorWheel";
 import ExportCard from "./components/ExportCard";
 import SupportTab from "./components/SupportTab";
 import SupportToast from "./components/SupportToast";
@@ -44,22 +51,39 @@ import ChangelogModal, {
   ReleaseHistoryAccordion,
 } from "./components/ChangelogModal";
 import M3Select from "./components/M3Select";
-import SplashIntro from "./components/SplashIntro";
+import IntroScreen from "./components/IntroScreen";
+import CommandPalette from "./components/CommandPalette";
 import { usePillIndicator } from "./hooks/usePillIndicator";
 import {
   DEFAULT_PARAMS,
   simulateGradePixels,
 } from "./utils/colorGrading";
-import { DEFAULT_ENGINE_ID, getEngine, listEngines } from "./utils/engineRegistry";
+import {
+  DEFAULT_ENGINE_ID,
+  getEngine,
+  getEngineCodename,
+  listEngines,
+} from "./utils/engineRegistry";
 import { scaleParamsByStrength } from "./utils/gradeEngine";
 import {
   generateKfplug,
   downloadBlob,
 } from "./utils/kfplugPackager";
+import { exportToFfx, parseFfxPreset } from "./utils/ffxEngine";
 import { sanitizeMetadataText } from "./utils/hostGuard";
 import { SLIDER_PARAM_SPECS, applyCalibrationToParams } from "./utils/paramSchema";
 import { generateLutFile } from "./utils/lutExporter";
-import { exportGradedImage } from "./utils/imageExporter";
+import {
+  exportGradedImage,
+  exportPromoCardBlob,
+  extractPaletteSwatches,
+} from "./utils/imageExporter";
+import { exportGradedVideo } from "./utils/videoExporter";
+import { buildZipBlob } from "./utils/zipBuilder";
+import { decodeGradeFromHash } from "./utils/shareCodec";
+import LooksDrawer from "./components/LooksDrawer";
+import ShareModal from "./components/ShareModal";
+import ReleaseMediaKitModal from "./components/ReleaseMediaKitModal";
 import { importKfplugFile } from "./utils/presetImporter";
 import { SAMPLE_LOOKS, renderLookSample, drawNeutralScene } from "./utils/sampleLooks";
 import VideoTransportBar from "./components/VideoTransportBar";
@@ -69,6 +93,11 @@ import {
   sampleVideoMultiTimestamp,
 } from "./hooks/useMediaLoader";
 import { useColorMatchWorker } from "./hooks/useColorMatchWorker";
+import {
+  DEFAULT_LOG_PROFILE,
+  resolveLogProfileId,
+  getLogProfile,
+} from "./utils/logProfiles";
 
 const SLIDER_ICON_MAP = {
   exposure: Sun,
@@ -96,6 +125,7 @@ const CALIBRATION_STORAGE_KEY = "kf_export_calibration_v1";
 const AUTHOR_STORAGE_KEY = "kf_author_name_v1";
 const SEEN_UPDATE_STORAGE_KEY = "kf_seen_update_v090";
 const SPLASH_SESSION_KEY = "kf_splash_seen_v090";
+const SESSION_RECOVERY_KEY = "kf_last_session_v1";
 const MAX_HISTORY = 25;
 const TONE_KEYS = new Set(["exposure", "contrast", "pivot", "shadows", "highlights"]);
 const COLOR_KEYS = new Set(["temp", "tint", "sat", "vib"]);
@@ -109,8 +139,9 @@ const DEFAULT_CALIBRATION = {
 
 function withEngineSuffix(base, engineId) {
   const clean = String(base || "").trim() || "Custom Look";
-  const suffix = engineId ? `_${engineId}` : "";
-  if (!suffix || /_v[123]$/i.test(clean)) return clean;
+  const codename = getEngineCodename(engineId);
+  const suffix = codename ? `_${codename}` : "";
+  if (!suffix || /_(altair|vega|polaris|v[123])$/i.test(clean)) return clean;
   return `${clean}${suffix}`;
 }
 
@@ -131,10 +162,32 @@ function toRgbCss(r = 0.5, g = 0.5, b = 0.5) {
   return `rgb(${cb(r)}, ${cb(g)}, ${cb(b)})`;
 }
 
+function hexToRgbaCss(hex, alpha = 0.04) {
+  if (!hex || typeof hex !== "string") return `rgba(255, 255, 255, ${alpha})`;
+  const clean = hex.replace("#", "").trim();
+  if (clean.length !== 6) return `rgba(255, 255, 255, ${alpha})`;
+  const rawR = parseInt(clean.slice(0, 2), 16) || 180;
+  const rawG = parseInt(clean.slice(2, 4), 16) || 190;
+  const rawB = parseInt(clean.slice(4, 6), 16) || 210;
+  // Desaturate 70% toward neutral luminance so workstation light-field never biases color perception
+  const luma = 0.2126 * rawR + 0.7152 * rawG + 0.0722 * rawB;
+  const r = Math.round(luma * 0.7 + rawR * 0.3);
+  const g = Math.round(luma * 0.7 + rawG * 0.3);
+  const b = Math.round(luma * 0.7 + rawB * 0.3);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 export default function App() {
+  const { lang, setLang, t, dict } = useLanguage();
   const [activeTab, setActiveTab] = useState("home");
   const [showSplash, setShowSplash] = useState(() => {
     try {
+      if (
+        typeof window !== "undefined" &&
+        new URLSearchParams(window.location.search).get("mediakit") === "1"
+      ) {
+        return false;
+      }
       return sessionStorage.getItem(SPLASH_SESSION_KEY) !== "true";
     } catch {
       return true;
@@ -142,6 +195,12 @@ export default function App() {
   });
   const [workspacePhase, setWorkspacePhase] = useState(() => {
     try {
+      if (
+        typeof window !== "undefined" &&
+        new URLSearchParams(window.location.search).get("mediakit") === "1"
+      ) {
+        return "settled";
+      }
       return sessionStorage.getItem(SPLASH_SESSION_KEY) !== "true"
         ? "hidden"
         : "settled";
@@ -230,8 +289,29 @@ export default function App() {
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
   const [isPreviewPinned, setIsPreviewPinned] = useState(true);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [isLooksOpen, setIsLooksOpen] = useState(false);
+  const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isReleaseKitOpen, setIsReleaseKitOpen] = useState(() => {
+    try {
+      return (
+        typeof window !== "undefined" &&
+        new URLSearchParams(window.location.search).get("mediakit") === "1"
+      );
+    } catch {
+      return false;
+    }
+  });
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isSavingFrame, setIsSavingFrame] = useState(false);
-  const [simulateLogInput, setSimulateLogInput] = useState(false);
+  const [isExportingVideo, setIsExportingVideo] = useState(false);
+  const [videoExportProgress, setVideoExportProgress] = useState(0);
+  const videoExportAbortRef = useRef(null);
+  const [restorableSession, setRestorableSession] = useState(null);
+  const hasHydratedRef = useRef(false);
+  const [simulateLogInput, setSimulateLogInput] = useState(DEFAULT_LOG_PROFILE);
+  const [autoNormalizeTarget, setAutoNormalizeTarget] = useState(false);
+  const autoNormalizeTargetRef = useRef(false);
+  autoNormalizeTargetRef.current = autoNormalizeTarget;
   const [isScopesCollapsed, setIsScopesCollapsed] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth < 1024 : false
   );
@@ -259,10 +339,67 @@ export default function App() {
   const commitTimerRef = useRef(0);
   const lastCommitAtRef = useRef(0);
 
+  const [previewMode, setPreviewMode] = useState("split");
+  const [presetName, setPresetName] = useState("");
+  const [authorName, setAuthorName] = useState(() => {
+    try {
+      return localStorage.getItem(AUTHOR_STORAGE_KEY) || "TFBAGAS";
+    } catch {
+      return "TFBAGAS";
+    }
+  });
+  const [description, setDescription] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportToast, setExportToast] = useState({ visible: false, filename: "" });
+  const [analysisMaxDim, setAnalysisMaxDim] = useState(1280);
+  const [previewMaxDim, setPreviewMaxDim] = useState(960);
+
+  const [calibration, setCalibration] = useState(() => {
+    try {
+      const saved = localStorage.getItem(CALIBRATION_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          toneScale: Number(parsed.toneScale) || 1.0,
+          wbScale: Number(parsed.wbScale) || 1.0,
+          chromaScale: Number(parsed.chromaScale) || 1.0,
+        };
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return { ...DEFAULT_CALIBRATION };
+  });
+
+  const [calibrationStatus, setCalibrationStatus] = useState({
+    running: false,
+    message: "Calibrated - Canvas & Worker OK",
+    deltaE: "0.00",
+    latencyMs: 2,
+  });
+  const [calibrationTick, setCalibrationTick] = useState(0);
+
+  const isCalibrationActive =
+    Math.abs(calibration.toneScale - 1.0) > 0.004 ||
+    Math.abs(calibration.wbScale - 1.0) > 0.004 ||
+    Math.abs(calibration.chromaScale - 1.0) > 0.004;
+
+  const gradedCanvasRef = useRef(null);
+  const previewSourceImageDataRef = useRef(null);
+  const lastRenderedImgRef = useRef(null);
+  const rafRef = useRef(null);
+  const simulateLogInputRef = useRef(simulateLogInput);
+  simulateLogInputRef.current = simulateLogInput;
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+
   const effectiveParams = useMemo(
     () => scaleParamsByStrength(gradingParams, matchStrength),
     [gradingParams, matchStrength]
   );
+
+  const gradingParamsRef = useRef(effectiveParams);
+  gradingParamsRef.current = effectiveParams;
 
   const isNeutralGrade = useMemo(() => {
     for (const k of Object.keys(DEFAULT_PARAMS)) {
@@ -272,6 +409,69 @@ export default function App() {
     }
     return Math.abs(effectiveParams.autoGradeMix ?? 0) <= 0.004;
   }, [effectiveParams]);
+
+  // Hydrate #g=... share hash on load, or offer Restore Last Session if non-default.
+  useEffect(() => {
+    if (hasHydratedRef.current) return;
+    hasHydratedRef.current = true;
+
+    const decoded =
+      typeof window !== "undefined" ? decodeGradeFromHash(window.location.hash) : null;
+    if (decoded) {
+      setActiveEngineId(decoded.engineId);
+      setSimulateLogInput(decoded.logProfile);
+      setMatchStrength(decoded.matchStrength);
+      setGradingParams(decoded.params);
+      setImportedLook({ name: "Shared Grade", source: "share-link" });
+      setStatusText("Loaded Share");
+      return;
+    }
+
+    try {
+      const raw = sessionStorage.getItem(SESSION_RECOVERY_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.params && typeof parsed.params === "object") {
+          setRestorableSession(parsed);
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  // Silent session auto-recovery persistence on parameter/engine/log changes.
+  useEffect(() => {
+    if (!hasHydratedRef.current) return;
+    const isDefault =
+      isNeutralGrade &&
+      activeEngineId === DEFAULT_ENGINE_ID &&
+      simulateLogInput === DEFAULT_LOG_PROFILE &&
+      matchStrength === 100 &&
+      !presetName;
+    if (isDefault) return;
+    try {
+      sessionStorage.setItem(
+        SESSION_RECOVERY_KEY,
+        JSON.stringify({
+          params: gradingParams,
+          engineId: activeEngineId,
+          logProfile: simulateLogInput,
+          matchStrength,
+          presetName,
+        })
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [
+    isNeutralGrade,
+    gradingParams,
+    activeEngineId,
+    simulateLogInput,
+    matchStrength,
+    presetName,
+  ]);
 
   // Keep live refs aligned whenever state commits from non-drag actions (analysis, presets, slots, reset).
   useEffect(() => {
@@ -331,16 +531,6 @@ export default function App() {
     };
   }, [isEngineCompareOpen]);
 
-  const [previewMode, setPreviewMode] = useState("split");
-
-  const [presetName, setPresetName] = useState("");
-  const [authorName, setAuthorName] = useState(() => {
-    try {
-      return localStorage.getItem(AUTHOR_STORAGE_KEY) || "TFBAGAS";
-    } catch {
-      return "TFBAGAS";
-    }
-  });
   useEffect(() => {
     try {
       localStorage.setItem(AUTHOR_STORAGE_KEY, authorName);
@@ -348,37 +538,6 @@ export default function App() {
       // ignore storage errors
     }
   }, [authorName]);
-  const [description, setDescription] = useState("");
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportToast, setExportToast] = useState({ visible: false, filename: "" });
-
-  const [analysisMaxDim, setAnalysisMaxDim] = useState(1280);
-  const [previewMaxDim, setPreviewMaxDim] = useState(960);
-
-  const [calibration, setCalibration] = useState(() => {
-    try {
-      const saved = localStorage.getItem(CALIBRATION_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return {
-          toneScale: Number(parsed.toneScale) || 1.0,
-          wbScale: Number(parsed.wbScale) || 1.0,
-          chromaScale: Number(parsed.chromaScale) || 1.0,
-        };
-      }
-    } catch {
-      // ignore storage errors
-    }
-    return { ...DEFAULT_CALIBRATION };
-  });
-
-  const [calibrationStatus, setCalibrationStatus] = useState({
-    running: false,
-    message: "Calibrated • Canvas & Worker OK",
-    deltaE: "0.00",
-    latencyMs: 2,
-  });
-  const [calibrationTick, setCalibrationTick] = useState(0);
 
   useEffect(() => {
     try {
@@ -387,16 +546,6 @@ export default function App() {
       // ignore storage errors
     }
   }, [calibration]);
-
-  const isCalibrationActive =
-    Math.abs(calibration.toneScale - 1.0) > 0.004 ||
-    Math.abs(calibration.wbScale - 1.0) > 0.004 ||
-    Math.abs(calibration.chromaScale - 1.0) > 0.004;
-
-  const gradedCanvasRef = useRef(null);
-  const previewSourceImageDataRef = useRef(null);
-  const lastRenderedImgRef = useRef(null);
-  const rafRef = useRef(null);
 
   // Draws an image or a video frame into RGBA pixels (downscaled to maxDim).
   const captureRgba = useCallback((source, maxDim) => {
@@ -488,14 +637,27 @@ export default function App() {
 
   // Triggers background worker analysis (reference vs. current target image / multi-timestamp video)
   const triggerReferenceAnalysis = useCallback(
-    async (img, overrideEngineId = null) => {
-      if (!img) return;
+    async (
+      img,
+      overrideEngineId = null,
+      overrideAutoNorm = null,
+      overrideInputProfile = null
+    ) => {
+      if (!img && !referenceRef.current?.sampledPixels) return;
       const engineToUse = overrideEngineId || activeEngineIdRef.current || DEFAULT_ENGINE_ID;
+      const autoNormToUse =
+        overrideAutoNorm !== null ? overrideAutoNorm : autoNormalizeTargetRef.current;
+      const profileToUse =
+        overrideInputProfile !== null
+          ? overrideInputProfile
+          : simulateLogInputRef.current || DEFAULT_LOG_PROFILE;
       const jobId = beginAnalysisJob();
       setIsAnalyzing(true);
       setStatusText("Analyzing...");
 
-      const ref = captureRgba(img, analysisMaxDim);
+      const ref =
+        referenceRef.current?.sampledPixels ||
+        (img ? captureRgba(img, analysisMaxDim) : null);
       if (!ref) {
         setIsAnalyzing(false);
         return;
@@ -535,6 +697,8 @@ export default function App() {
         tgt,
         mediaType,
         engineId: engineToUse,
+        autoNormalizeTarget: autoNormToUse,
+        inputProfile: profileToUse,
         preserveBuffers: true,
       });
     },
@@ -556,39 +720,109 @@ export default function App() {
             isFilled: true,
           },
         }));
-        showMobileToast("Previous grade backed up to Slot B");
+        showMobileToast(t("toasts.backedUpSlotB"));
       }
 
       activeEngineIdRef.current = nextEngineId;
       setActiveEngineId(nextEngineId);
+      const nextEngineMeta = getEngine(nextEngineId);
 
       const cached = cachedAnalysisBuffersRef.current;
       if (cached?.ref?.data && cached.ref.numPixels > 0 && referenceRef.current) {
         const jobId = beginAnalysisJob();
         setIsAnalyzing(true);
-        setStatusText(`Switching to Engine ${nextEngineId.toUpperCase()}...`);
+        setStatusText(`Switching to ${nextEngineMeta.name} (${nextEngineMeta.versionBadge})...`);
         dispatchAnalysis({
           jobId,
           ref: cached.ref,
           tgt: cached.tgt,
           mediaType: cached.mediaType || "image",
           engineId: nextEngineId,
+          autoNormalizeTarget: autoNormalizeTargetRef.current,
+          inputProfile: simulateLogInputRef.current || DEFAULT_LOG_PROFILE,
           preserveBuffers: true,
         });
       } else if (referenceRef.current?.imgElement) {
         triggerReferenceAnalysis(referenceRef.current.imgElement, nextEngineId);
+      } else {
+        setStatusText(`Engine: ${nextEngineMeta.name}`);
+        showMobileToast(`Engine: ${nextEngineMeta.name} (${nextEngineMeta.versionBadge})`);
       }
     },
-    [beginAnalysisJob, dispatchAnalysis, isNeutralGrade, showMobileToast, triggerReferenceAnalysis]
+    [beginAnalysisJob, dispatchAnalysis, isNeutralGrade, showMobileToast, t, triggerReferenceAnalysis]
+  );
+
+  const handleToggleAutoNormalizeTarget = useCallback(
+    (nextChecked) => {
+      const enabled = Boolean(nextChecked);
+      autoNormalizeTargetRef.current = enabled;
+      setAutoNormalizeTarget(enabled);
+
+      const cached = cachedAnalysisBuffersRef.current;
+      if (cached?.ref?.data && cached.ref.numPixels > 0 && referenceRef.current) {
+        const jobId = beginAnalysisJob();
+        setIsAnalyzing(true);
+        setStatusText(enabled ? "Auto-Normalizing Target & Matching..." : "Re-matching...");
+        dispatchAnalysis({
+          jobId,
+          ref: cached.ref,
+          tgt: cached.tgt,
+          mediaType: cached.mediaType || "image",
+          engineId: activeEngineIdRef.current || DEFAULT_ENGINE_ID,
+          autoNormalizeTarget: enabled,
+          inputProfile: simulateLogInputRef.current || DEFAULT_LOG_PROFILE,
+          preserveBuffers: true,
+        });
+      } else if (referenceRef.current?.imgElement) {
+        triggerReferenceAnalysis(
+          referenceRef.current.imgElement,
+          activeEngineIdRef.current,
+          enabled,
+          simulateLogInputRef.current
+        );
+      } else {
+        showMobileToast(enabled ? t("toasts.autoNormOn") : t("toasts.autoNormOff"));
+      }
+    },
+    [beginAnalysisJob, dispatchAnalysis, showMobileToast, t, triggerReferenceAnalysis]
+  );
+
+  const handleTargetInputProfileChange = useCallback(
+    (nextProfileOrBool) => {
+      const nextId = resolveLogProfileId(nextProfileOrBool);
+      simulateLogInputRef.current = nextId;
+      setSimulateLogInput(nextId);
+      const prof = getLogProfile(nextId);
+
+      const cached = cachedAnalysisBuffersRef.current;
+      if (cached?.ref?.data && cached.ref.numPixels > 0 && referenceRef.current && targetRef.current) {
+        const jobId = beginAnalysisJob();
+        setIsAnalyzing(true);
+        setStatusText(`Matching with ${prof.shortLabel} input...`);
+        dispatchAnalysis({
+          jobId,
+          ref: cached.ref,
+          tgt: cached.tgt,
+          mediaType: cached.mediaType || "image",
+          engineId: activeEngineIdRef.current || DEFAULT_ENGINE_ID,
+          autoNormalizeTarget: autoNormalizeTargetRef.current,
+          inputProfile: nextId,
+          preserveBuffers: true,
+        });
+      } else {
+        showMobileToast(t("toasts.inputProfile", { label: prof.shortLabel }));
+      }
+    },
+    [beginAnalysisJob, dispatchAnalysis, showMobileToast, t]
   );
 
   // Match Reference directly against the current video frame (without 3-timestamp seeking).
   const handleMatchCurrentFrame = useCallback(() => {
     const refImg = referenceRef.current?.imgElement;
     const tgtInfo = targetRef.current;
-    if (!refImg || !tgtInfo || tgtInfo.kind !== "video" || !tgtInfo.videoEl) return;
+    if ((!refImg && !referenceRef.current?.sampledPixels) || !tgtInfo || tgtInfo.kind !== "video" || !tgtInfo.videoEl) return;
 
-    const refBuf = captureRgba(refImg, analysisMaxDim);
+    const refBuf = referenceRef.current?.sampledPixels || captureRgba(refImg, analysisMaxDim);
     const tgtBuf = captureRgba(tgtInfo.videoEl, Math.min(analysisMaxDim, 512));
     if (!refBuf) return;
 
@@ -606,6 +840,8 @@ export default function App() {
       tgt: tgtBuf,
       mediaType: "video",
       engineId: activeEngineIdRef.current || DEFAULT_ENGINE_ID,
+      autoNormalizeTarget: autoNormalizeTargetRef.current,
+      inputProfile: simulateLogInputRef.current || DEFAULT_LOG_PROFILE,
       preserveBuffers: true,
     });
   }, [analysisMaxDim, beginAnalysisJob, captureRgba, dispatchAnalysis]);
@@ -623,6 +859,8 @@ export default function App() {
         let result;
         if (meta.ext === "kfplug") {
           result = await importKfplugFile(file);
+        } else if (meta.ext === "ffx") {
+          result = await parseFfxPreset(file, file.name);
         } else {
           if (file.size > 40 * 1024 * 1024) {
             throw new Error("LUT file is too large (limit 40 MB).");
@@ -641,20 +879,32 @@ export default function App() {
         }
         setGradingParams({ ...result.params });
         setLastMatchedParams({ ...result.params });
-        setImportedLook({ kind: result.kind, name: result.name, rms: result.rms });
+        setImportedLook({
+          kind: result.kind,
+          name: result.name,
+          rms: result.rms,
+          statusSummary:
+            result.statusSummary ||
+            `Imported ${result.kind} preset from ${file.name}`,
+        });
         setPresetName(result.name.slice(0, 28));
         if (result.author) setAuthorName(result.author);
         setDescription(
           result.description || `Imported from ${meta.label}: ${result.name}.`
         );
-        setStatusText("Imported");
+        setStatusText(
+          targetRef.current ? "Preset Imported" : "Direct Preset Conversion Ready"
+        );
+        if (result.statusSummary) {
+          showMobileToast(result.statusSummary);
+        }
       } catch (err) {
         if (err && err.message === "Superseded by a newer LUT import.") return;
         setReferenceError((err && err.message) || "Failed to import this file.");
         setStatusText("Import Error");
       }
     },
-    [fitLutInWorker]
+    [fitLutInWorker, showMobileToast]
   );
 
   const handleReferenceLoaded = useCallback(
@@ -752,13 +1002,6 @@ export default function App() {
   const activePreviewImgElement = !videoEl
     ? targetImage?.imgElement || referenceImage?.imgElement || null
     : null;
-
-  const gradingParamsRef = useRef(effectiveParams);
-  gradingParamsRef.current = effectiveParams;
-  const simulateLogInputRef = useRef(simulateLogInput);
-  simulateLogInputRef.current = simulateLogInput;
-  const activeTabRef = useRef(activeTab);
-  activeTabRef.current = activeTab;
 
   const getScopeDims = useCallback((sw, sh) => {
     const isMobile = typeof window !== "undefined" && window.innerWidth < 1024;
@@ -1138,7 +1381,7 @@ export default function App() {
     setTimeout(() => {
       setCalibrationStatus({
         running: false,
-        message: "Calibrated • Canvas & Worker OK",
+        message: "Calibrated - Canvas & Worker OK",
         deltaE: avgDeltaE,
         latencyMs: elapsed,
       });
@@ -1186,10 +1429,10 @@ export default function App() {
   const handleResetParams = useCallback(() => {
     setGradingParams({ ...DEFAULT_PARAMS });
     setMatchStrength(100);
-    setSimulateLogInput(false);
+    setSimulateLogInput(DEFAULT_LOG_PROFILE);
     setStatusText("Reset");
-    showMobileToast("Parameters Reset");
-  }, [showMobileToast]);
+    showMobileToast(t("toasts.paramsReset"));
+  }, [showMobileToast, t]);
 
   const handleUndo = useCallback(() => {
     const h = historyRef.current;
@@ -1203,8 +1446,8 @@ export default function App() {
     setMatchStrength(prev.matchStrength);
     setHistoryState({ canUndo: h.past.length > 0, canRedo: h.future.length > 0 });
     setStatusText("Undo");
-    showMobileToast("Undo");
-  }, [showMobileToast]);
+    showMobileToast(t("toasts.undo"));
+  }, [showMobileToast, t]);
 
   const handleRedo = useCallback(() => {
     const h = historyRef.current;
@@ -1218,8 +1461,8 @@ export default function App() {
     setMatchStrength(next.matchStrength);
     setHistoryState({ canUndo: h.past.length > 0, canRedo: h.future.length > 0 });
     setStatusText("Redo");
-    showMobileToast("Redo");
-  }, [showMobileToast]);
+    showMobileToast(t("toasts.redo"));
+  }, [showMobileToast, t]);
 
   const handleWheelChange = useCallback(
     (prefix, [r, g, b]) => {
@@ -1311,10 +1554,19 @@ export default function App() {
       },
     }));
     setStatusText("Copied to B");
-    showMobileToast("Copied to Slot B");
-  }, [activeEngineId, gradingParams, matchStrength, showMobileToast]);
+    showMobileToast(t("toasts.copiedToSlotB"));
+  }, [activeEngineId, gradingParams, matchStrength, showMobileToast, t]);
 
-  const handleSaveImage = async ({ format = "png", quality = 95, layout = "graded", splitPos = 50 } = {}) => {
+  const handleSaveImage = async ({
+    format = "png",
+    quality = 95,
+    layout = "graded",
+    splitPos = 50,
+    promoAspect = "16:9",
+    includeQr = false,
+    qrMode = "grade",
+    qrUrl = "",
+  } = {}) => {
     if (isSavingFrame) return false;
     const isVideo = targetImage?.kind === "video" && videoEl;
     const activeImg = isVideo
@@ -1332,6 +1584,8 @@ export default function App() {
         targetImage?.baseName || referenceImage?.baseName || presetName || "Target",
         activeEngineId
       );
+      const presetTitle =
+        presetName || referenceImage?.baseName || importedLook?.name || "Custom Look";
       await exportGradedImage({
         source: isVideo ? videoEl : activeImg,
         width: w,
@@ -1343,9 +1597,15 @@ export default function App() {
         splitPos,
         simulateLogInput,
         baseName,
+        presetTitle,
+        engineId: activeEngineId,
+        promoAspect,
+        includeQr,
+        qrMode,
+        qrUrl,
       });
       setStatusText(`Saved ${format.toUpperCase()}`);
-      showMobileToast(`Saved ${format.toUpperCase()}`);
+      showMobileToast(t("toasts.savedFormat", { format: format.toUpperCase() }));
       return true;
     } catch {
       setStatusText("Export Error");
@@ -1355,8 +1615,91 @@ export default function App() {
     }
   };
 
+  const handleExportVideo = useCallback(
+    async ({
+      targetVideoSrc = "",
+      targetFile = null,
+      layout = "graded",
+      splitPosition = 50,
+      bitrateMbps = 16,
+      includeAudio = true,
+    } = {}) => {
+      if (isExportingVideo) return false;
+      const src =
+        targetVideoSrc ||
+        targetImage?.videoUrl ||
+        videoEl?.currentSrc ||
+        videoEl?.src ||
+        "";
+      const fileFallback = targetFile || targetImage?.file || null;
+
+      const controller = new AbortController();
+      videoExportAbortRef.current = controller;
+      setIsExportingVideo(true);
+      setVideoExportProgress(0);
+      setStatusText("Rendering Video...");
+
+      try {
+        const baseName =
+          presetName || targetImage?.baseName || referenceImage?.baseName || "Target";
+        const res = await exportGradedVideo({
+          videoSrc: src,
+          targetFile: fileFallback,
+          params: gradingParams,
+          engine: activeEngineId,
+          matchStrength,
+          logProfile: simulateLogInput,
+          layout,
+          splitPosition,
+          bitrateMbps,
+          includeAudio,
+          presetName: baseName,
+          onProgress: (pct) => setVideoExportProgress(pct),
+          abortSignal: controller.signal,
+        });
+        setStatusText("Exported Video!");
+        showMobileToast(t("toasts.savedFormat", { format: res.fileName }));
+        return true;
+      } catch (err) {
+        if (err?.name === "AbortError") {
+          setStatusText("Export Cancelled");
+          showMobileToast(t("toasts.videoExportCancelled"));
+          return false;
+        }
+        setStatusText("Video Export Error");
+        throw err;
+      } finally {
+        videoExportAbortRef.current = null;
+        setIsExportingVideo(false);
+        setVideoExportProgress(0);
+      }
+    },
+    [
+      isExportingVideo,
+      targetImage,
+      videoEl,
+      presetName,
+      referenceImage,
+      gradingParams,
+      activeEngineId,
+      matchStrength,
+      simulateLogInput,
+      showMobileToast,
+      t,
+    ]
+  );
+
+  const handleCancelVideoExport = useCallback(() => {
+    videoExportAbortRef.current?.abort();
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setIsCommandPaletteOpen((v) => !v);
+        return;
+      }
       const tag = document.activeElement?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
@@ -1372,10 +1715,12 @@ export default function App() {
       } else if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
         e.preventDefault();
         setIsShortcutsOpen((v) => !v);
-      } else if (e.key === "1") {
-        handleSwitchSlot("A");
-      } else if (e.key === "2") {
-        handleSwitchSlot("B");
+      } else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "1") {
+        handleEngineChange("v1");
+      } else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "2") {
+        handleEngineChange("v2");
+      } else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "3") {
+        handleEngineChange("v3");
       } else if (e.code === "Space" && videoEl) {
         e.preventDefault();
         if (videoEl.paused) {
@@ -1387,7 +1732,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleRedo, handleSwitchSlot, handleUndo, videoEl]);
+  }, [handleEngineChange, handleRedo, handleUndo, videoEl]);
 
   // Reload Analysis: restores all grading parameters + 3-Way Color Wheels from the last match.
   // With a video target it re-matches against the CURRENT video frame instead.
@@ -1413,7 +1758,7 @@ export default function App() {
   const hasLook = Boolean(referenceImage || importedLook);
 
   const handleExportLut = useCallback(
-    (ext) => {
+    (ext, size = 33) => {
       if (!hasLook) return;
       try {
         const rawName = withEngineSuffix(
@@ -1424,20 +1769,78 @@ export default function App() {
         const { blob, fileName } = generateLutFile(
           applyCalibrationToParams(effectiveParams, calibration),
           safePreset,
-          ext
+          ext,
+          simulateLogInput,
+          size
         );
         downloadBlob(blob, fileName);
         setStatusText(`Exported .${ext}`);
-        showMobileToast(`Exported .${ext}`);
+        showMobileToast(t("toasts.exportedFile", { file: `.${ext}` }));
       } catch {
         setStatusText("Export Error");
       }
     },
-    [hasLook, presetName, referenceImage, importedLook, activeEngineId, effectiveParams, calibration, showMobileToast]
+    [
+      hasLook,
+      presetName,
+      referenceImage,
+      importedLook,
+      activeEngineId,
+      effectiveParams,
+      calibration,
+      simulateLogInput,
+      showMobileToast,
+      t,
+    ]
   );
 
-  const handleExportCube = useCallback(() => handleExportLut("cube"), [handleExportLut]);
-  const handleExportLut3d = useCallback(() => handleExportLut("lut"), [handleExportLut]);
+  const handleExportCube = useCallback(
+    (size = 33) => handleExportLut("cube", size),
+    [handleExportLut]
+  );
+  const handleExportLut3d = useCallback(() => handleExportLut("lut", 33), [handleExportLut]);
+
+  const handleExportFfx = useCallback(async () => {
+    if (!hasLook) return;
+    setIsExporting(true);
+    setStatusText("Exporting .ffx...");
+    try {
+      const calibratedParams = applyCalibrationToParams(
+        effectiveParams,
+        calibration
+      );
+      const rawName = withEngineSuffix(
+        presetName || referenceImage?.baseName || importedLook?.name || "Custom Look",
+        activeEngineId
+      );
+      const safePreset = sanitizeMetadataText(rawName, "Custom_Look", 64);
+      const { blob, fileName } = await exportToFfx(
+        calibratedParams,
+        safePreset,
+        null,
+        simulateLogInput
+      );
+      downloadBlob(blob, fileName);
+      setStatusText("Exported .ffx");
+      showMobileToast(t("toasts.exportedFile", { file: fileName }));
+      setExportToast({ visible: true, filename: fileName });
+    } catch {
+      setStatusText("Export Error");
+    } finally {
+      setIsExporting(false);
+    }
+  }, [
+    hasLook,
+    effectiveParams,
+    calibration,
+    presetName,
+    referenceImage,
+    importedLook,
+    activeEngineId,
+    simulateLogInput,
+    showMobileToast,
+    t,
+  ]);
 
   const handleResetCalibration = () => {
     setCalibration({ ...DEFAULT_CALIBRATION });
@@ -1464,11 +1867,12 @@ export default function App() {
         calibratedParams,
         safePreset,
         safeAuthor,
-        safeDesc
+        safeDesc,
+        simulateLogInput
       );
       downloadBlob(blob, fileName);
       setStatusText("Exported!");
-      showMobileToast(`Exported ${fileName}`);
+      showMobileToast(t("toasts.exportedFile", { file: fileName }));
       setExportToast({ visible: true, filename: fileName });
     } catch {
       setStatusText("Export Error");
@@ -1485,8 +1889,156 @@ export default function App() {
     activeEngineId,
     authorName,
     description,
+    simulateLogInput,
     showMobileToast,
+    t,
   ]);
+
+  const handleExportZipPack = useCallback(
+    async (cubeSize = 33) => {
+      if (!hasLook || isExporting) return;
+      setIsExporting(true);
+      setStatusText("Packaging .zip...");
+      try {
+        const calibratedParams = applyCalibrationToParams(effectiveParams, calibration);
+        const rawBase =
+          presetName || referenceImage?.baseName || importedLook?.name || "Custom Look";
+        const withEng = withEngineSuffix(rawBase, activeEngineId);
+        const safePreset = sanitizeMetadataText(withEng, "Custom Look", 64);
+        const safeAuthor = sanitizeMetadataText(authorName, "TFBAGAS", 64);
+        const safeDesc = sanitizeMetadataText(description, "", 200);
+        const filePrefix =
+          safePreset.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "Custom_Look";
+
+        const [kfRes, ffxRes] = await Promise.all([
+          generateKfplug(calibratedParams, safePreset, safeAuthor, safeDesc, simulateLogInput),
+          exportToFfx(calibratedParams, safePreset, null, simulateLogInput),
+        ]);
+        const cubeRes = generateLutFile(
+          calibratedParams,
+          safePreset,
+          "cube",
+          simulateLogInput,
+          cubeSize
+        );
+
+        const entries = [
+          { name: `${filePrefix}.kfplug`, data: kfRes.blob },
+          { name: `${filePrefix}.ffx`, data: ffxRes.blob },
+          { name: `${filePrefix}.cube`, data: cubeRes.blob },
+        ];
+
+        const isVideoTarget = targetImage?.kind === "video" && videoEl;
+        const previewSrc = isVideoTarget
+          ? videoEl
+          : targetImage?.imgElement || referenceImage?.imgElement;
+        const pw = isVideoTarget ? videoEl?.videoWidth : previewSrc?.naturalWidth;
+        const ph = isVideoTarget ? videoEl?.videoHeight : previewSrc?.naturalHeight;
+
+        if (previewSrc && pw && ph) {
+          const promoRes = await exportPromoCardBlob({
+            source: previewSrc,
+            width: pw,
+            height: ph,
+            params: effectiveParams,
+            splitPos: 50,
+            simulateLogInput,
+            presetTitle: rawBase,
+            engineId: activeEngineId,
+            aspectRatio: "16:9",
+            format: "png",
+          });
+          entries.push({ name: `${filePrefix}_PromoCard.png`, data: promoRes.blob });
+        }
+
+        const zipBlob = await buildZipBlob(entries);
+        const zipName = `${filePrefix}_Pack.zip`;
+        downloadBlob(zipBlob, zipName);
+        setStatusText("Exported Pack!");
+        showMobileToast(t("toasts.exportedFile", { file: zipName }));
+        setExportToast({ visible: true, filename: zipName });
+      } catch {
+        setStatusText("Export Error");
+      } finally {
+        setIsExporting(false);
+      }
+    },
+    [
+      hasLook,
+      isExporting,
+      effectiveParams,
+      calibration,
+      presetName,
+      referenceImage,
+      importedLook,
+      activeEngineId,
+      authorName,
+      description,
+      simulateLogInput,
+      targetImage,
+      videoEl,
+      showMobileToast,
+      t,
+    ]
+  );
+
+  const handleApplyLook = useCallback(
+    (look) => {
+      if (!look || !look.params) return;
+      if (look.engineId && ["v1", "v2", "v3"].includes(look.engineId)) {
+        setActiveEngineId(look.engineId);
+      }
+      if (look.logProfile) {
+        setSimulateLogInput(resolveLogProfileId(look.logProfile));
+      }
+      if (typeof look.matchStrength === "number") {
+        setMatchStrength(look.matchStrength);
+      }
+      setGradingParams({ ...DEFAULT_PARAMS, ...look.params });
+      setPresetName(look.name || "Custom Look");
+      setImportedLook({ name: look.name || "Custom Look", source: "looks-drawer" });
+      setStatusText("Applied Look");
+      showMobileToast(t("toasts.appliedLook", { name: look.name }));
+    },
+    [showMobileToast, t]
+  );
+
+  const handleComputeSwatches = useCallback(() => {
+    const isVideoTarget = targetImage?.kind === "video" && videoEl;
+    const src = isVideoTarget
+      ? videoEl
+      : targetImage?.imgElement || referenceImage?.imgElement;
+    if (!src) {
+      return ["#1B263B", "#415A77", "#778DA9", "#D4A373", "#E9ECEF"];
+    }
+    const c = document.createElement("canvas");
+    c.width = 64;
+    c.height = 64;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(src, 0, 0, 64, 64);
+    return extractPaletteSwatches(c, 5);
+  }, [targetImage, videoEl, referenceImage]);
+
+  const handleTryInstantDemo = useCallback(() => {
+    handleTrySample("reference", SAMPLE_LOOKS[0].id);
+    handleTrySample("target");
+    setStatusText("Demo Loaded");
+  }, [handleTrySample]);
+
+  const handleRestoreSession = useCallback(() => {
+    if (!restorableSession) return;
+    if (restorableSession.engineId) setActiveEngineId(restorableSession.engineId);
+    if (restorableSession.logProfile) setSimulateLogInput(resolveLogProfileId(restorableSession.logProfile));
+    if (typeof restorableSession.matchStrength === "number") {
+      setMatchStrength(restorableSession.matchStrength);
+    }
+    if (restorableSession.presetName) setPresetName(restorableSession.presetName);
+    setGradingParams({ ...DEFAULT_PARAMS, ...restorableSession.params });
+    setImportedLook({ name: restorableSession.presetName || "Restored Session", source: "session" });
+    setRestorableSession(null);
+    setStatusText("Restored Session");
+    showMobileToast(t("toasts.restoredLastSession"));
+  }, [restorableSession, showMobileToast, t]);
 
   const handleShare = useCallback(async () => {
     if (!hasLook || typeof navigator === "undefined" || typeof navigator.share !== "function") {
@@ -1506,13 +2058,14 @@ export default function App() {
         calibratedParams,
         safePreset,
         safeAuthor,
-        safeDesc
+        safeDesc,
+        simulateLogInput
       );
       const file = new File([blob], fileName, { type: "application/zip" });
       if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: safePreset });
         setStatusText("Shared!");
-        showMobileToast("Shared .kfplug");
+        showMobileToast(t("toasts.sharedKfplug"));
       } else {
         downloadBlob(blob, fileName);
         setStatusText("Exported!");
@@ -1534,7 +2087,9 @@ export default function App() {
     activeEngineId,
     authorName,
     description,
+    simulateLogInput,
     showMobileToast,
+    t,
   ]);
 
   const handleSelectReference = useCallback(
@@ -1596,121 +2151,345 @@ export default function App() {
   const activePreviewImageUrl =
     targetImage?.dataUrl || referenceImage?.dataUrl || null;
 
-  const navTabs = [
-    { id: "home", label: "Workspace", icon: Sliders },
-    { id: "settings", label: "Settings", icon: Settings },
-    { id: "about", label: "About", icon: Info },
-    { id: "support", label: "Support", icon: Heart },
-  ];
+  const navTabs = useMemo(
+    () => [
+      { id: "home", label: t("nav.workspace"), icon: Sliders },
+      { id: "settings", label: t("nav.settings"), icon: Settings },
+      { id: "about", label: t("nav.about"), icon: Info },
+      { id: "support", label: t("nav.support"), icon: Heart },
+    ],
+    [t]
+  );
 
   const {
     containerRef: navContainerRef,
     registerTabRef: registerNavTabRef,
     pillStyle: navPillStyle,
-  } = usePillIndicator(activeTab);
+  } = usePillIndicator(`${activeTab}-${lang}`);
 
-  const engineOptions = useMemo(() => listEngines(), []);
-  const activeEngine = useMemo(() => getEngine(activeEngineId), [activeEngineId]);
+  const engineOptions = useMemo(
+    () =>
+      listEngines().map((eng) => ({
+        ...eng,
+        subtitle: t(`engines.${eng.id}.subtitle`) || eng.subtitle,
+        bestFor: t(`engines.${eng.id}.bestFor`) || eng.bestFor,
+        summary: t(`engines.${eng.id}.summary`) || eng.summary,
+        pipelineBadges:
+          dict?.engines?.[eng.id]?.pipelineBadges || eng.pipelineBadges,
+      })),
+    [t, dict]
+  );
+  const activeEngine = useMemo(
+    () => engineOptions.find((e) => e.id === activeEngineId) || engineOptions[2],
+    [engineOptions, activeEngineId]
+  );
+  const activeEngineIndex = useMemo(
+    () => Math.max(0, engineOptions.findIndex((e) => e.id === activeEngineId)),
+    [engineOptions, activeEngineId]
+  );
   const hasPreviewImage = Boolean(activePreviewImageUrl) || Boolean(videoEl);
+
+  // Extract 5 dominant colors from REFERENCE media for 5-Swatch Glass Palette Droplets
+  // and ultra-restrained 4% neutral-desaturated ambient tint behind top header.
+  const referencePalette = useMemo(() => {
+    const src = referenceImage?.imgElement || referenceImage?.videoEl;
+    if (!src) return [];
+    try {
+      const c = document.createElement("canvas");
+      c.width = 64;
+      c.height = 64;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(src, 0, 0, 64, 64);
+      return extractPaletteSwatches(c, 5);
+    } catch {
+      return [];
+    }
+  }, [referenceImage]);
+
+  const ambientPrimary = useMemo(
+    () =>
+      referencePalette[0]
+        ? hexToRgbaCss(referencePalette[0], 0.04)
+        : "rgba(255, 255, 255, 0.045)",
+    [referencePalette]
+  );
+
+  const ambientSecondary = useMemo(
+    () =>
+      referencePalette[1]
+        ? hexToRgbaCss(referencePalette[1], 0.03)
+        : "rgba(255, 255, 255, 0.025)",
+    [referencePalette]
+  );
+
+  const handleCopySwatchToast = useCallback(
+    (hex) => {
+      showMobileToast(t("toasts.copiedHex", { hex }));
+    },
+    [showMobileToast, t]
+  );
+
+  const handleSwitchLanguage = useCallback(
+    (nextLang) => {
+      const resolved = nextLang === "id" ? "id" : "en";
+      if (resolved === lang) return;
+      setLang(resolved);
+      showMobileToast(resolved === "id" ? "Bahasa: Indonesia" : "Language: English");
+    },
+    [lang, setLang, showMobileToast]
+  );
 
   return (
     <div
-      style={{ "--kf-header-h": `${headerHeight}px` }}
-      className="min-h-screen flex flex-col relative bg-transparent text-[#E2E4E9]"
+      style={{
+        "--kf-header-h": `${headerHeight}px`,
+        "--ambient-primary": ambientPrimary,
+        "--ambient-secondary": ambientSecondary,
+      }}
+      className="min-h-screen flex flex-col relative bg-transparent text-[#E2E4E9] overflow-x-clip"
     >
-      {/* v0.6.5 Beta: Minimalist Pro Studio Intro */}
+      {/* Global SVG Gooey Metaball Filter for Liquid Droplet Detachment */}
+      <svg className="hidden" aria-hidden="true">
+        <defs>
+          <filter id="liquid-goo">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
+            <feColorMatrix
+              in="blur"
+              mode="matrix"
+              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 19 -9"
+              result="goo"
+            />
+            <feComposite in="SourceGraphic" in2="goo" operator="atop" />
+          </filter>
+        </defs>
+      </svg>
+
+      {/* v0.9.5 Luxury Enterprise Minimalist Intro & Spatial Zoom-Through */}
       {showSplash && (
-        <SplashIntro
+        <IntroScreen
           onStartExit={handleStartExit}
           onComplete={handleSplashComplete}
         />
       )}
 
-      {/* Lightweight GPU-Composited Monochrome Ambient Layer (2 radial-gradient orbs, transform only) */}
+      {/* 120fps GPU-Composited Monochrome Anamorphic Liquid Light-Field Backdrop (z-0 over body #060709) */}
       <div
         aria-hidden="true"
-        className="fixed inset-0 z-0 pointer-events-none overflow-hidden bg-[#070709]"
+        className="fixed inset-0 z-0 overflow-hidden pointer-events-none"
       >
-        <div className="m3-liquid-orb-1 absolute -top-20 -left-16" />
-        <div className="m3-liquid-orb-2 absolute -bottom-24 left-8" />
+        {/* Diagonal Anamorphic Light Ribbons */}
+        <div className="workspace-anamorphic-ribbon-a absolute -inset-x-[25%] -top-[18%] h-[68vh]" />
+        <div className="workspace-anamorphic-ribbon-b absolute -inset-x-[25%] -bottom-[14%] h-[62vh]" />
+
+        {/* Organic Liquid Caustic Pools */}
+        <div className="workspace-caustic-pool-a absolute -inset-x-[30%] top-[14%] h-[44vh] rounded-full" />
+        <div className="workspace-caustic-pool-b absolute -inset-x-[22%] bottom-[12%] h-[38vh] rounded-full" />
+
+        {/* Subtle Anamorphic Horizon Line */}
+        <div
+          className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px"
+          style={{
+            background:
+              "linear-gradient(90deg, transparent 8%, rgba(255, 255, 255, 0.08) 50%, transparent 92%)",
+          }}
+        />
+        <div className="obsidian-studio-light absolute inset-0" />
+        <div className="optical-caustic-grain absolute inset-0" />
       </div>
 
-      {/* Foreground Application Content Wrapper (relative z-10 bg-transparent, synchronized with SplashIntro exit) */}
+      {/* Compact Self-Contained Vertical Pill Rail Fixed to Left Viewport Margin (2xl+ only) */}
+      <aside
+        aria-label={t("nav.railLabel")}
+        className="optical-refract-glass fresnel-glass-rim fixed left-3.5 top-1/2 -translate-y-1/2 z-40 hidden 2xl:flex flex-col items-center gap-1.5 w-11 p-1.5 rounded-full bg-[#121419]/82 border border-white/[0.09]"
+      >
+        <button
+          type="button"
+          onClick={handleUndo}
+          disabled={!historyState.canUndo}
+          title={t("nav.undoTitle")}
+          aria-label={t("nav.undoTitle")}
+          className={`m3-btn-morph w-8 h-8 rounded-full flex items-center justify-center border ${
+            !historyState.canUndo
+              ? "bg-white/[0.02] text-[#9CA3AF]/30 border-white/[0.05] cursor-not-allowed"
+              : "bg-white/[0.045] hover:bg-white/[0.10] text-[#E2E4E9] border-white/[0.10] cursor-pointer"
+          }`}
+        >
+          <Undo2 className="w-3.5 h-3.5" />
+        </button>
+
+        <button
+          type="button"
+          onClick={handleRedo}
+          disabled={!historyState.canRedo}
+          title={t("nav.redoTitle")}
+          aria-label={t("nav.redoTitle")}
+          className={`m3-btn-morph w-8 h-8 rounded-full flex items-center justify-center border ${
+            !historyState.canRedo
+              ? "bg-white/[0.02] text-[#9CA3AF]/30 border-white/[0.05] cursor-not-allowed"
+              : "bg-white/[0.045] hover:bg-white/[0.10] text-[#E2E4E9] border-white/[0.10] cursor-pointer"
+          }`}
+        >
+          <Redo2 className="w-3.5 h-3.5" />
+        </button>
+
+        <div className="w-5 h-px bg-white/[0.09] my-0.5" />
+
+        <button
+          type="button"
+          onClick={() => handleSwitchSlot(activeSlot === "A" ? "B" : "A")}
+          title={t("nav.slotToggleTitle", { slot: activeSlot })}
+          aria-label={t("nav.slotToggleTitle", { slot: activeSlot })}
+          className="m3-btn-morph w-8 h-8 rounded-full flex items-center justify-center bg-white/[0.055] hover:bg-white/[0.12] border border-white/[0.10] text-[10px] font-mono font-bold text-[#F4F5F7] cursor-pointer"
+        >
+          {activeSlot}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setIsLooksOpen(true)}
+          title={t("nav.looksTitle")}
+          aria-label={t("nav.looksTitle")}
+          className="m3-btn-morph w-8 h-8 rounded-full flex items-center justify-center bg-white/[0.045] hover:bg-white/[0.10] border border-white/[0.10] text-[#6EE7B7] cursor-pointer"
+        >
+          <Bookmark className="w-3.5 h-3.5" />
+        </button>
+
+        <button
+          type="button"
+          onClick={handleToggleScopesCollapse}
+          title={isScopesCollapsed ? t("nav.showScopes") : t("nav.hideScopes")}
+          aria-label={t("nav.toggleScopesLabel")}
+          className={`m3-btn-morph w-8 h-8 rounded-full flex items-center justify-center border cursor-pointer ${
+            !isScopesCollapsed
+              ? "bg-[#6EE7B7]/16 text-[#6EE7B7] border-[#6EE7B7]/35"
+              : "bg-white/[0.045] hover:bg-white/[0.10] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.10]"
+          }`}
+        >
+          <Activity className="w-3.5 h-3.5" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setIsCommandPaletteOpen(true)}
+          title={t("nav.commandPaletteTitle")}
+          aria-label={t("nav.commandPaletteTitle")}
+          className="m3-btn-morph w-8 h-8 rounded-full flex items-center justify-center bg-white/[0.045] hover:bg-white/[0.10] border border-white/[0.10] text-[#E2E4E9] cursor-pointer"
+        >
+          <Search className="w-3.5 h-3.5" />
+        </button>
+
+        <div className="w-5 h-px bg-white/[0.09] my-0.5" />
+
+        <button
+          type="button"
+          onClick={() => setIsShareOpen(true)}
+          title={t("nav.shareTitle")}
+          aria-label={t("nav.shareTitle")}
+          className="m3-btn-morph w-8 h-8 rounded-full flex items-center justify-center bg-white/[0.045] hover:bg-white/[0.10] border border-white/[0.10] text-[#9CA3AF] hover:text-[#E2E4E9] cursor-pointer"
+        >
+          <Share2 className="w-3.5 h-3.5" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setIsShortcutsOpen(true)}
+          title={t("nav.shortcutsTitle")}
+          aria-label={t("nav.shortcutsTitle")}
+          className="m3-btn-morph w-8 h-8 rounded-full flex items-center justify-center bg-white/[0.045] hover:bg-white/[0.10] border border-white/[0.10] text-[#9CA3AF] hover:text-[#E2E4E9] cursor-pointer"
+        >
+          <HelpCircle className="w-3.5 h-3.5" />
+        </button>
+      </aside>
+
+      {/* Foreground Application Content Wrapper (no transform when visible so sticky header + backdrop-filter work reliably) */}
       <div
         className={`relative z-10 min-h-screen flex flex-col bg-transparent ${
           workspacePhase === "hidden"
             ? "opacity-0 pointer-events-none scale-[0.97]"
-            : "opacity-100 scale-100"
+            : "opacity-100"
         }`}
       >
-      {/* 1. Compact 48px Top App Bar (delay: 0ms fast spring down) */}
+      {/* 1. Compact 48px Top App Bar (direct sticky child of scrolling viewport) */}
       <header
         ref={headerRef}
-        className={`sticky top-0 z-40 min-h-12 px-3 sm:px-5 py-1.5 bg-[#0E0E12] lg:bg-[#0E0E12]/80 lg:backdrop-blur-md border-b border-white/[0.12] flex flex-wrap items-center justify-between gap-2 ${
+        style={{
+          backgroundColor: "rgba(10, 12, 16, 0.72)",
+          backdropFilter: "blur(20px) saturate(150%)",
+          WebkitBackdropFilter: "blur(20px) saturate(150%)",
+        }}
+        className={`sticky top-0 z-50 w-full min-h-12 px-3 sm:px-5 py-1.5 border-b border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_12px_32px_-12px_rgba(0,0,0,0.72)] flex flex-wrap items-center justify-between gap-2 ${
           workspacePhase === "morphing-in" ? "m3-morph-topbar" : ""
         }`}
       >
-        {/* Left: Achromatic Keyflow Logo + Brand Title + v0.9.0 Beta Badge + Support Capsule */}
+        {/* Left: Achromatic Keyflow Logo + Brand Title + v0.9.5 Beta Badge + Support Capsule */}
         <div className="flex flex-wrap items-center gap-2">
           <KeyflowLogo size={26} />
           <div className="flex items-center gap-1.5 sm:gap-2">
             <h1 className="text-sm sm:text-base font-bold font-display tracking-tight text-[#E2E4E9]">
-              Color Match Tool
+              Color Match for Keyflow
             </h1>
             <button
               type="button"
               onClick={handleOpenChangelog}
-              title="View What's New in v0.9.0 Beta"
-              className="m3-btn-morph inline-flex items-center gap-1 text-[10px] font-mono px-1.5 sm:px-2 py-0.5 rounded-md bg-white/[0.04] hover:bg-white/[0.09] text-[#E2E4E9] border border-white/[0.09] hover:border-white/25 cursor-pointer"
+              title={t("nav.whatsNewTitle")}
+              className="m3-btn-morph inline-flex items-center gap-1 text-[10px] font-mono px-2 sm:px-2.5 py-0.5 rounded-full bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.11] text-[#E2E4E9] hover:border-white/25 cursor-pointer"
             >
               {hasUnreadUpdate && (
-                <span className="w-1.5 h-1.5 rounded-full bg-[#6EE7B7] animate-pulse" />
+                <span className="liquid-droplet-badge w-1.5 h-1.5 rounded-full bg-[#6EE7B7] animate-pulse" />
               )}
-              <span>v0.9.0 Beta</span>
+              <span>v0.9.5 Beta</span>
             </button>
             <a
               href="https://sociabuzz.com/tfbagas/support"
               target="_blank"
               rel="noopener noreferrer"
-              title="Support development on SociaBuzz"
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] text-[10px] sm:text-[11px] font-medium text-[#E2E4E9] transition-colors"
+              title={t("nav.supportTitle")}
+              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.11] text-[10px] sm:text-[11px] font-medium text-[#E2E4E9] hover:border-white/25 transition-colors"
             >
               <Heart className="w-3 h-3 text-[#9CA3AF]" />
-              <span>Support</span>
+              <span>{t("nav.support")}</span>
             </a>
+
+            {restorableSession && (
+              <div className="liquid-droplet-badge inline-flex items-center rounded-full bg-[#6EE7B7]/12 border border-[#6EE7B7]/35 text-[10px] font-medium text-[#6EE7B7] overflow-hidden">
+                <button
+                  type="button"
+                  onClick={handleRestoreSession}
+                  className="px-2.5 py-0.5 hover:bg-[#6EE7B7]/20 transition-colors cursor-pointer"
+                >
+                  {t("nav.restoreSession")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRestorableSession(null)}
+                  aria-label={t("nav.dismissRestore")}
+                  className="px-1.5 py-0.5 hover:bg-[#6EE7B7]/20 border-l border-[#6EE7B7]/25 transition-colors cursor-pointer"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Right: Material You Expressive Sliding & Stretching Pill Nav + Status Chip */}
+        {/* Right: Apple Smoked Obsidian Sliding & Stretching Pill Nav + EN|ID Switcher + Status Chip */}
         <div className="flex items-center gap-2 ml-auto">
           <nav
-            ref={navContainerRef}
-            aria-label="Primary Navigation"
-            className="relative flex items-center gap-0.5 bg-[#0A0A0D]/55 border border-white/[0.09] rounded-xl p-0.5"
+            aria-label={t("nav.primaryLabel")}
+            className="relative flex items-center gap-0.5 bg-white/[0.06] border border-white/[0.10] rounded-full p-0.5"
           >
-            <div
-              aria-hidden="true"
-              className="m3-pill-indicator pointer-events-none absolute top-0.5 bottom-0.5 rounded-lg bg-[#E2E4E9] shadow-[0_2px_10px_rgba(255,255,255,0.22),inset_0_1px_0_rgba(255,255,255,0.7)]"
-              style={{
-                left: `${navPillStyle.left}px`,
-                width: `${navPillStyle.width}px`,
-                opacity: navPillStyle.opacity,
-              }}
-            />
-
             {navTabs.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
               return (
                 <button
                   key={item.id}
-                  ref={registerNavTabRef(item.id)}
                   type="button"
                   onClick={() => setActiveTab(item.id)}
-                  className={`relative z-10 flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1 rounded-lg text-xs font-medium transition-colors duration-200 active:scale-[0.96] cursor-pointer ${
+                  className={`relative z-10 flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1 rounded-full text-xs font-medium transition-colors duration-200 active:scale-[0.96] cursor-pointer ${
                     isActive
-                      ? "text-[#0E0E11] font-semibold"
-                      : "text-[#9CA3AF] hover:text-[#E2E4E9]"
+                      ? "bg-white text-zinc-950 font-semibold shadow-sm"
+                      : "text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.06]"
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5 shrink-0" />
@@ -1720,17 +2499,70 @@ export default function App() {
             })}
           </nav>
 
+          {/* Sleek Compact EN | ID Segmented Toggle Pill (no backdrop-filter inside header) */}
+          <div
+            role="group"
+            aria-label={t("nav.langSwitchTitle")}
+            title={t("nav.langSwitchTitle")}
+            className="inline-flex items-center p-0.5 rounded-full bg-white/[0.06] border border-white/[0.11] text-[10px] font-mono select-none"
+          >
+            {[
+              { code: "en", label: "EN" },
+              { code: "id", label: "ID" },
+            ].map((item) => {
+              const isLangActive = lang === item.code;
+              return (
+                <button
+                  key={item.code}
+                  type="button"
+                  onClick={() => handleSwitchLanguage(item.code)}
+                  aria-pressed={isLangActive}
+                  className={`px-2 py-0.5 rounded-full transition-colors duration-150 cursor-pointer ${
+                    isLangActive
+                      ? "bg-white text-zinc-950 font-semibold"
+                      : "text-zinc-400 hover:text-white"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsCommandPaletteOpen(true)}
+            title={t("nav.commandPaletteTitle")}
+            className="m3-btn-morph inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.11] text-xs font-medium text-[#E2E4E9] cursor-pointer"
+          >
+            <Search className="w-3.5 h-3.5 text-[#6EE7B7]" />
+            <span className="hidden md:inline font-mono text-[10px] text-[#9CA3AF]">Ctrl+K</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsLooksOpen(true)}
+            title={t("nav.looksTitle")}
+            className="m3-btn-morph inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.11] text-xs font-medium text-[#E2E4E9] cursor-pointer"
+          >
+            <Bookmark className="w-3.5 h-3.5 text-[#6EE7B7]" />
+            <span className="hidden sm:inline">{t("nav.looks")}</span>
+            <span className="liquid-droplet-badge px-1.5 py-0.2 rounded-full bg-white/[0.08] border border-white/[0.14] text-[9px] font-mono font-bold text-[#E2E4E9]">
+              {SAMPLE_LOOKS.length}
+            </span>
+          </button>
+
           <button
             type="button"
             onClick={() => setIsShortcutsOpen(true)}
-            title="Keyboard & Grading Shortcuts (?)"
-            aria-label="Keyboard Shortcuts"
-            className="m3-btn-morph inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] text-xs font-mono text-[#9CA3AF] hover:text-[#E2E4E9] cursor-pointer"
+            title={t("nav.shortcutsTitle")}
+            aria-label={t("nav.shortcutsTitle")}
+            className="m3-btn-morph inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.11] text-xs font-mono text-[#9CA3AF] hover:text-[#E2E4E9] cursor-pointer"
           >
             <HelpCircle className="w-3.5 h-3.5" />
           </button>
 
-          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.09] text-[11px] font-mono text-[#E2E4E9]">
+          <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.06] border border-white/[0.11] text-[11px] font-mono text-[#E2E4E9]">
             <span
               className={`w-1.5 h-1.5 rounded-full ${
                 isAnalyzing
@@ -1742,13 +2574,13 @@ export default function App() {
                   : "bg-[#9CA3AF]"
               }`}
             />
-            <span>{statusText.toUpperCase()}</span>
+            <span>{translateStatusText(statusText, lang)}</span>
           </div>
         </div>
       </header>
 
-      {/* Main Content Container */}
-      <main className="flex-1 max-w-[1440px] w-full mx-auto px-3 sm:px-5 py-2.5">
+      {/* Main Content Container (Widescreen Fluid Container max-w-[1600px]) */}
+      <main className="relative z-10 flex-1 max-w-[1600px] w-full mx-auto px-3 sm:px-5 py-2.5">
         {/* WORKSPACE TAB */}
         <div
           key={cascadeKey}
@@ -1761,12 +2593,12 @@ export default function App() {
             {/* LEFT COLUMN WRAPPER: display:contents on <1024px so order-1/order-2 work directly in grid */}
             <div className="contents lg:flex lg:flex-col lg:gap-2.5 lg:col-span-7 lg:col-start-1">
               {/* MEDIA DROPZONES (order-2 on mobile, top of left column on desktop) */}
-              <div className="order-2 lg:order-none grid grid-cols-2 gap-2 lg:gap-2.5">
+              <div className="order-2 lg:order-none grid grid-cols-2 gap-2 lg:gap-2.5 items-stretch">
                 {/* 3. Panel REFERENCE (delay: 110ms) */}
                 <div
-                  className={
+                  className={`h-full ${
                     workspacePhase === "morphing-in" ? "m3-morph-panel" : ""
-                  }
+                  }`}
                   style={
                     workspacePhase === "morphing-in"
                       ? { "--morph-delay": "110ms" }
@@ -1774,7 +2606,8 @@ export default function App() {
                   }
                 >
                   <ImageDropCard
-                    title="REFERENCE"
+                    title={t("dropCard.referenceTitle")}
+                    allowVideo
                     imageInfo={referenceImage}
                     onSelectImage={handleSelectReference}
                     onClearImage={handleClearReference}
@@ -1783,7 +2616,10 @@ export default function App() {
                     allowPresets
                     importedLook={importedLook}
                     onClearImportedLook={handleClearImportedLook}
+                    isDirectConversionReady={Boolean(importedLook && !targetImage)}
                     isAnalyzing={isAnalyzing}
+                    paletteSwatches={referencePalette}
+                    onCopySwatch={handleCopySwatchToast}
                     isPasteTarget={
                       hoveredSlot === "reference" ||
                       (!hoveredSlot && focusedSlot === "reference")
@@ -1796,9 +2632,9 @@ export default function App() {
 
                 {/* 5. Panel TARGET IMAGE (delay: 190ms) */}
                 <div
-                  className={
+                  className={`h-full ${
                     workspacePhase === "morphing-in" ? "m3-morph-panel" : ""
-                  }
+                  }`}
                   style={
                     workspacePhase === "morphing-in"
                       ? { "--morph-delay": "190ms" }
@@ -1806,12 +2642,14 @@ export default function App() {
                   }
                 >
                   <ImageDropCard
-                    title="TARGET IMAGE / VIDEO"
+                    title={t("dropCard.targetTitle")}
                     allowVideo
                     imageInfo={targetImage}
                     onSelectImage={handleSelectTarget}
                     onClearImage={handleClearTarget}
                     onTrySample={handleTryTargetSample}
+                    inputProfile={simulateLogInput}
+                    onInputProfileChange={handleTargetInputProfileChange}
                     isPasteTarget={
                       hoveredSlot === "target" ||
                       (!hoveredSlot && focusedSlot === "target")
@@ -1829,7 +2667,7 @@ export default function App() {
                   !hasPreviewImage ? "hidden lg:flex" : "flex"
                 } lg:flex-1 flex-col min-h-[420px] lg:min-h-[490px] [&>*]:flex-1 ${
                   isPreviewPinned
-                    ? "sticky top-[var(--kf-header-h,48px)] z-30 bg-[#121216] pb-1 lg:static lg:z-auto lg:bg-transparent lg:pb-0"
+                    ? "sticky top-[var(--kf-header-h,48px)] z-30 pb-1 lg:static lg:z-auto lg:pb-0"
                     : ""
                 } ${
                   workspacePhase === "morphing-in" ? "m3-morph-panel" : ""
@@ -1859,12 +2697,19 @@ export default function App() {
                   onTogglePin={() => setIsPreviewPinned((p) => !p)}
                   onSaveImage={handleSaveImage}
                   isSavingImage={isSavingFrame}
+                  onExportVideo={handleExportVideo}
+                  isExportingVideo={isExportingVideo}
+                  videoExportProgress={videoExportProgress}
+                  onCancelVideoExport={handleCancelVideoExport}
+                  targetVideoSrc={targetImage?.videoUrl || videoEl?.currentSrc || videoEl?.src || ""}
+                  targetFile={targetImage?.file || null}
+                  onTryInstantDemo={handleTryInstantDemo}
                   nativeWidth={targetImage?.width || referenceImage?.width || 0}
                   nativeHeight={targetImage?.height || referenceImage?.height || 0}
                   targetBaseName={targetImage?.baseName || referenceImage?.baseName || "Target"}
                   engineId={activeEngineId}
                   simulateLogInput={simulateLogInput}
-                  onToggleSimulateLogInput={setSimulateLogInput}
+                  onToggleSimulateLogInput={handleTargetInputProfileChange}
                   isTabActive={activeTab === "home"}
                   footer={
                     videoEl ? (
@@ -1882,7 +2727,7 @@ export default function App() {
 
               {/* Compact Quick Workflow & Tips Strip (balances left column on desktop) */}
               <div
-                className={`hidden lg:flex flex-col gap-2 m3-panel rounded-2xl px-3 py-2.5 ${
+                className={`hidden lg:flex flex-col gap-2 liquid-glass-card m3-panel rounded-[18px] overflow-hidden px-3.5 py-3 ${
                   workspacePhase === "morphing-in" ? "m3-morph-panel" : ""
                 }`}
                 style={
@@ -1893,21 +2738,21 @@ export default function App() {
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF]">
-                    QUICK WORKFLOW
+                    {t("workflow.title")}
                   </span>
                   <div className="flex items-center gap-1.5 text-[11px] font-mono">
                     <span
-                      className={`px-2 py-0.5 rounded-md border ${
+                      className={`px-2.5 py-0.5 rounded-full border ${
                         hasLook
                           ? "bg-[#6EE7B7]/12 text-[#6EE7B7] border-[#6EE7B7]/35"
                           : "bg-white/[0.06] text-[#E2E4E9] border-white/20"
                       }`}
                     >
-                      1. Load Reference
+                      {t("workflow.step1")}
                     </span>
                     <span className="text-[#9CA3AF]/60">-&gt;</span>
                     <span
-                      className={`px-2 py-0.5 rounded-md border ${
+                      className={`px-2.5 py-0.5 rounded-full border ${
                         targetImage
                           ? "bg-[#6EE7B7]/12 text-[#6EE7B7] border-[#6EE7B7]/35"
                           : hasLook
@@ -1915,26 +2760,26 @@ export default function App() {
                           : "bg-white/[0.02] text-[#9CA3AF]/70 border-white/[0.07]"
                       }`}
                     >
-                      2. Load Target
+                      {t("workflow.step2")}
                     </span>
                     <span className="text-[#9CA3AF]/60">-&gt;</span>
                     <span
-                      className={`px-2 py-0.5 rounded-md border ${
+                      className={`px-2.5 py-0.5 rounded-full border ${
                         hasLook && targetImage
                           ? "bg-white/[0.08] text-[#E2E4E9] border-white/25"
                           : "bg-white/[0.02] text-[#9CA3AF]/70 border-white/[0.07]"
                       }`}
                     >
-                      3. Match &amp; Export
+                      {t("workflow.step3")}
                     </span>
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-white/[0.06] text-[10px] font-mono text-[#9CA3AF]">
-                  <span>Tips: Double-click slider to reset</span>
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-white/[0.08] text-[10px] font-mono text-[#9CA3AF]">
+                  <span>{t("workflow.tipReset")}</span>
                   <div className="flex items-center gap-2.5">
-                    <span>Shift+Drag: 0.01 fine</span>
-                    <span>1 / 2: A/B Slots</span>
-                    <span>Ctrl+Z: Undo</span>
+                    <span>{t("workflow.tipFine")}</span>
+                    <span>{t("workflow.tipEngines")}</span>
+                    <span>{t("workflow.tipUndo")}</span>
                   </div>
                 </div>
               </div>
@@ -1944,7 +2789,7 @@ export default function App() {
             <div className="order-3 lg:order-none lg:col-span-5 lg:col-start-8 flex flex-col gap-2.5">
               {/* Top Card: ENGINE & MATCH STRENGTH */}
               <div
-                className={`m3-panel rounded-2xl p-2.5 ${
+                className={`liquid-glass-card m3-panel rounded-[18px] overflow-hidden p-3 ${
                   workspacePhase === "morphing-in" ? "m3-morph-panel" : ""
                 }`}
                 style={
@@ -1957,7 +2802,7 @@ export default function App() {
                   <div className="flex items-center gap-2">
                     <Cpu className="w-3.5 h-3.5 text-[#9CA3AF]" />
                     <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF]">
-                      ENGINE &amp; MATCH STRENGTH
+                      {t("engineCard.title")}
                     </h3>
                   </div>
 
@@ -1966,38 +2811,38 @@ export default function App() {
                       type="button"
                       onClick={() => setIsEngineCompareOpen((v) => !v)}
                       aria-expanded={isEngineCompareOpen}
-                      aria-label="Compare Color Match Engines"
-                      title="Compare Engine v1, v2, and v3 side-by-side"
-                      className={`m3-btn-morph inline-flex items-center justify-center w-6 h-6 rounded-lg border text-[11px] font-mono cursor-pointer ${
+                      aria-label={t("engineCard.compareAria")}
+                      title={t("engineCard.compareTitle")}
+                      className={`m3-btn-morph inline-flex items-center justify-center w-6 h-6 rounded-full border text-[11px] font-mono cursor-pointer ${
                         isEngineCompareOpen
                           ? "bg-[#E2E4E9] text-[#0E0E11] border-[#E2E4E9]"
-                          : "bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.09]"
+                          : "bg-white/[0.045] hover:bg-white/[0.10] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.10]"
                       }`}
                     >
                       ?
                     </button>
 
                     {isEngineCompareOpen && (
-                      <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 z-50 rounded-xl bg-[#131419] border border-white/[0.16] shadow-2xl p-3 space-y-2 text-left">
+                      <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 z-50 rounded-[18px] overflow-hidden bg-[#12141B]/95 border border-white/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_18px_40px_-16px_rgba(0,0,0,0.85)] p-3.5 space-y-2 text-left">
                         <div className="text-[10px] font-mono uppercase tracking-[0.12em] text-[#9CA3AF] border-b border-white/[0.08] pb-1.5">
-                          Engine Comparison (v1 / v2 / v3)
+                          {t("engineCard.compareHeader")}
                         </div>
                         <div className="space-y-2">
                           {engineOptions.map((eng) => (
                             <div
                               key={eng.id}
-                              className={`p-2 rounded-lg border ${
+                              className={`p-2 rounded-xl border ${
                                 activeEngineId === eng.id
-                                  ? "bg-white/[0.07] border-white/25"
-                                  : "bg-[#0A0A0D]/50 border-white/[0.07]"
+                                  ? "bg-white/[0.08] border-white/20"
+                                  : "bg-[#090A0D]/65 border-white/[0.07]"
                               }`}
                             >
                               <div className="flex items-center justify-between gap-2">
                                 <span className="text-xs font-semibold text-[#E2E4E9]">
-                                  {eng.name} ({eng.shortTag})
+                                  {eng.name} ({eng.subtitle})
                                 </span>
                                 {eng.badge && (
-                                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-white/[0.10] text-[#6EE7B7] border border-[#6EE7B7]/30">
+                                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-full bg-white/[0.08] text-[#6EE7B7] border border-[#6EE7B7]/30">
                                     {eng.badge}
                                   </span>
                                 )}
@@ -2006,7 +2851,7 @@ export default function App() {
                                 {eng.summary}
                               </p>
                               <div className="text-[10px] font-mono text-[#6EE7B7]/90 mt-1">
-                                Best for: {eng.bestFor}
+                                {t("engineCard.bestForPrefix")} {eng.bestFor}
                               </div>
                             </div>
                           ))}
@@ -2016,12 +2861,19 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 3-Column Interactive M3 Achromatic Dark Card Selector */}
+                {/* 3-Column Interactive Liquid Glass Engine Selector with Bouncy Spring Pill Glide */}
                 <div
                   role="tablist"
-                  aria-label="Color Match Engine Selector"
-                  className="grid grid-cols-3 gap-1.5 mb-2"
+                  aria-label={t("engineCard.selectorAria")}
+                  className="relative grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-[#08090C]/75 border border-white/[0.085] mb-2"
                 >
+                  <div
+                    aria-hidden="true"
+                    className="m3-pill-indicator pointer-events-none absolute top-1 bottom-1 left-1 w-[calc((100%-1.25rem)/3)] rounded-xl bg-white/[0.12] border border-white/[0.22]"
+                    style={{
+                      transform: `translate3d(calc(${activeEngineIndex * 100}% + ${activeEngineIndex * 0.375}rem), 0, 0)`,
+                    }}
+                  />
                   {engineOptions.map((eng) => {
                     const isActive = activeEngineId === eng.id;
                     const EngIcon =
@@ -2032,11 +2884,12 @@ export default function App() {
                         type="button"
                         role="tab"
                         aria-selected={isActive}
+                        title={`${eng.name} (${eng.badge}) - ${eng.subtitle} (${t("engineCard.shortcutPrefix")}: ${eng.shortcutKey})`}
                         onClick={() => handleEngineChange(eng.id)}
-                        className={`flex flex-col items-start text-left p-2 rounded-xl border transition-all duration-200 cursor-pointer select-none active:scale-[0.98] ${
+                        className={`relative z-10 flex flex-col items-start text-left p-2 rounded-xl border transition-colors duration-200 cursor-pointer select-none active:scale-[0.98] ${
                           isActive
-                            ? "bg-white/[0.11] border-white/30 shadow-[0_4px_14px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.2)]"
-                            : "bg-[#0A0A0D]/55 border-white/[0.08] hover:border-white/20 hover:bg-white/[0.04]"
+                            ? "border-transparent"
+                            : "border-transparent hover:bg-white/[0.035]"
                         }`}
                       >
                         <div className="w-full flex items-center justify-between gap-1 mb-0.5">
@@ -2047,10 +2900,10 @@ export default function App() {
                           />
                           {eng.badge && (
                             <span
-                              className={`text-[8px] font-mono font-bold uppercase tracking-wider px-1 py-0.2 rounded ${
+                              className={`text-[8px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.2 rounded-full ${
                                 isActive
-                                  ? "bg-[#6EE7B7]/20 text-[#6EE7B7] border border-[#6EE7B7]/40"
-                                  : "bg-white/[0.07] text-[#E2E4E9] border border-white/[0.12]"
+                                  ? "liquid-droplet-badge bg-[#6EE7B7]/18 text-[#6EE7B7] border border-[#6EE7B7]/35"
+                                  : "bg-white/[0.06] text-[#E2E4E9] border border-white/[0.10]"
                               }`}
                             >
                               {eng.badge}
@@ -2065,7 +2918,7 @@ export default function App() {
                           {eng.name}
                         </div>
                         <div className="text-[10px] text-[#9CA3AF] truncate w-full mt-0.5">
-                          {eng.shortTag}
+                          {eng.subtitle}
                         </div>
                       </button>
                     );
@@ -2073,16 +2926,16 @@ export default function App() {
                 </div>
 
                 {/* Live Engine Info Strip */}
-                <div className="mb-2 px-2.5 py-2 rounded-xl bg-[#0A0A0D]/45 border border-white/[0.07] space-y-1.5 transition-all">
+                <div className="mb-2 px-3 py-2 rounded-xl bg-[#08090C]/65 border border-white/[0.075] space-y-1.5 transition-all">
                   <div className="flex flex-wrap items-center justify-between gap-1">
                     <span className="text-[10px] font-mono text-[#6EE7B7]">
-                      Best for: {activeEngine.bestFor}
+                      {t("engineCard.bestForPrefix")} {activeEngine.bestFor}
                     </span>
                     <div className="flex flex-wrap items-center gap-1">
                       {activeEngine.pipelineBadges?.map((b) => (
                         <span
                           key={b}
-                          className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/[0.05] text-[#D1D5DB] border border-white/[0.08]"
+                          className="text-[9px] font-mono px-1.5 py-0.5 rounded-full bg-white/[0.045] text-[#D1D5DB] border border-white/[0.085]"
                         >
                           {b}
                         </span>
@@ -2094,26 +2947,60 @@ export default function App() {
                   </p>
                 </div>
 
-                {/* Master Match Strength (0% - 150%, default 100%) */}
-                <ParameterControl
-                  paramKey="matchStrength"
-                  label="Match Strength"
-                  min={0}
-                  max={150}
-                  step={5}
-                  value={matchStrength}
-                  defaultValue={100}
-                  isBipolar={false}
-                  valueSuffix="%"
-                  onChange={handleMatchStrengthChange}
-                  onDragChange={handleControlDragChange}
-                  icon={Gauge}
-                />
+                {/* Master Match Strength (0% - 150%, default 100%) + iOS 26 Liquid Stretch Toggle */}
+                <div className="space-y-1.5">
+                  <ParameterSlider
+                    paramKey="matchStrength"
+                    label={t("engineCard.matchStrengthLabel")}
+                    min={0}
+                    max={150}
+                    step={5}
+                    value={matchStrength}
+                    defaultValue={100}
+                    isBipolar={false}
+                    valueSuffix="%"
+                    onChange={handleMatchStrengthChange}
+                    onDragChange={handleControlDragChange}
+                    icon={Gauge}
+                  />
+
+                  <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#08090C]/65 border border-white/[0.075]">
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-medium text-[#E2E4E9] leading-tight">
+                        {t("engineCard.autoNormalizeTitle")}
+                      </div>
+                      <div className="text-[10px] text-[#9CA3AF] truncate">
+                        {t("engineCard.autoNormalizeSub")}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={autoNormalizeTarget}
+                      aria-label={t("engineCard.autoNormalizeTitle")}
+                      title={t("engineCard.autoNormalizeTooltip")}
+                      onClick={() => handleToggleAutoNormalizeTarget(!autoNormalizeTarget)}
+                      className={`liquid-switch relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border cursor-pointer ${
+                        autoNormalizeTarget
+                          ? "bg-[#6EE7B7]/25 border-[#6EE7B7]/60"
+                          : "bg-white/[0.06] border-white/[0.14] hover:border-white/25"
+                      }`}
+                    >
+                      <span
+                        className={`liquid-switch-thumb inline-block h-3.5 w-3.5 rounded-full ${
+                          autoNormalizeTarget
+                            ? "bg-[#6EE7B7]"
+                            : "bg-[#E2E4E9]"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {/* 4. Panel DETECTED PARAMETERS (delay: 150ms) */}
               <div
-                className={`m3-panel rounded-2xl p-2.5 ${
+                className={`liquid-glass-card m3-panel rounded-[18px] overflow-hidden p-3 ${
                   workspacePhase === "morphing-in" ? "m3-morph-panel" : ""
                 }`}
                 style={
@@ -2122,14 +3009,21 @@ export default function App() {
                     : { contain: "layout paint" }
                 }
               >
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <Sliders className="w-3.5 h-3.5 text-[#9CA3AF]" />
                     <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF]">
-                      DETECTED PARAMETERS
+                      {t("paramsCard.title")}
                     </h3>
-                    {/* A / B Grading Snapshot Slots + Copy to B */}
-                    <div className="inline-flex items-center p-0.5 rounded-md bg-[#0E0E12] border border-white/[0.08]">
+                    {/* A / B Grading Snapshot Slots with Bouncy Spring Pill + Gooey Droplet Detachment */}
+                    <div className="relative grid grid-cols-2 items-center p-0.5 rounded-full bg-[#08090C]/75 border border-white/[0.09]">
+                      <div
+                        aria-hidden="true"
+                        className="m3-pill-indicator pointer-events-none absolute top-0.5 bottom-0.5 left-0.5 w-[calc(50%-2px)] rounded-full bg-[#E2E4E9]"
+                        style={{
+                          transform: `translate3d(${activeSlot === "B" ? "100%" : "0%"}, 0, 0)`,
+                        }}
+                      />
                       {["A", "B"].map((slot) => {
                         const isBFilled = slot === "B" && slotSnapshots.B?.isFilled;
                         return (
@@ -2137,17 +3031,17 @@ export default function App() {
                             key={slot}
                             type="button"
                             onClick={() => handleSwitchSlot(slot)}
-                            title={`Grading Snapshot Slot ${slot} (Shortcut: ${slot === "A" ? "1" : "2"})`}
-                            className={`relative px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
+                            title={t("paramsCard.slotTitle", { slot })}
+                            className={`relative z-10 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold transition-colors cursor-pointer ${
                               activeSlot === slot
-                                ? "bg-[#E2E4E9] text-[#0E0E11]"
+                                ? "text-[#0E0E11]"
                                 : "text-[#9CA3AF] hover:text-[#F4F5F7]"
                             }`}
                           >
                             {slot}
                             {isBFilled && (
                               <span
-                                className={`inline-block w-1 h-1 rounded-full ml-0.5 align-top ${
+                                className={`liquid-droplet-badge inline-block w-1.5 h-1.5 rounded-full ml-0.5 align-top ${
                                   activeSlot === "B" ? "bg-[#042F1E]" : "bg-[#6EE7B7]"
                                 }`}
                               />
@@ -2159,26 +3053,41 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleCopyToB}
-                      title="Copy current grade to Snapshot Slot B"
-                      className="m3-btn-morph inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.08] cursor-pointer"
+                      title={t("paramsCard.copyToBTitle")}
+                      className="liquid-glass-pill m3-btn-morph inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full text-[#9CA3AF] hover:text-[#E2E4E9] cursor-pointer"
                     >
                       <Copy className="w-2.5 h-2.5" />
-                      <span className="hidden sm:inline">Copy to B</span>
+                      <span className="hidden sm:inline">{t("paramsCard.copyToB")}</span>
+                      {slotSnapshots.B?.isFilled && (
+                        <span className="liquid-droplet-badge w-1.5 h-1.5 rounded-full bg-[#6EE7B7]" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsLooksOpen(true)}
+                      title={t("paramsCard.looksTitle")}
+                      className="liquid-glass-pill m3-btn-morph inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full text-[#E2E4E9] cursor-pointer"
+                    >
+                      <Bookmark className="w-2.5 h-2.5 text-[#6EE7B7]" />
+                      <span>{t("paramsCard.looks")}</span>
+                      <span className="liquid-droplet-badge px-1 py-0.1 rounded-full bg-white/[0.08] text-[9px] text-[#E2E4E9] font-bold">
+                        {SAMPLE_LOOKS.length}
+                      </span>
                     </button>
                   </div>
 
-                  {/* Action Buttons: Undo/Redo + Reload Analysis + Reset All */}
+                  {/* Action Buttons: Undo/Redo + Reload Analysis + Reset All with Droplet Detachment */}
                   <div className="flex flex-wrap items-center gap-1">
                     <button
                       type="button"
                       onClick={handleUndo}
                       disabled={!historyState.canUndo}
-                      title="Undo (Ctrl+Z)"
-                      aria-label="Undo"
-                      className={`m3-btn-morph p-1 rounded-md border ${
+                      title={t("paramsCard.undoTitle")}
+                      aria-label={t("paramsCard.undoTitle")}
+                      className={`m3-btn-morph p-1.5 rounded-full border ${
                         !historyState.canUndo
                           ? "bg-white/[0.02] text-[#9CA3AF]/30 border-white/[0.05] cursor-not-allowed"
-                          : "bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.09] cursor-pointer"
+                          : "bg-white/[0.045] hover:bg-white/[0.10] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.10] cursor-pointer"
                       }`}
                     >
                       <Undo2 className="w-3 h-3" />
@@ -2187,12 +3096,12 @@ export default function App() {
                       type="button"
                       onClick={handleRedo}
                       disabled={!historyState.canRedo}
-                      title="Redo (Ctrl+Shift+Z)"
-                      aria-label="Redo"
-                      className={`m3-btn-morph p-1 rounded-md border ${
+                      title={t("paramsCard.redoTitle")}
+                      aria-label={t("paramsCard.redoTitle")}
+                      className={`m3-btn-morph p-1.5 rounded-full border ${
                         !historyState.canRedo
                           ? "bg-white/[0.02] text-[#9CA3AF]/30 border-white/[0.05] cursor-not-allowed"
-                          : "bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.09] cursor-pointer"
+                          : "bg-white/[0.045] hover:bg-white/[0.10] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.10] cursor-pointer"
                       }`}
                     >
                       <Redo2 className="w-3 h-3" />
@@ -2202,24 +3111,24 @@ export default function App() {
                       type="button"
                       onClick={handleReloadAnalysis}
                       disabled={!hasLook || isAnalyzing}
-                      className={`m3-btn-morph flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md border ${
+                      className={`m3-btn-morph flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-full border ${
                         !hasLook || isAnalyzing
                           ? "bg-white/[0.025] text-[#9CA3AF]/35 border-white/[0.05] cursor-not-allowed"
                           : reloadedFeedback
                           ? "bg-[#E2E4E9] text-[#0E0E11] border-[#E2E4E9] font-semibold cursor-pointer"
-                          : "bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.09] cursor-pointer"
+                          : "bg-white/[0.045] hover:bg-white/[0.10] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.10] cursor-pointer"
                       }`}
-                      title="Restore all sliders and 3-Way Color Wheels to the Reference analysis result"
+                      title={t("paramsCard.reloadTitle")}
                     >
                       {reloadedFeedback ? (
-                        <>
+                        <span className="liquid-droplet-badge inline-flex items-center gap-1">
                           <Check className="w-3 h-3" />
-                          <span>Restored</span>
-                        </>
+                          <span>{t("paramsCard.restored")}</span>
+                        </span>
                       ) : (
                         <>
                           <RefreshCw className="w-3 h-3" />
-                          <span>Reload</span>
+                          <span>{t("paramsCard.reload")}</span>
                         </>
                       )}
                     </button>
@@ -2227,11 +3136,14 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleResetParams}
-                      className="m3-btn-morph flex items-center gap-1 text-[11px] font-medium text-[#9CA3AF] hover:text-[#E2E4E9] px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] cursor-pointer"
-                      title="Reset all sliders to neutral defaults"
+                      className="liquid-glass-pill m3-btn-morph flex items-center gap-1 text-[11px] font-medium text-[#9CA3AF] hover:text-[#E2E4E9] px-2.5 py-1 rounded-full cursor-pointer"
+                      title={t("paramsCard.resetTitle")}
                     >
                       <RotateCcw className="w-3 h-3" />
-                      <span>Reset</span>
+                      <span>{t("paramsCard.reset")}</span>
+                      {!isNeutralGrade && (
+                        <span className="liquid-droplet-badge w-1.5 h-1.5 rounded-full bg-[#6EE7B7]" />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -2248,29 +3160,32 @@ export default function App() {
                   />
                 </div>
 
-                {/* Collapsible Sub-Group 1: TONE & CONTRAST */}
-                <div className="rounded-xl bg-[#0A0A0D]/30 border border-white/[0.06] mb-2">
+                {/* Collapsible Sub-Group 1: TONE & CONTRAST (Permanent 18px Radius in Both Collapsed & Expanded States) */}
+                <div
+                  data-open={isToneExpanded}
+                  className="capsule-disclosure rounded-[18px] overflow-hidden bg-[#08090C]/65 border border-white/[0.085] mb-2"
+                >
                   <button
                     type="button"
                     onClick={() => setIsToneExpanded((v) => !v)}
                     aria-expanded={isToneExpanded}
-                    className="w-full flex items-center justify-between px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.10em] text-[#9CA3AF] hover:text-[#E2E4E9] cursor-pointer select-none"
+                    className="w-full flex items-center justify-between px-3.5 py-2 text-[10px] font-semibold uppercase tracking-[0.10em] text-[#9CA3AF] hover:text-[#E2E4E9] cursor-pointer select-none"
                   >
-                    <span>TONE &amp; CONTRAST</span>
+                    <span>{t("paramsCard.toneAndContrast")}</span>
                     <ChevronDown
-                      className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                      className={`w-3.5 h-3.5 transition-transform duration-300 ${
                         isToneExpanded ? "rotate-180" : "rotate-0"
                       }`}
                     />
                   </button>
                   <div className="m3-collapse-grid" data-expanded={isToneExpanded}>
                     <div className="m3-collapse-inner">
-                      <div className="px-1 pb-1.5 space-y-0.5 divide-y divide-white/[0.04] border-t border-white/[0.05]">
+                      <div className="px-1.5 pb-1.5 space-y-0.5 divide-y divide-white/[0.04] border-t border-white/[0.05]">
                         {TONE_CONTROLS.map((ctrl) => (
-                          <ParameterControl
+                          <ParameterSlider
                             key={ctrl.key}
                             paramKey={ctrl.key}
-                            label={ctrl.label}
+                            label={t(`paramLabels.${ctrl.key}`) || ctrl.label}
                             min={ctrl.min}
                             max={ctrl.max}
                             step={ctrl.step}
@@ -2289,29 +3204,32 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Collapsible Sub-Group 2: COLOR & SATURATION */}
-                <div className="rounded-xl bg-[#0A0A0D]/30 border border-white/[0.06]">
+                {/* Collapsible Sub-Group 2: COLOR & SATURATION (Permanent 18px Radius in Both Collapsed & Expanded States) */}
+                <div
+                  data-open={isColorExpanded}
+                  className="capsule-disclosure rounded-[18px] overflow-hidden bg-[#08090C]/65 border border-white/[0.085]"
+                >
                   <button
                     type="button"
                     onClick={() => setIsColorExpanded((v) => !v)}
                     aria-expanded={isColorExpanded}
-                    className="w-full flex items-center justify-between px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.10em] text-[#9CA3AF] hover:text-[#E2E4E9] cursor-pointer select-none"
+                    className="w-full flex items-center justify-between px-3.5 py-2 text-[10px] font-semibold uppercase tracking-[0.10em] text-[#9CA3AF] hover:text-[#E2E4E9] cursor-pointer select-none"
                   >
-                    <span>COLOR &amp; SATURATION</span>
+                    <span>{t("paramsCard.colorAndSaturation")}</span>
                     <ChevronDown
-                      className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                      className={`w-3.5 h-3.5 transition-transform duration-300 ${
                         isColorExpanded ? "rotate-180" : "rotate-0"
                       }`}
                     />
                   </button>
                   <div className="m3-collapse-grid" data-expanded={isColorExpanded}>
                     <div className="m3-collapse-inner">
-                      <div className="px-1 pb-1.5 space-y-0.5 divide-y divide-white/[0.04] border-t border-white/[0.05]">
+                      <div className="px-1.5 pb-1.5 space-y-0.5 divide-y divide-white/[0.04] border-t border-white/[0.05]">
                         {COLOR_CONTROLS.map((ctrl) => (
-                          <ParameterControl
+                          <ParameterSlider
                             key={ctrl.key}
                             paramKey={ctrl.key}
-                            label={ctrl.label}
+                            label={t(`paramLabels.${ctrl.key}`) || ctrl.label}
                             min={ctrl.min}
                             max={ctrl.max}
                             step={ctrl.step}
@@ -2330,9 +3248,10 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 6. Collapsible 3-Way Color Wheels Swatches (delay: 230ms) */}
+                {/* 6. Collapsible 3-Way Color Wheels (Permanent 18px Radius in Both Collapsed & Expanded States) */}
                 <div
-                  className={`mt-3 pt-3 border-t border-white/[0.08] ${
+                  data-open={isWheelsExpanded}
+                  className={`capsule-disclosure rounded-[18px] overflow-hidden mt-2.5 bg-[#08090C]/65 border border-white/[0.085] px-3.5 py-2 ${
                     workspacePhase === "morphing-in" ? "m3-morph-panel" : ""
                   }`}
                   style={
@@ -2348,7 +3267,7 @@ export default function App() {
                     <div className="flex items-center gap-2">
                       <Layers className="w-3.5 h-3.5 text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors" />
                       <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors">
-                        3-WAY COLOR WHEELS
+                        {t("paramsCard.colorWheels")}
                       </span>
                     </div>
 
@@ -2364,7 +3283,7 @@ export default function App() {
                                 gradingParams.liftB
                               ),
                             }}
-                            title="Shadows (Lift)"
+                            title={t("paramsCard.shadowsWheel")}
                           />
                           <span
                             className="w-3.5 h-3.5 rounded-full border border-white/20"
@@ -2375,7 +3294,7 @@ export default function App() {
                                 gradingParams.gammaB
                               ),
                             }}
-                            title="Midtones (Gamma)"
+                            title={t("paramsCard.midtonesWheel")}
                           />
                           <span
                             className="w-3.5 h-3.5 rounded-full border border-white/20"
@@ -2386,7 +3305,7 @@ export default function App() {
                                 gradingParams.gainB
                               ),
                             }}
-                            title="Highs (Gain)"
+                            title={t("paramsCard.highlightsWheel")}
                           />
                         </div>
                       )}
@@ -2398,14 +3317,13 @@ export default function App() {
                           setIsWheelsExpanded((prev) => !prev);
                         }}
                         aria-expanded={isWheelsExpanded}
-                        aria-label="Toggle 3-Way Color Wheels panel"
-                        className="m3-btn-morph p-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] cursor-pointer"
+                        aria-label={t("paramsCard.toggleWheelsAria")}
+                        className="m3-btn-morph p-1 rounded-full bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] cursor-pointer"
                       >
                         <ChevronDown
                           className={`w-3.5 h-3.5 transition-transform duration-300 ${
                             isWheelsExpanded ? "rotate-180" : "rotate-0"
                           }`}
-                          style={{ transitionTimingFunction: "var(--ease-m3-spring)" }}
                         />
                       </button>
                     </div>
@@ -2419,22 +3337,22 @@ export default function App() {
                   >
                     <div className="m3-collapse-inner">
                       <div className="grid grid-cols-3 gap-2">
-                        <ColorSwatchCard
-                          title="Shadows (Lift)"
+                        <ColorWheel
+                          title={t("paramsCard.shadowsWheel")}
                           rgb={liftRgb}
                           onChange={handleLiftChange}
                           onReset={handleLiftReset}
                           onDragChange={handleControlDragChange}
                         />
-                        <ColorSwatchCard
-                          title="Midtones (Gamma)"
+                        <ColorWheel
+                          title={t("paramsCard.midtonesWheel")}
                           rgb={gammaRgb}
                           onChange={handleGammaChange}
                           onReset={handleGammaReset}
                           onDragChange={handleControlDragChange}
                         />
-                        <ColorSwatchCard
-                          title="Highs (Gain)"
+                        <ColorWheel
+                          title={t("paramsCard.highlightsWheel")}
                           rgb={gainRgb}
                           onChange={handleGainChange}
                           onReset={handleGainReset}
@@ -2465,11 +3383,13 @@ export default function App() {
                   description={description}
                   setDescription={setDescription}
                   onExport={handleExport}
-                  onShare={handleShare}
+                  onShare={() => setIsShareOpen(true)}
                   isExporting={isExporting}
                   disabled={!hasLook}
+                  onExportFfx={handleExportFfx}
                   onExportCube={handleExportCube}
                   onExportLut={handleExportLut3d}
+                  onExportZipPack={handleExportZipPack}
                   isCalibrationActive={isCalibrationActive}
                   onOpenCalibration={handleOpenCalibration}
                   engineId={activeEngineId}
@@ -2484,49 +3404,109 @@ export default function App() {
         {/* SETTINGS TAB */}
         {activeTab === "settings" && (
           <div className="max-w-2xl mx-auto space-y-4 m3-tab-enter">
+            {/* Language Selector Card */}
+            <div className="m3-panel rounded-2xl p-5 sm:p-6 space-y-4">
+              <div className="flex items-center gap-2.5 border-b border-white/[0.08] pb-3.5">
+                <Globe className="w-4 h-4 text-[#6EE7B7]" />
+                <h2 className="text-base font-bold font-display text-[#E2E4E9]">
+                  {t("settings.languageHeading")}
+                </h2>
+              </div>
+              <p className="text-xs text-[#9CA3AF] leading-relaxed">
+                {t("settings.languageDesc")}
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {[
+                  {
+                    code: "en",
+                    title: t("settings.langEnglish"),
+                    sub: t("settings.langEnglishSub"),
+                    badge: "EN",
+                  },
+                  {
+                    code: "id",
+                    title: t("settings.langIndonesian"),
+                    sub: t("settings.langIndonesianSub"),
+                    badge: "ID",
+                  },
+                ].map((opt) => {
+                  const isSelected = lang === opt.code;
+                  return (
+                    <button
+                      key={opt.code}
+                      type="button"
+                      onClick={() => handleSwitchLanguage(opt.code)}
+                      aria-pressed={isSelected}
+                      className={`m3-btn-morph flex items-center justify-between gap-3 p-3.5 rounded-xl border text-left transition-colors cursor-pointer ${
+                        isSelected
+                          ? "bg-[#6EE7B7]/12 border-[#6EE7B7]/45 text-[#F4F5F7]"
+                          : "bg-white/[0.035] hover:bg-white/[0.07] border-white/[0.09] text-[#E2E4E9]"
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold truncate">{opt.title}</div>
+                        <div className="text-[11px] text-[#9CA3AF] truncate mt-0.5">
+                          {opt.sub}
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border shrink-0 ${
+                          isSelected
+                            ? "bg-[#6EE7B7] text-[#042F1E] border-[#6EE7B7]"
+                            : "bg-white/[0.06] text-[#9CA3AF] border-white/[0.12]"
+                        }`}
+                      >
+                        {opt.badge}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="m3-panel rounded-2xl p-5 sm:p-6 space-y-5">
               <div className="flex items-center gap-2.5 border-b border-white/[0.08] pb-3.5">
                 <Settings className="w-4 h-4 text-[#E2E4E9]" />
                 <h2 className="text-base font-bold font-display text-[#E2E4E9]">
-                  Performance &amp; Processing Settings
+                  {t("settings.perfHeading")}
                 </h2>
               </div>
 
               <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-medium text-[#E2E4E9] mb-1">
-                    Reference Analysis Resolution Limit
+                    {t("settings.refResLabel")}
                   </label>
                   <p className="text-xs text-[#9CA3AF] mb-2">
-                    Downscales reference images in the background Web Worker before computing Rec. 709 histograms and percentiles.
+                    {t("settings.refResDesc")}
                   </p>
                   <M3Select
                     value={analysisMaxDim}
                     onChange={(val) => setAnalysisMaxDim(Number(val))}
-                    ariaLabel="Reference Analysis Resolution Limit"
-                      options={[
-                      { value: 720, label: "720 px (Ultra Fast - Low RAM)" },
-                      { value: 1280, label: "1280 px (Recommended Balanced)" },
-                      { value: 1920, label: "1920 px (Full HD Precision)" },
+                    ariaLabel={t("settings.refResLabel")}
+                    options={[
+                      { value: 720, label: t("settings.refRes720") },
+                      { value: 1280, label: t("settings.refRes1280") },
+                      { value: 1920, label: t("settings.refRes1920") },
                     ]}
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-medium text-[#E2E4E9] mb-1">
-                    Live Preview Simulation Resolution
+                    {t("settings.previewResLabel")}
                   </label>
                   <p className="text-xs text-[#9CA3AF] mb-2">
-                    Controls the internal canvas resolution when dragging sliders in real time.
+                    {t("settings.previewResDesc")}
                   </p>
                   <M3Select
                     value={previewMaxDim}
                     onChange={(val) => setPreviewMaxDim(Number(val))}
-                    ariaLabel="Live Preview Simulation Resolution"
+                    ariaLabel={t("settings.previewResLabel")}
                     options={[
-                      { value: 640, label: "640 px (60fps Mobile Smoothness)" },
-                      { value: 960, label: "960 px (Recommended Default)" },
-                      { value: 1440, label: "1440 px (High Detail Desktop)" },
+                      { value: 640, label: t("settings.previewRes640") },
+                      { value: 960, label: t("settings.previewRes960") },
+                      { value: 1440, label: t("settings.previewRes1440") },
                     ]}
                   />
                 </div>
@@ -2539,10 +3519,10 @@ export default function App() {
                   <Cpu className="w-4 h-4 text-[#E2E4E9]" />
                   <div>
                     <h2 className="text-base font-bold font-display text-[#E2E4E9]">
-                      Engine &amp; Export Calibration
+                      {t("settings.calHeading")}
                     </h2>
                     <p className="text-xs text-[#9CA3AF]">
-                      Web pipeline self-test recovery &amp; Keyflow OpenGL ES shader output scaling
+                      {t("settings.calSubtitle")}
                     </p>
                   </div>
                 </div>
@@ -2551,10 +3531,10 @@ export default function App() {
                   type="button"
                   onClick={handleResetCalibration}
                   className="m3-btn-morph inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] cursor-pointer"
-                  title="Reset all output calibration multipliers to 1.00x"
+                  title={t("settings.resetCalTitle")}
                 >
                   <RotateCcw className="w-3 h-3" />
-                  <span>Reset Calibration</span>
+                  <span>{t("settings.resetCal")}</span>
                 </button>
               </div>
 
@@ -2562,10 +3542,10 @@ export default function App() {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="space-y-1">
                     <div className="text-xs font-semibold text-[#E2E4E9]">
-                      Web Pipeline Self-Calibration &amp; Recovery
+                      {t("settings.selfCalTitle")}
                     </div>
                     <p className="text-xs text-[#9CA3AF] leading-relaxed">
-                      Verifies neutral gray ramp &amp; RGB primaries through the Canvas 2D shader simulator, restarts the background Web Worker, and flushes cached preview buffers.
+                      {t("settings.selfCalDesc")}
                     </p>
                   </div>
 
@@ -2580,22 +3560,28 @@ export default function App() {
                         calibrationStatus.running ? "animate-spin" : ""
                       }`}
                     />
-                    <span>Run Calibration &amp; Flush Cache</span>
+                    <span>{t("settings.runCalBtn")}</span>
                   </button>
                 </div>
 
                 <div className="pt-2.5 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
                   <div className="flex items-center gap-2 text-[#E2E4E9]">
                     <CheckCircle2 className="w-3.5 h-3.5 text-[#6EE7B7] shrink-0" />
-                    <span>{calibrationStatus.message}</span>
+                    <span>
+                      {calibrationStatus.running
+                        ? t("settings.calRunningMsg")
+                        : t("settings.calOkMsg")}
+                    </span>
                   </div>
                   <div className="flex items-center gap-3 text-[#9CA3AF]">
                     <span>
-                      Drift <strong className="text-[#E2E4E9]">ΔE {calibrationStatus.deltaE}</strong>
+                      {t("settings.driftLabel")}{" "}
+                      <strong className="text-[#E2E4E9]">dE {calibrationStatus.deltaE}</strong>
                     </span>
-                    <span>•</span>
+                    <span>-</span>
                     <span>
-                      Latency <strong className="text-[#E2E4E9]">{calibrationStatus.latencyMs} ms</strong>
+                      {t("settings.latencyLabel")}{" "}
+                      <strong className="text-[#E2E4E9]">{calibrationStatus.latencyMs} ms</strong>
                     </span>
                   </div>
                 </div>
@@ -2604,20 +3590,20 @@ export default function App() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-[#E2E4E9]">
-                    Keyflow .kfplug Output Calibration Multipliers
+                    {t("settings.multipliersTitle")}
                   </span>
                   <span className="text-[11px] font-mono text-[#9CA3AF]">
-                    Range: 0.50x - 1.50x (Default 1.00x)
+                    {t("settings.multipliersRange")}
                   </span>
                 </div>
                 <p className="text-xs text-[#9CA3AF] pb-1">
-                  Compensates for rendering intensity differences between browser 2D canvas and Keyflow Mobile&apos;s OpenGL ES shader pipeline during <code className="font-mono text-[#E2E4E9]">.kfplug</code> packaging.
+                  {t("settings.multipliersDesc")}
                 </p>
 
                 <div className="bg-[#0A0A0D]/38 border border-white/[0.09] rounded-xl p-2 divide-y divide-white/[0.04]">
-                  <ParameterControl
+                  <ParameterSlider
                     paramKey="toneScale"
-                    label="Tone & Contrast Scale"
+                    label={t("paramLabels.toneScale")}
                     min={0.5}
                     max={1.5}
                     step={0.01}
@@ -2628,9 +3614,9 @@ export default function App() {
                     onChange={handleCalibrationChange}
                     icon={Contrast}
                   />
-                  <ParameterControl
+                  <ParameterSlider
                     paramKey="wbScale"
-                    label="White Balance Scale"
+                    label={t("paramLabels.wbScale")}
                     min={0.5}
                     max={1.5}
                     step={0.01}
@@ -2641,9 +3627,9 @@ export default function App() {
                     onChange={handleCalibrationChange}
                     icon={Thermometer}
                   />
-                  <ParameterControl
+                  <ParameterSlider
                     paramKey="chromaScale"
-                    label="Chroma (Sat/Vib) Scale"
+                    label={t("paramLabels.chromaScale")}
                     min={0.5}
                     max={1.5}
                     step={0.01}
@@ -2670,33 +3656,43 @@ export default function App() {
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-lg font-bold font-display text-[#E2E4E9]">
-                        Color Match for Keyflow V.0.9.0 Beta
+                        Color Match for Keyflow
                       </h2>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.05] text-[#6EE7B7] border border-white/[0.09]">
-                        v0.9.0 Beta
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/[0.05] text-[#6EE7B7] border border-white/[0.12]">
+                        v0.9.5 Beta
                       </span>
                     </div>
                     <p className="text-xs text-[#9CA3AF] mt-0.5">
-                      100% Client-Side Web App • Zero Server Upload
+                      {t("about.subtitle")}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsReleaseKitOpen(true)}
+                    title={t("about.releasePosterTitle")}
+                    className="m3-btn-morph inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] text-xs font-medium text-[#E2E4E9] cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-[#6EE7B7]" />
+                    <span>{t("about.releasePosterBtn")}</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={handleReplayIntro}
-                    title="Replay the interactive monochrome liquid glass entrance intro"
+                    title={t("about.replayIntroTitle")}
                     className="m3-btn-morph inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] text-xs font-medium text-[#E2E4E9] cursor-pointer"
                   >
                     <Play className="w-3.5 h-3.5 text-[#6EE7B7]" />
-                    <span>Replay Intro</span>
+                    <span>{t("about.replayIntroBtn")}</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setActiveTab("support")}
-                    title="Created by TFBAGAS - View Developer & Support Hub"
+                    title={t("about.devHubTitle")}
                     className="cursor-pointer transition-transform hover:scale-[1.02]"
                   >
                     <TfbagasWordmark compact />
@@ -2705,33 +3701,91 @@ export default function App() {
               </div>
 
               <p className="text-xs sm:text-sm text-[#9CA3AF] leading-relaxed">
-                This tool analyzes the luminance distribution (Rec. 709), white balance neutrality, saturation, and 3-way split toning (Shadows, Midtones, Highlights) of any reference image directly inside your browser using Web Workers, then packages a native{" "}
+                {t("about.heroParagraph1")}{" "}
                 <code className="text-[#E2E4E9] font-mono bg-white/[0.05] px-1.5 py-0.5 rounded border border-white/[0.09]">
                   .kfplug
                 </code>{" "}
-                GLSL shader plugin for Keyflow.
+                {t("about.heroParagraph2")}
               </p>
 
               <div className="bg-white/[0.035] border border-white/[0.09] rounded-xl p-4 text-xs text-[#9CA3AF] space-y-1.5">
-                <div className="font-semibold text-[#E2E4E9]">Privacy &amp; Architecture</div>
-                <p>
-                  All images are processed locally in your device&apos;s memory. No photos or presets are ever uploaded to an external server.
-                </p>
+                <div className="font-semibold text-[#E2E4E9]">{t("about.privacyTitle")}</div>
+                <p>{t("about.privacyDesc")}</p>
               </div>
             </div>
 
-            {/* Permanent Release History / Changelog Accordion (v0.5.0 Beta -> v0.6.5 Beta) */}
+            {/* 3-Step Keyflow Mobile Install Guide */}
+            <div className="m3-panel rounded-2xl p-5 sm:p-6 space-y-3.5">
+              <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+                <h3 className="text-sm sm:text-base font-bold font-display text-[#E2E4E9]">
+                  {t("about.installGuideTitle")}
+                </h3>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#6EE7B7]/10 text-[#6EE7B7] border border-[#6EE7B7]/25">
+                  {t("about.mobileGuideBadge")}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="rounded-xl bg-white/[0.03] border border-white/[0.08] p-3.5 space-y-1.5">
+                  <div className="text-[10px] font-mono uppercase tracking-[0.1em] text-[#6EE7B7]">
+                    {t("about.step01")}
+                  </div>
+                  <div className="font-semibold text-[#E2E4E9]">{t("about.step01Title")}</div>
+                  <p className="text-[#9CA3AF] leading-relaxed">{t("about.step01Desc")}</p>
+                </div>
+                <div className="rounded-xl bg-white/[0.03] border border-white/[0.08] p-3.5 space-y-1.5">
+                  <div className="text-[10px] font-mono uppercase tracking-[0.1em] text-[#6EE7B7]">
+                    {t("about.step02")}
+                  </div>
+                  <div className="font-semibold text-[#E2E4E9]">{t("about.step02Title")}</div>
+                  <p className="text-[#9CA3AF] leading-relaxed">{t("about.step02Desc")}</p>
+                </div>
+                <div className="rounded-xl bg-white/[0.03] border border-white/[0.08] p-3.5 space-y-1.5">
+                  <div className="text-[10px] font-mono uppercase tracking-[0.1em] text-[#6EE7B7]">
+                    {t("about.step03")}
+                  </div>
+                  <div className="font-semibold text-[#E2E4E9]">{t("about.step03Title")}</div>
+                  <p className="text-[#9CA3AF] leading-relaxed">{t("about.step03Desc")}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Permanent Release History / Changelog Accordion */}
             <div className="m3-panel rounded-2xl p-5 sm:p-6 space-y-3.5">
               <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
                 <div className="flex items-center gap-2">
                   <History className="w-4 h-4 text-[#6EE7B7]" />
                   <h3 className="text-sm sm:text-base font-bold font-display text-[#E2E4E9]">
-                    Release History / Changelog
+                    {t("about.changelogTitle")}
                   </h3>
                 </div>
                 <span className="text-[11px] font-mono text-[#9CA3AF]">
-                  v0.5.0 - v0.9.0 Beta
+                  v0.5.0 - v0.9.5 Beta
                 </span>
+              </div>
+
+              {/* Latest v0.9.5 Beta Release Entry */}
+              <div className="rounded-xl bg-[#6EE7B7]/[0.05] border border-[#6EE7B7]/25 p-4 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs sm:text-sm font-bold font-display text-[#F4F5F7]">
+                      v0.9.5 Beta
+                    </span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#6EE7B7]/15 text-[#6EE7B7] border border-[#6EE7B7]/35">
+                      {t("about.latestBadge")}
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-mono text-[#9CA3AF]">
+                    {t("about.preReleasePolish")}
+                  </span>
+                </div>
+                <ul className="text-xs text-[#9CA3AF] space-y-1.5 list-disc pl-4 leading-relaxed">
+                  {(dict?.about?.v095Items || []).map((item, idx) => (
+                    <li key={idx}>
+                      <span className="text-[#E2E4E9] font-medium">{item.bold}</span>{" "}
+                      {item.text}
+                    </li>
+                  ))}
+                </ul>
               </div>
 
               <ReleaseHistoryAccordion />
@@ -2760,11 +3814,74 @@ export default function App() {
         onClose={() => setIsShortcutsOpen(false)}
       />
 
-      {/* Compact Mobile Status Pill (<768px) */}
+      {/* Saved & Built-in Looks Drawer */}
+      <LooksDrawer
+        isOpen={isLooksOpen}
+        onClose={() => setIsLooksOpen(false)}
+        onApplyLook={handleApplyLook}
+        onComputeSwatches={handleComputeSwatches}
+        authorName={authorName}
+        currentGrade={{
+          presetName: presetName || referenceImage?.baseName || importedLook?.name || "",
+          engineId: activeEngineId,
+          logProfile: simulateLogInput,
+          matchStrength,
+          params: gradingParams,
+        }}
+      />
+
+      {/* Share Link & QR Code Modal */}
+      <ShareModal
+        isOpen={isShareOpen}
+        onClose={() => setIsShareOpen(false)}
+        engineId={activeEngineId}
+        logProfile={simulateLogInput}
+        matchStrength={matchStrength}
+        params={gradingParams}
+        onShareFile={handleShare}
+        canShareFile={
+          typeof navigator !== "undefined" &&
+          typeof navigator.share === "function" &&
+          typeof navigator.canShare === "function"
+        }
+      />
+
+      {/* v0.9.5 Beta + v0.9.0 Release Poster Modal */}
+      <ReleaseMediaKitModal
+        isOpen={isReleaseKitOpen}
+        onClose={() => setIsReleaseKitOpen(false)}
+      />
+
+      {/* Spotlight Command Bar (Ctrl+K / Cmd+K) */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        activeEngineId={activeEngineId}
+        onSelectEngine={handleEngineChange}
+        activeLogProfile={simulateLogInput}
+        onSelectLogProfile={handleTargetInputProfileChange}
+        autoNormalizeTarget={autoNormalizeTarget}
+        onToggleAutoNormalizeTarget={handleToggleAutoNormalizeTarget}
+        onApplyLook={handleApplyLook}
+        onTryInstantDemo={handleTryInstantDemo}
+        onExportKfplug={handleExport}
+        onExportFfx={handleExportFfx}
+        onExportCube={handleExportCube}
+        onExportZip={handleExportZipPack}
+        hasLook={hasLook}
+      />
+
+      {/* Universal Floating Liquid Glass Status & Copy Pill with Frosted Soft-Edge Halo */}
       {mobileToast && (
-        <div className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none px-3 py-1.5 rounded-full bg-[#151519]/95 border border-white/20 shadow-xl text-[11px] font-mono text-[#E2E4E9] flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#6EE7B7]" />
-          <span>{mobileToast}</span>
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none flex items-center justify-center m3-toast-enter">
+          <div
+            aria-hidden="true"
+            className="frosted-soft-edge absolute -inset-4 rounded-full bg-white/[0.12]"
+          />
+          <div className="optical-refract-glass relative z-10 px-3.5 py-1.5 rounded-full bg-[#14151B]/92 border border-white/20 text-[11px] font-mono text-[#F4F5F7] flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#6EE7B7]" />
+            <span>{mobileToast}</span>
+          </div>
         </div>
       )}
 

@@ -3,6 +3,8 @@
 // Pure GLSL ES 1.00: no sampler3D, no dynamic loops, no ES 3.00 syntax.
 // Every division / pow() is wrapped with max(..., 1e-5) and results clamped.
 import { UNIFORM_MAP } from "./paramSchema.js";
+import { GLSL_OKLAB_GAMUT_COMPRESS_FUNCTIONS } from "./colorMatcher.js";
+import { GLSL_LOG_PROFILE_FUNCTIONS } from "./logProfiles.js";
 
 export { UNIFORM_MAP };
 
@@ -72,6 +74,8 @@ float kfAgxChannel(float x) {
     float room = 1.0 - k;
     return k + (room * over) / max(room + over * 0.88, 1e-5);
 }
+
+${GLSL_OKLAB_GAMUT_COMPRESS_FUNCTIONS}
 
 vec3 kfHybridLayer(vec3 baseColor) {
     float autoMix = clamp(uAutoGradeMix, 0.0, 1.5);
@@ -148,6 +152,7 @@ vec3 kfHybridLayer(vec3 baseColor) {
     float maxSpan = max(abs(d.r), max(abs(d.g), max(abs(d.b), 1e-4)));
     float softSpan = kfTanh(maxSpan * 1.35) / 1.35;
     p = max(vec3(y2) + d * (softSpan / maxSpan), vec3(0.0));
+    p = kfOklabGamutCompress(p);
 
     float ir = 0.856 * p.r + 0.095 * p.g + 0.049 * p.b;
     float ig = 0.070 * p.r + 0.875 * p.g + 0.055 * p.b;
@@ -294,6 +299,7 @@ uniform sampler2D uTexture;
 uniform float u_viewMode;
 uniform vec2 u_resolution;
 uniform float uSplit;
+uniform float uSplitAxis;
 uniform float uHold;
 uniform float uLogInput;
 uniform float uMonitorMode;
@@ -301,13 +307,7 @@ varying vec2 vTex;
 
 ${GRADE_UNIFORMS}
 ${GRADE_FUNCTION}
-vec3 kfApplyLogInput(vec3 rgb) {
-    float lumaIn = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
-    vec3 damped = mix(vec3(lumaIn), rgb, 0.82);
-    vec3 curved = pow(clamp(damped, 0.0, 1.0), vec3(0.84));
-    float toe = 0.04 * smoothstep(0.0, 0.08, lumaIn);
-    return clamp(vec3(toe) + curved * 0.88, 0.0, 0.92);
-}
+${GLSL_LOG_PROFILE_FUNCTIONS}
 
 void main() {
     vec2 uv = vTex;
@@ -327,7 +327,12 @@ void main() {
             uv.x = (vTex.x - 0.5) * 2.0;
         }
     } else {
-        graded = vTex.x >= uSplit;
+        if (uSplitAxis > 0.5) {
+            float screenY = u_resolution.y > 0.0 ? (1.0 - (gl_FragCoord.y / u_resolution.y)) : vTex.y;
+            graded = screenY >= uSplit;
+        } else {
+            graded = vTex.x >= uSplit;
+        }
     }
 
     if (uHold > 0.5) {
@@ -335,13 +340,13 @@ void main() {
     }
 
     vec3 src = clamp(texture2D(uTexture, uv).rgb, 0.0, 1.0);
-    float baseLuma = dot(src, vec3(0.2126, 0.7152, 0.0722));
-    vec3 inputRgb = uLogInput > 0.5 ? kfApplyLogInput(src) : src;
-    vec3 outRgb = graded ? kfGrade(inputRgb) : inputRgb;
+    vec3 inputRgb = uLogInput > 0.5 ? kfApplyLogProfile(src, uLogInput) : src;
+    float baseLuma = dot(inputRgb, vec3(0.2126, 0.7152, 0.0722));
+    vec3 outRgb = graded ? kfGrade(inputRgb) : src;
     if (graded) {
         float shadowMask = smoothstep(0.015, 0.16, baseLuma);
         float blackProtect = smoothstep(0.0, 0.06, baseLuma) * (0.15 + 0.85 * shadowMask);
-        outRgb = mix(src, outRgb, blackProtect);
+        outRgb = mix(inputRgb, outRgb, blackProtect);
     }
     if (uMonitorMode > 0.5) {
         float monLuma = dot(outRgb, vec3(0.2126, 0.7152, 0.0722));

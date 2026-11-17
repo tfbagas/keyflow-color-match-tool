@@ -6,6 +6,7 @@ import {
   filterLetterboxPixels,
   mergeFramePixelSamples,
 } from "../utils/colorGrading";
+import { sampleReferenceVideoFile } from "../utils/videoSampler";
 
 const MIN_VALID_LUMA = 0.06;
 const MAX_VALID_LUMA = 0.88;
@@ -361,8 +362,54 @@ export function useMediaLoader({
       if (meta.category === "video") {
         if (type === "target") {
           loadVideoFile(file, meta, token);
-        } else {
-          setSlotError(type, "Video files are supported in the TARGET slot only.");
+          return;
+        }
+        // Smart Multi-Frame Reference Sampler for video files loaded into REFERENCE
+        setStatusText("Smart Sampling reference video (8 frames)...");
+        try {
+          const sampled = await sampleReferenceVideoFile(file, {
+            maxDim: 640,
+            onProgress: (msg) => {
+              if (token === loadTokenRef.current.reference) {
+                setStatusText(msg);
+              }
+            },
+          });
+          if (token !== loadTokenRef.current.reference) {
+            if (sampled?.objectUrl) URL.revokeObjectURL(sampled.objectUrl);
+            return;
+          }
+          const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+          const rawBaseName = file.name.replace(/\.[^/.]+$/, "");
+          const baseName = sanitizeMetadataText(rawBaseName, "Reference", 48);
+          const info = {
+            kind: "image",
+            sourceKind: "video",
+            name: sanitizeMetadataText(file.name, "reference.mp4", 80),
+            baseName,
+            width: sampled.width,
+            height: sampled.height,
+            ext: meta.ext.toUpperCase(),
+            formatBadge: `VIDEO (${meta.ext.toUpperCase()})`,
+            sizeMB,
+            dataUrl: sampled.dataUrl,
+            thumbUrl: sampled.thumbUrl,
+            objectUrl: sampled.objectUrl,
+            imgElement: sampled.imgElement,
+            sampledPixels: sampled.sampledPixels,
+            smartSampleBadge: sampled.smartSampleBadge,
+            validFrames: sampled.validFrames,
+            totalFrames: sampled.totalFrames,
+          };
+          replaceReference(info);
+          onReferenceLoaded(info);
+        } catch (err) {
+          if (token !== loadTokenRef.current.reference) return;
+          setSlotError(
+            "reference",
+            (err && err.message) || "Failed to sample reference video."
+          );
+          setStatusText("Video Error");
         }
         return;
       }

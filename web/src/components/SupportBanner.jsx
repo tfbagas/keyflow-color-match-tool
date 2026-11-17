@@ -42,7 +42,7 @@ export default function SupportBanner({ onOpenSupport }) {
           >
             @tfbagas
           </button>{" "}
-          — support future updates if this tool saves you time!
+          - support future updates if this tool saves you time!
         </p>
       </div>
 

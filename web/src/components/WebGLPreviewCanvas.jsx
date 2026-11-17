@@ -7,6 +7,7 @@ import {
   bindHybridUniforms,
 } from "../utils/gradeShader";
 import { sanitizeParams } from "../utils/gradeEngine";
+import { getLogProfileCode } from "../utils/logProfiles";
 
 // Matches PREVIEW_FRAGMENT u_viewMode: 0 = Split Slider, 1 = Side by Side, 2 = Graded Only
 const VIEW_MODE_VALUE = { split: 0, side: 1, result: 2 };
@@ -45,6 +46,7 @@ export default function WebGLPreviewCanvas({
   params,
   mode = "split",
   splitPos = 50,
+  splitDirection = "vertical",
   hold = false,
   simulateLogInput = false,
   monitorMode = "off",
@@ -64,6 +66,7 @@ export default function WebGLPreviewCanvas({
     params,
     mode,
     splitPos,
+    splitDirection,
     hold,
     simulateLogInput,
     monitorMode,
@@ -73,6 +76,7 @@ export default function WebGLPreviewCanvas({
     params,
     mode,
     splitPos,
+    splitDirection,
     hold,
     simulateLogInput,
     monitorMode,
@@ -173,6 +177,7 @@ export default function WebGLPreviewCanvas({
         const uViewMode = gl.getUniformLocation(program, "u_viewMode");
         const uResolution = gl.getUniformLocation(program, "u_resolution");
         const uSplit = gl.getUniformLocation(program, "uSplit");
+        const uSplitAxis = gl.getUniformLocation(program, "uSplitAxis");
         const uHold = gl.getUniformLocation(program, "uHold");
         const uLogInput = gl.getUniformLocation(program, "uLogInput");
         const uMonitorMode = gl.getUniformLocation(program, "uMonitorMode");
@@ -193,6 +198,7 @@ export default function WebGLPreviewCanvas({
           uViewMode,
           uResolution,
           uSplit,
+          uSplitAxis,
           uHold,
           uLogInput,
           uMonitorMode,
@@ -375,11 +381,14 @@ export default function WebGLPreviewCanvas({
       if (res.uSplit !== null) {
         gl.uniform1f(res.uSplit, Math.min(1, Math.max(0, st.splitPos / 100)));
       }
+      if (res.uSplitAxis !== null) {
+        gl.uniform1f(res.uSplitAxis, st.splitDirection === "horizontal" ? 1.0 : 0.0);
+      }
       if (res.uHold !== null) {
         gl.uniform1f(res.uHold, st.hold ? 1 : 0);
       }
       if (res.uLogInput !== null) {
-        gl.uniform1f(res.uLogInput, st.simulateLogInput ? 1 : 0);
+        gl.uniform1f(res.uLogInput, getLogProfileCode(st.simulateLogInput));
       }
       if (res.uMonitorMode !== null) {
         gl.uniform1f(res.uMonitorMode, MONITOR_MODE_VALUE[st.monitorMode] ?? 0);
@@ -410,6 +419,11 @@ export default function WebGLPreviewCanvas({
           stateRef.current.splitPos = nextSplit;
           scheduleDraw();
         },
+        setSplitDirection: (nextDir) => {
+          stateRef.current.splitDirection = nextDir;
+          scheduleDraw();
+        },
+        getCanvas: () => canvasRef.current,
       };
     }
 
@@ -677,7 +691,7 @@ export default function WebGLPreviewCanvas({
   // Coalesced redraw when view options change.
   useEffect(() => {
     scheduleDrawRef.current();
-  }, [mode, splitPos, hold, simulateLogInput, monitorMode, maxSide]);
+  }, [mode, splitPos, splitDirection, hold, simulateLogInput, monitorMode, maxSide]);
 
   // Stop WebGL video loop when leaving Home tab; render 1 frame & resume when returning.
   useEffect(() => {

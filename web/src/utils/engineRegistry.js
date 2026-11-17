@@ -11,8 +11,24 @@ import {
   gradeRGB,
 } from "./gradeEngine.js";
 import { checkAllowedHost } from "./hostGuard.js";
+import {
+  compressOklabChroma,
+  autoNormalizeTargetPixels,
+  applyTargetAutoNormalizeOffsets,
+} from "./colorMatcher.js";
+import { applyLogProfileToRgba, isLogProfileActive } from "./logProfiles.js";
 
 export const DEFAULT_ENGINE_ID = "v3";
+
+export const ENGINE_CODENAME_MAP = {
+  v1: "altair",
+  v2: "vega",
+  v3: "polaris",
+};
+
+export function getEngineCodename(engineId = DEFAULT_ENGINE_ID) {
+  return ENGINE_CODENAME_MAP[engineId] || ENGINE_CODENAME_MAP[DEFAULT_ENGINE_ID];
+}
 
 const SRGB_TO_LINEAR = (() => {
   const t = new Float32Array(256);
@@ -864,6 +880,12 @@ function buildSmoothedOklabLattice(ref, tgt, isLowContrastRefToHighContrastTgt) 
     a1 = a0 + (a1 - a0) * blackLock;
     b1 = b0 + (b1 - b0) * blackLock;
 
+    // Perceptual OKLab Soft Gamut Compression (smooth shoulder roll-off above C > 0.22)
+    const abComp = [0, 0];
+    compressOklabChroma(a1, b1, abComp);
+    a1 = abComp[0];
+    b1 = abComp[1];
+
     latL[i] = clamp(L1, 0.0, 1.0);
     latA[i] = clamp(a1, -0.32, 0.32);
     latB[i] = clamp(b1, -0.32, 0.32);
@@ -1239,35 +1261,62 @@ function analyzeEngineV3(refData, tgtData, options = {}) {
   return sanitizeParams(candParams);
 }
 
+function prepareTargetForAnalysis(tgtData, targetNumPixels, options = {}) {
+  const tgtN = targetNumPixels || (tgtData ? Math.floor(tgtData.length / 4) : 0);
+  if (!tgtData || tgtN < 1) {
+    return { data: null, numPixels: 0, normStats: null };
+  }
+  let working = tgtData;
+  if (isLogProfileActive(options.inputProfile)) {
+    working = applyLogProfileToRgba(working, tgtN, options.inputProfile);
+  }
+  if (options.autoNormalizeTarget) {
+    const norm = autoNormalizeTargetPixels(working, tgtN);
+    return { data: norm.data, numPixels: norm.numPixels, normStats: norm.normStats };
+  }
+  return { data: working, numPixels: tgtN, normStats: null };
+}
+
 export const ENGINE_REGISTRY = {
   v1: {
     id: "v1",
-    name: "Engine v1",
-    subtitle: "Classic Fast",
+    name: "Altair",
+    codename: "altair",
+    versionBadge: "v1",
+    badge: "v1",
+    subtitle: "Fast RGB",
     shortTag: "Fast RGB",
+    shortcutKey: "1",
     bestFor: "Fast shot matching & simple color tweaks",
     summary:
       "Quickly matches overall brightness, contrast, and color tint. Ideal when both clips were shot in similar lighting.",
     pipelineBadges: ["Fast Speed", "Punchy Contrast", "Simple Match"],
-    badge: null,
     description:
       "Quickly matches overall brightness, contrast, and color tint. Ideal when both clips were shot in similar lighting.",
     analyze(refData, tgtData, options = {}) {
-      return analyzeEngineV1(refData, tgtData, options);
+      const prep = prepareTargetForAnalysis(tgtData, options.targetNumPixels, options);
+      const out = analyzeEngineV1(refData, prep.data, {
+        ...options,
+        targetNumPixels: prep.numPixels,
+      });
+      return prep.normStats ? sanitizeParams(applyTargetAutoNormalizeOffsets(out, prep.normStats)) : out;
     },
   },
   v2: {
     id: "v2",
-    name: "Engine v2",
-    subtitle: "Standard Balanced",
+    name: "Vega",
+    codename: "vega",
+    versionBadge: "v2",
+    badge: "v2",
+    subtitle: "Balanced",
     shortTag: "Balanced",
+    shortcutKey: "2",
     bestFor: "Clean everyday grades & natural lighting",
     summary:
-      "Smooths harsh lighting differences while keeping whites clean and highlights soft. Great for everyday rec.709 footage.",
+      "Smooths harsh lighting differences while keeping whites clean and highlights soft. Great for everyday Rec.709 footage.",
     pipelineBadges: ["Clean Whites", "Soft Highlights", "Natural Tone"],
-    badge: null,
     description:
-      "Smooths harsh lighting differences while keeping whites clean and highlights soft. Great for everyday rec.709 footage.",
+      "Smooths harsh lighting differences while keeping whites clean and highlights soft. Great for everyday Rec.709 footage.",
     analyze(refData, tgtData, options = {}) {
       const {
         numPixels = 0,
@@ -1276,32 +1325,43 @@ export const ENGINE_REGISTRY = {
         onStage,
       } = options;
       const refPixels = numPixels || (refData ? Math.floor(refData.length / 4) : 0);
-      const tgtPixels = targetNumPixels || (tgtData ? Math.floor(tgtData.length / 4) : 0);
+      const prep = prepareTargetForAnalysis(tgtData, targetNumPixels, options);
       const v2Out = analyzeImagePixels(
         refData,
         refPixels,
         onStage,
-        tgtData || null,
-        tgtPixels,
+        prep.data,
+        prep.numPixels,
         mediaType
       );
-      return sanitizeParams({ ...v2Out, autoGradeMix: 0.0 });
+      const merged = { ...v2Out, autoGradeMix: 0.0 };
+      return sanitizeParams(
+        prep.normStats ? applyTargetAutoNormalizeOffsets(merged, prep.normStats) : merged
+      );
     },
   },
   v3: {
     id: "v3",
-    name: "Engine v3",
-    subtitle: "Cinema Hybrid Pro",
+    name: "Polaris",
+    codename: "polaris",
+    versionBadge: "v3 PRO",
+    badge: "v3 PRO",
+    subtitle: "Cinema Pro",
     shortTag: "Cinema Pro",
+    shortcutKey: "3",
     bestFor: "Cinematic looks, skin tones & tricky lighting",
     summary:
       "Smartly transfers rich film colors while protecting skin tones, deep blacks, and bright skies from color bleed or muddiness.",
-    pipelineBadges: ["Skin-Safe", "Deep Blacks", "Film Color"],
-    badge: "PRO",
+    pipelineBadges: ["Skin-Safe", "Deep Blacks", "Film Color", "Gamut Safe"],
     description:
       "Smartly transfers rich film colors while protecting skin tones, deep blacks, and bright skies from color bleed or muddiness.",
     analyze(refData, tgtData, options = {}) {
-      return analyzeEngineV3(refData, tgtData, options);
+      const prep = prepareTargetForAnalysis(tgtData, options.targetNumPixels, options);
+      const out = analyzeEngineV3(refData, prep.data, {
+        ...options,
+        targetNumPixels: prep.numPixels,
+      });
+      return prep.normStats ? sanitizeParams(applyTargetAutoNormalizeOffsets(out, prep.normStats)) : out;
     },
   },
 };

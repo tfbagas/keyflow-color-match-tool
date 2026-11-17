@@ -8,17 +8,69 @@ import React, {
   useState,
 } from "react";
 import { Activity, ChevronDown } from "lucide-react";
-
-const SCOPE_MODES = [
-  { id: "histogram", label: "Luma / RGB" },
-  { id: "parade", label: "RGB Parade" },
-  { id: "vectorscope", label: "Vectorscope" },
-];
+import { usePillIndicator } from "../hooks/usePillIndicator";
+import { useLanguage } from "../i18n/LanguageContext";
 
 const SCOPE_W = 320;
 const SCOPE_H = 68;
 const SCOPE_DPR = 1; // Locked to 1x DPR to eliminate 3x retina 2D canvas fill-rate overhead
 const VIDEO_SCOPE_INTERVAL_MS = 165; // Max ~6 FPS during video playback
+
+function drawVectorscopeGraticuleAndSkinLine(ctx, w, h) {
+  const cx = w * 0.5;
+  const cy = h * 0.5;
+  const radius = Math.min(w, h) * 0.44;
+
+  // Outer & 50% saturation graticule rings
+  ctx.save();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius * 0.5, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+  ctx.stroke();
+
+  // Crosshair axes
+  ctx.beginPath();
+  ctx.moveTo(cx - radius, cy);
+  ctx.lineTo(cx + radius, cy);
+  ctx.moveTo(cx, cy - radius);
+  ctx.lineTo(cx, cy + radius);
+  ctx.stroke();
+
+  // Standard Rec.709 Skin-Tone Reference I-Line (~123 deg in Cb/Cr plane)
+  const skinAngle = (123 * Math.PI) / 180;
+  const endX = cx + Math.cos(skinAngle) * radius;
+  const endY = cy - Math.sin(skinAngle) * radius;
+
+  ctx.setLineDash([3, 2]);
+  ctx.strokeStyle = "rgba(251, 191, 36, 0.72)";
+  ctx.lineWidth = 1.25;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(endX, endY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Rim target marker on the I-Line
+  ctx.fillStyle = "rgba(251, 191, 36, 0.88)";
+  ctx.beginPath();
+  ctx.arc(endX, endY, 1.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.font = "600 8px monospace";
+  ctx.fillStyle = "rgba(251, 191, 36, 0.85)";
+  ctx.fillText(
+    "I-LINE",
+    cx + Math.cos(skinAngle) * (radius * 0.72) - 30,
+    cy - Math.sin(skinAngle) * (radius * 0.72) + 2
+  );
+  ctx.restore();
+}
 
 const ProScopes = memo(
   forwardRef(function ProScopes(
@@ -31,6 +83,7 @@ const ProScopes = memo(
     },
     ref
   ) {
+    const { t } = useLanguage();
     const [mode, setMode] = useState("histogram");
     const [fading, setFading] = useState(false);
     const [localCollapsed, setLocalCollapsed] = useState(false);
@@ -38,6 +91,18 @@ const ProScopes = memo(
       typeof controlledCollapsed === "boolean"
         ? controlledCollapsed
         : localCollapsed;
+
+    const scopeModes = [
+      { id: "histogram", label: t("scopes.histogram") },
+      { id: "parade", label: t("scopes.parade") },
+      { id: "vectorscope", label: t("scopes.vectorscope") },
+    ];
+
+    const {
+      containerRef: scopeTabContainerRef,
+      registerTabRef: registerScopeTabRef,
+      pillStyle: scopePillStyle,
+    } = usePillIndicator(mode);
 
     const canvasRef = useRef(null);
     const offscreenRef = useRef(null);
@@ -74,7 +139,7 @@ const ProScopes = memo(
         modeTimerRef.current = null;
         setMode(nextMode);
         setFading(false);
-      }, 80);
+      }, 70);
     };
 
     useEffect(
@@ -121,7 +186,6 @@ const ProScopes = memo(
       const canvas = canvasRef.current;
       if (!canvas) return;
 
-      // Enforce strict 1x DPR buffer dimensions
       const targetW = SCOPE_W * SCOPE_DPR;
       const targetH = SCOPE_H * SCOPE_DPR;
       if (canvas.width !== targetW || canvas.height !== targetH) {
@@ -149,6 +213,9 @@ const ProScopes = memo(
       }
 
       if (!imageData || !imageData.data || imageData.data.length === 0) {
+        if (curMode === "vectorscope") {
+          drawVectorscopeGraticuleAndSkinLine(ctx, w, h);
+        }
         return;
       }
 
@@ -219,7 +286,6 @@ const ProScopes = memo(
         return;
       }
 
-      // Lazily allocate reusable 1x DPR offscreen pixel buffer for Parade & Vectorscope
       if (!offscreenRef.current) {
         const oc = document.createElement("canvas");
         oc.width = w;
@@ -240,7 +306,6 @@ const ProScopes = memo(
         const off1 = colW + gap;
         const off2 = (colW + gap) * 2;
 
-        // Column dividers
         ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
         ctx.beginPath();
         ctx.moveTo(colW + gap / 2, 0);
@@ -262,7 +327,6 @@ const ProScopes = memo(
             if (idx + 2 >= data.length) continue;
             const localX = Math.min(colW - 1, ((px * colW) / safeW) | 0);
 
-            // R channel
             const yr = Math.max(1, Math.min(hSpan, h - 1 - ((data[idx] * hSpan) >> 8)));
             const pr = (yr * w + (off0 + localX)) << 2;
             out[pr] = Math.min(255, out[pr] + 92);
@@ -270,7 +334,6 @@ const ProScopes = memo(
             out[pr + 2] = Math.min(255, out[pr + 2] + 40);
             out[pr + 3] = Math.min(255, out[pr + 3] + 100);
 
-            // G channel
             const yg = Math.max(1, Math.min(hSpan, h - 1 - ((data[idx + 1] * hSpan) >> 8)));
             const pg = (yg * w + (off1 + localX)) << 2;
             out[pg] = Math.min(255, out[pg] + 40);
@@ -278,7 +341,6 @@ const ProScopes = memo(
             out[pg + 2] = Math.min(255, out[pg + 2] + 68);
             out[pg + 3] = Math.min(255, out[pg + 3] + 100);
 
-            // B channel
             const yb = Math.max(1, Math.min(hSpan, h - 1 - ((data[idx + 2] * hSpan) >> 8)));
             const pb = (yb * w + (off2 + localX)) << 2;
             out[pb] = Math.min(255, out[pb] + 36);
@@ -298,47 +360,6 @@ const ProScopes = memo(
         const cy = h * 0.5;
         const radius = Math.min(w, h) * 0.44;
         const scale2R = (2 * radius) / 255;
-
-        // Graticule circle & axes
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius * 0.5, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.moveTo(cx - radius, cy);
-        ctx.lineTo(cx + radius, cy);
-        ctx.moveTo(cx, cy - radius);
-        ctx.lineTo(cx, cy + radius);
-        ctx.stroke();
-
-        // Skin-tone line (I-line ~ 123 deg in Cb/Cr plane)
-        const skinAngle = (123 * Math.PI) / 180;
-        ctx.save();
-        ctx.setLineDash([3, 3]);
-        ctx.strokeStyle = "rgba(251, 191, 36, 0.45)";
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(
-          cx + Math.cos(skinAngle) * radius,
-          cy - Math.sin(skinAngle) * radius
-        );
-        ctx.stroke();
-        ctx.restore();
-
-        ctx.fillStyle = "rgba(251, 191, 36, 0.55)";
-        ctx.font = "8px monospace";
-        ctx.fillText(
-          "SKIN",
-          cx + Math.cos(skinAngle) * (radius * 0.72) - 18,
-          cy - Math.sin(skinAngle) * (radius * 0.72) - 2
-        );
 
         const totalPixels = data.length >> 2;
         const step = Math.max(1, (totalPixels / 5184) | 0);
@@ -362,6 +383,7 @@ const ProScopes = memo(
 
         octx.putImageData(imgBuf, 0, 0);
         ctx.drawImage(oc, 0, 0);
+        drawVectorscopeGraticuleAndSkinLine(ctx, w, h);
       }
     }, []);
 
@@ -383,87 +405,111 @@ const ProScopes = memo(
       drawScope(latestFrameRef.current, true);
     }, [mode, isCollapsed, isDragging, isVideoPlaying, hasMedia, drawScope]);
 
-  return (
-    <div
-      className="rounded-xl bg-white/[0.02] border border-white/[0.08] p-2"
-      style={{ contain: "layout paint" }}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={handleToggleCollapse}
-          aria-expanded={!isCollapsed}
-          aria-label={isCollapsed ? "Expand Pro Scopes" : "Collapse Pro Scopes"}
-          className="flex items-center gap-1.5 text-left cursor-pointer group select-none"
-        >
-          <Activity className="w-3.5 h-3.5 text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors" />
-          <span className="text-[10px] font-mono uppercase tracking-[0.14em] text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors">
-            Pro Scopes
-          </span>
-        </button>
-
-        <div className="flex items-center gap-1.5">
-          {!isCollapsed && (
-            <div className="inline-flex items-center p-0.5 rounded-lg bg-[#0E0E12] border border-white/[0.08]">
-              {SCOPE_MODES.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => handleModeChange(m.id)}
-                  className={`px-2 py-0.5 rounded-md text-[10px] font-medium transition-colors cursor-pointer ${
-                    mode === m.id
-                      ? "bg-white/[0.12] text-[#F4F5F7]"
-                      : "text-[#9CA3AF] hover:text-[#F4F5F7]"
-                  }`}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          )}
-
+    return (
+      <div
+        data-open={!isCollapsed}
+        className="capsule-disclosure rounded-[18px] overflow-hidden bg-white/[0.04] border border-white/[0.13] shadow-[inset_0_1px_1px_rgba(255,255,255,0.24)] px-3.5 py-2.5"
+        style={{ contain: "layout paint" }}
+      >
+        <div className="flex items-center justify-between gap-2">
           <button
             type="button"
             onClick={handleToggleCollapse}
             aria-expanded={!isCollapsed}
-            aria-label={isCollapsed ? "Expand Pro Scopes" : "Collapse Pro Scopes"}
-            title={isCollapsed ? "Expand Pro Scopes" : "Collapse Pro Scopes"}
-            className="m3-btn-morph p-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] cursor-pointer"
+            aria-label={
+              isCollapsed ? t("scopes.expandScopes") : t("scopes.collapseScopes")
+            }
+            className="flex items-center gap-1.5 text-left cursor-pointer group select-none"
           >
-            <ChevronDown
-              className={`w-3 h-3 transition-transform duration-300 ${
-                !isCollapsed ? "rotate-180" : "rotate-0"
-              }`}
-              style={{ transitionTimingFunction: "var(--ease-m3-spring)" }}
-            />
-          </button>
-        </div>
-      </div>
-
-      <div
-        className={`m3-collapse-grid ${!isCollapsed ? "mt-1.5" : "mt-0"}`}
-        data-expanded={!isCollapsed}
-      >
-        <div className="m3-collapse-inner">
-          <div className="relative w-full h-[68px] rounded-lg bg-[#09090C] border border-white/[0.06] overflow-hidden flex items-center justify-center">
-            <canvas
-              ref={canvasRef}
-              width={SCOPE_W}
-              height={SCOPE_H}
-              className={`w-full h-full object-fill transition-opacity duration-[160ms] ${
-                fading ? "opacity-0" : "opacity-100"
-              }`}
-            />
-            {!hasMedia && (
-              <span className="absolute text-[10px] font-mono text-[#9CA3AF]/50 pointer-events-none">
-                Load target media to inspect scopes
+            <Activity className="w-3.5 h-3.5 text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors" />
+            <span className="text-[10px] font-mono uppercase tracking-[0.14em] text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors">
+              {t("scopes.title")}
+            </span>
+            {mode === "vectorscope" && !isCollapsed && (
+              <span className="hidden sm:inline-flex items-center px-1.5 py-0.2 rounded bg-amber-400/12 border border-amber-400/30 text-[9px] font-mono text-amber-300">
+                I-Line
               </span>
             )}
+          </button>
+
+          <div className="flex items-center gap-1.5">
+            {!isCollapsed && (
+              <div
+                ref={scopeTabContainerRef}
+                className="relative inline-flex items-center p-0.5 rounded-lg bg-[#0A0A0E] border border-white/[0.09]"
+              >
+                <div
+                  aria-hidden="true"
+                  className="m3-pill-indicator optical-refract-glass pointer-events-none absolute top-0.5 bottom-0.5 left-0 rounded-md bg-white/[0.16] border border-white/[0.24]"
+                  style={{
+                    transform: `translate3d(${scopePillStyle.left}px, 0, 0)`,
+                    width: `${scopePillStyle.width}px`,
+                    opacity: scopePillStyle.opacity,
+                  }}
+                />
+                {scopeModes.map((m) => (
+                  <button
+                    key={m.id}
+                    ref={registerScopeTabRef(m.id)}
+                    type="button"
+                    onClick={() => handleModeChange(m.id)}
+                    className={`relative z-10 px-2 py-0.5 rounded-md text-[10px] font-medium transition-colors cursor-pointer ${
+                      mode === m.id
+                        ? "text-[#F4F5F7] font-semibold"
+                        : "text-[#9CA3AF] hover:text-[#F4F5F7]"
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleToggleCollapse}
+              aria-expanded={!isCollapsed}
+              aria-label={
+                isCollapsed ? t("scopes.expandScopes") : t("scopes.collapseScopes")
+              }
+              title={
+                isCollapsed ? t("scopes.expandScopes") : t("scopes.collapseScopes")
+              }
+              className="m3-btn-morph p-1 rounded-full bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] cursor-pointer"
+            >
+              <ChevronDown
+                className={`w-3 h-3 transition-transform duration-300 ${
+                  !isCollapsed ? "rotate-180" : "rotate-0"
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        <div
+          className={`m3-collapse-grid ${!isCollapsed ? "mt-1.5" : "mt-0"}`}
+          data-expanded={!isCollapsed}
+        >
+          <div className="m3-collapse-inner">
+            <div className="relative w-full h-[68px] rounded-xl bg-[#09090C] border border-white/[0.07] overflow-hidden flex items-center justify-center">
+              <canvas
+                ref={canvasRef}
+                width={SCOPE_W}
+                height={SCOPE_H}
+                className={`w-full h-full object-fill transition-opacity duration-[160ms] ${
+                  fading ? "opacity-0" : "opacity-100"
+                }`}
+              />
+              {!hasMedia && mode !== "vectorscope" && (
+                <span className="absolute text-[10px] font-mono text-[#9CA3AF]/50 pointer-events-none">
+                  {t("scopes.emptyHint")}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
   })
 );
 

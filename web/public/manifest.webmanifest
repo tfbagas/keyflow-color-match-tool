@@ -1,0 +1,23 @@
+{
+  "name": "Color Match for Keyflow",
+  "short_name": "Color Match",
+  "description": "Extract Look & Grading from Reference Image and Export as Keyflow Mobile Plugin (.kfplug)",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#060709",
+  "theme_color": "#060709",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}

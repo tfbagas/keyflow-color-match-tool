@@ -4,11 +4,43 @@
   --font-sans: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-display: "Bricolage Grotesque", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --spring-bouncy: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --spring-liquid: cubic-bezier(0.22, 1.35, 0.36, 1);
   --ease-m3: cubic-bezier(0.2, 0, 0, 1);
-  --ease-m3-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
-  --ease-bouncy-spring: cubic-bezier(0.34, 1.48, 0.64, 1);
-  --ease-liquid-morph: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-m3-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-bouncy-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-liquid-morph: cubic-bezier(0.22, 1.35, 0.36, 1);
   --ease-tactile-press: cubic-bezier(0.2, 0, 0, 1);
+}
+
+:root {
+  --spring-bouncy: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --spring-liquid: cubic-bezier(0.22, 1.35, 0.36, 1);
+  --ease-m3-spring: var(--spring-bouncy);
+  --ease-bouncy-spring: var(--spring-bouncy);
+  --ease-liquid-morph: var(--spring-liquid);
+  --ease-tactile-press: cubic-bezier(0.2, 0, 0, 1);
+  --ambient-primary: rgba(255, 255, 255, 0.045);
+}
+
+@layer base {
+  html,
+  body {
+    font-family: var(--font-sans);
+    background-color: #060709;
+    color: #E2E4E9;
+    overflow-x: clip;
+  }
+
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-timing-function: var(--spring-liquid);
+  }
 }
 
 @keyframes liquidMorphLens {
@@ -33,126 +65,449 @@
   }
 }
 
+@keyframes anamorphicCausticSweep {
+  0% {
+    transform: translate3d(-24%, -8%, 0) rotate(-14deg) scale3d(1, 0.92, 1);
+  }
+  50% {
+    transform: translate3d(18%, 6%, 0) rotate(-8deg) scale3d(1.12, 1.04, 1);
+  }
+  100% {
+    transform: translate3d(-18%, 4%, 0) rotate(-12deg) scale3d(0.98, 0.94, 1);
+  }
+}
+
+/* 120fps GPU-Composited Monochrome Anamorphic Liquid Light Sweeps (18s, 24s, 30s) */
+@keyframes anamorphicRibbonDriftA {
+  0% {
+    transform: translate3d(-14%, -8%, 0) rotate(-14deg) scale3d(1, 0.94, 1);
+  }
+  50% {
+    transform: translate3d(10%, 6%, 0) rotate(-9deg) scale3d(1.12, 1.04, 1);
+  }
+  100% {
+    transform: translate3d(-6%, 10%, 0) rotate(-12deg) scale3d(0.98, 1.02, 1);
+  }
+}
+
+@keyframes anamorphicRibbonDriftB {
+  0% {
+    transform: translate3d(12%, 4%, 0) rotate(11deg) scale3d(1.04, 0.96, 1);
+  }
+  50% {
+    transform: translate3d(-10%, -5%, 0) rotate(6deg) scale3d(0.96, 1.08, 1);
+  }
+  100% {
+    transform: translate3d(8%, -8%, 0) rotate(13deg) scale3d(1.08, 0.94, 1);
+  }
+}
+
+@keyframes anamorphicCausticPool {
+  0% {
+    transform: translate3d(-8%, 6%, 0) rotate(-6deg) scale3d(0.96, 1.05, 1);
+  }
+  50% {
+    transform: translate3d(9%, -6%, 0) rotate(4deg) scale3d(1.10, 0.95, 1);
+  }
+  100% {
+    transform: translate3d(-4%, -4%, 0) rotate(-2deg) scale3d(1.02, 1.06, 1);
+  }
+}
+
 .kf-liquid-lens {
   animation: liquidMorphLens 11s ease-in-out infinite;
   will-change: border-radius, transform;
 }
 
 .kf-liquid-sheen {
-  animation: liquidSheenSweep 5.5s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  animation: liquidSheenSweep 5.5s var(--spring-liquid) infinite;
   will-change: transform;
 }
 
-:root {
-  --ease-m3-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
-  --ease-bouncy-spring: cubic-bezier(0.34, 1.48, 0.64, 1);
-  --ease-liquid-morph: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-tactile-press: cubic-bezier(0.2, 0, 0, 1);
+.argan-caustic-sweep {
+  animation: anamorphicCausticSweep 18s ease-in-out infinite alternate;
+  will-change: transform;
 }
 
-@layer base {
-  html,
-  body {
-    font-family: var(--font-sans);
-    background-color: #070709;
-    color: #E2E4E9;
-    overflow-x: clip;
-  }
-
-  .font-mono {
-    font-variant-numeric: tabular-nums;
-  }
-
-  *,
-  *::before,
-  *::after {
-    transition-timing-function: var(--ease-liquid-morph);
-  }
-}
-
-/* Lightweight Solid-Surface Workstation Panels (Zero GPU blur fill-rate overhead on scroll) */
-.m3-panel {
+/* ==========================================================================
+   1. 120FPS GPU MONOCHROME ANAMORPHIC LIQUID LIGHT-FIELD BACKDROP
+   ========================================================================== */
+.workspace-anamorphic-ribbon-a {
+  pointer-events: none;
   background: linear-gradient(
-    155deg,
-    rgba(255, 255, 255, 0.04) 0%,
-    rgba(18, 18, 22, 0.97) 45%,
-    rgba(14, 14, 18, 0.99) 100%
+    115deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.055) 45%,
+    rgba(235, 240, 250, 0.11) 50%,
+    rgba(255, 255, 255, 0.04) 55%,
+    transparent 80%
   );
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.18),
-    0 10px 28px rgba(0, 0, 0, 0.5);
-  transition: border-color 180ms var(--ease-liquid-morph),
-    background 180ms var(--ease-liquid-morph),
-    box-shadow 180ms var(--ease-liquid-morph);
+  animation: anamorphicRibbonDriftA 18s ease-in-out infinite alternate;
+  will-change: transform;
 }
 
-@media (max-width: 1023px) {
-  .m3-panel {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    box-shadow: none;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-  }
+.workspace-anamorphic-ribbon-b {
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    transparent 22%,
+    rgba(255, 255, 255, 0.045) 46%,
+    rgba(235, 240, 250, 0.095) 51%,
+    rgba(255, 255, 255, 0.035) 56%,
+    transparent 82%
+  );
+  animation: anamorphicRibbonDriftB 24s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+.workspace-caustic-pool-a {
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 68% 36% at 50% 50%,
+    rgba(255, 255, 255, 0.11) 0%,
+    rgba(235, 238, 245, 0.055) 42%,
+    rgba(255, 255, 255, 0.02) 68%,
+    transparent 84%
+  );
+  animation: anamorphicCausticPool 30s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+.workspace-caustic-pool-b {
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 60% 30% at 50% 50%,
+    rgba(255, 255, 255, 0.085) 0%,
+    rgba(226, 228, 233, 0.04) 48%,
+    transparent 78%
+  );
+  animation: anamorphicRibbonDriftA 24s ease-in-out infinite alternate-reverse;
+  will-change: transform;
+}
+
+.obsidian-studio-light {
+  background:
+    radial-gradient(
+      ellipse 80% 45% at 50% -10%,
+      rgba(255, 255, 255, 0.055),
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 65% 32% at 50% -4%,
+      var(--ambient-primary, rgba(255, 255, 255, 0.045)),
+      transparent 65%
+    );
+  transition: background 600ms var(--spring-liquid);
+}
+
+.optical-caustic-grain {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.65) 0.5px, transparent 0.5px),
+    radial-gradient(rgba(210, 215, 225, 0.45) 0.5px, transparent 0.5px);
+  background-size: 24px 24px;
+  background-position: 0 0, 12px 12px;
+  opacity: 0.025;
+}
+
+/* ==========================================================================
+   2. 100% HARDWARE-ACCELERATED LIQUID GLASS SYSTEM (Opera & Chrome Safe)
+   ========================================================================== */
+
+/* Sticky Top Header Frosted Glass Fill */
+.studio-frosted-header {
+  background: rgba(12, 14, 19, 0.56);
+  backdrop-filter: blur(22px) saturate(165%);
+  -webkit-backdrop-filter: blur(22px) saturate(165%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05),
+    0 12px 32px -12px rgba(0, 0, 0, 0.72);
+}
+
+/* Hardware-Accelerated Optical Glass + Fresnel Rim (Top-Level Only: Rail & Modals) */
+.optical-refract-glass,
+.fresnel-glass-rim,
+.m3-modal-enter {
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05),
+    0 18px 40px -16px rgba(0, 0, 0, 0.75);
+}
+
+/* Prevent nested backdrop-filter inside cards/header (Chromium/Opera compositor fix) */
+.liquid-glass-card .optical-refract-glass,
+.m3-panel .optical-refract-glass,
+.studio-frosted-header .optical-refract-glass {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Isolated Decorative Child Layers: Gradual Blur (3 Stacked Progressive Blur + Masks) */
+.gradual-blur-bottom {
+  pointer-events: none;
+  user-select: none;
+}
+
+.gradual-blur-layer-1 {
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 38%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 38%);
+}
+
+.gradual-blur-layer-2 {
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  mask-image: linear-gradient(to bottom, transparent 28%, black 72%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 28%, black 72%);
+}
+
+.gradual-blur-layer-3 {
+  pointer-events: none;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  mask-image: linear-gradient(to bottom, transparent 58%, black 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 58%, black 100%);
+}
+
+/* Isolated Decorative Child Layer: Frosted Glass Soft Edges (Feathered Radial Mask) */
+.frosted-soft-edge {
+  pointer-events: none;
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
+  mask-image: radial-gradient(
+    ellipse 72% 72% at 50% 50%,
+    black 48%,
+    transparent 100%
+  );
+  -webkit-mask-image: radial-gradient(
+    ellipse 72% 72% at 50% 50%,
+    black 48%,
+    transparent 100%
+  );
+}
+
+/* Permanent 18px Radius Hardware-Accelerated Cards (Explicit z-10 Above Backdrop, Zero Disappearing Cards) */
+.m3-panel,
+.liquid-glass-card {
+  position: relative;
+  z-index: 10;
+  border-radius: 18px;
+  overflow: hidden;
+  background: linear-gradient(
+    160deg,
+    rgba(20, 22, 28, 0.56) 0%,
+    rgba(11, 13, 17, 0.66) 100%
+  );
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 18px 40px -16px rgba(0, 0, 0, 0.75);
+  transition:
+    border-color 240ms var(--spring-liquid),
+    background 240ms var(--spring-liquid),
+    box-shadow 260ms var(--spring-liquid),
+    transform 420ms var(--spring-bouncy);
+}
+
+.liquid-glass-pill {
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  transition:
+    transform 420ms var(--spring-bouncy),
+    border-color 220ms var(--spring-liquid),
+    background 220ms var(--spring-liquid),
+    box-shadow 260ms var(--spring-liquid);
 }
 
 .m3-surface-high {
   background-color: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  transition: background-color 180ms var(--ease-liquid-morph),
-    border-color 180ms var(--ease-liquid-morph);
+  border: 1px solid rgba(255, 255, 255, 0.085);
+  transition: background-color 200ms var(--spring-liquid),
+    border-color 200ms var(--spring-liquid);
 }
 
-/* 2 Lightweight GPU-Composited Monochrome Radial Gradients (Transform Only, Zero Blur Filter) */
-@keyframes m3LiquidOrb1 {
+/* ==========================================================================
+   3. BOUNCY SPRING PHYSICS & GOOEY LIQUID DROPLET DETACHMENT
+   ========================================================================== */
+
+/* 3.1 iOS 26 Liquid Stretch Toggles (Elongated Capsule Mid-Travel + Bouncy Overshoot) */
+@keyframes liquidToggleStretchOn {
   0% {
-    transform: translate3d(-4vw, -2vh, 0) scale(1);
+    transform: translate3d(2px, 0, 0) scaleX(1) scaleY(1);
+  }
+  45% {
+    transform: translate3d(9px, 0, 0) scaleX(1.38) scaleY(0.84);
+  }
+  78% {
+    transform: translate3d(17.5px, 0, 0) scaleX(0.92) scaleY(1.08);
   }
   100% {
-    transform: translate3d(38vw, 12vh, 0) scale(1.12, 0.94);
+    transform: translate3d(16px, 0, 0) scaleX(1) scaleY(1);
   }
 }
 
-@keyframes m3LiquidOrb2 {
+@keyframes liquidToggleStretchOff {
   0% {
-    transform: translate3d(2vw, 4vh, 0) scale(1);
+    transform: translate3d(16px, 0, 0) scaleX(1) scaleY(1);
+  }
+  45% {
+    transform: translate3d(8px, 0, 0) scaleX(1.38) scaleY(0.84);
+  }
+  78% {
+    transform: translate3d(0.5px, 0, 0) scaleX(0.92) scaleY(1.08);
   }
   100% {
-    transform: translate3d(-34vw, -16vh, 0) scale(0.94, 1.1);
+    transform: translate3d(2px, 0, 0) scaleX(1) scaleY(1);
   }
 }
 
-.m3-liquid-orb-1 {
-  width: 680px;
-  height: 680px;
-  background: radial-gradient(
-    circle,
-    rgba(255, 255, 255, 0.15) 0%,
-    rgba(235, 238, 245, 0.06) 42%,
-    transparent 70%
-  );
-  will-change: transform;
-  animation: m3LiquidOrb1 22s ease-in-out infinite alternate;
+.liquid-switch,
+[role="switch"] {
+  transition:
+    background-color 320ms var(--spring-liquid),
+    border-color 320ms var(--spring-liquid),
+    box-shadow 320ms var(--spring-liquid),
+    transform 320ms var(--spring-bouncy);
 }
 
-.m3-liquid-orb-2 {
-  width: 620px;
-  height: 620px;
-  background: radial-gradient(
-    circle,
-    rgba(240, 242, 246, 0.12) 0%,
-    rgba(195, 200, 208, 0.045) 45%,
-    transparent 70%
-  );
-  will-change: transform;
-  animation: m3LiquidOrb2 26s ease-in-out infinite alternate;
+.liquid-switch:active,
+[role="switch"]:active {
+  transform: scale3d(0.96, 0.96, 1);
 }
 
-/* Smooth Material You Expressive Accordion Grid (Transform + Opacity + Grid Rows) */
+.liquid-switch-thumb,
+[role="switch"] > span {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    0 2px 6px rgba(0, 0, 0, 0.6);
+  transition:
+    transform 420ms var(--spring-bouncy),
+    background-color 260ms var(--spring-liquid),
+    box-shadow 260ms var(--spring-liquid);
+  will-change: transform;
+}
+
+[role="switch"][aria-checked="true"] > span {
+  animation: liquidToggleStretchOn 440ms var(--spring-bouncy) forwards;
+}
+
+[role="switch"][aria-checked="false"] > span {
+  animation: liquidToggleStretchOff 440ms var(--spring-bouncy) forwards;
+}
+
+[role="switch"]:active > span {
+  transform: scaleX(1.38) scaleY(0.84) !important;
+}
+
+/* 3.2 Morphing Segmented Pill Indicator (420ms --spring-bouncy + Platinum Specular Rim) */
+.m3-pill-indicator {
+  transition:
+    transform 420ms var(--spring-bouncy),
+    opacity 220ms var(--spring-liquid);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.12),
+    0 4px 12px rgba(0, 0, 0, 0.45);
+  will-change: transform, opacity;
+}
+
+/* 3.3 Droplet Detachment on Action Pills (--spring-bouncy scale/translate overshoot) */
+@keyframes liquidDropletBud {
+  0% {
+    opacity: 0;
+    transform: scale(0.4) translateX(-12px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.08) translateX(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateX(0);
+  }
+}
+
+.liquid-droplet-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  animation: liquidDropletBud 460ms var(--spring-bouncy) both;
+  transform-origin: left center;
+  will-change: transform, opacity;
+}
+
+.liquid-goo-group {
+  filter: url(#liquid-goo);
+}
+
+/* 3.4 Collapsible Card Disclosure (Permanent 18px Radius in Both Collapsed & Expanded States) */
+.capsule-disclosure {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  transition:
+    border-color 320ms var(--spring-liquid),
+    background-color 320ms var(--spring-liquid),
+    box-shadow 340ms var(--spring-bouncy),
+    transform 340ms var(--spring-bouncy);
+}
+
+.capsule-disclosure::after {
+  content: "";
+  position: absolute;
+  inset: -40%;
+  background: linear-gradient(
+    125deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.06) 48%,
+    rgba(255, 255, 255, 0.14) 50%,
+    rgba(255, 255, 255, 0.05) 52%,
+    transparent 62%
+  );
+  transform: translate3d(-68%, -68%, 0);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2;
+  transition:
+    transform 640ms var(--spring-liquid),
+    opacity 380ms var(--spring-liquid);
+}
+
+.capsule-disclosure[data-open="true"] {
+  border-radius: 18px;
+  transform: scale3d(1, 1, 1);
+}
+
+.capsule-disclosure[data-open="true"]::after {
+  transform: translate3d(68%, 68%, 0);
+  opacity: 1;
+}
+
+.capsule-disclosure[data-open="false"] {
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    0 12px 28px -12px rgba(0, 0, 0, 0.75);
+}
+
 .m3-collapse-grid {
   display: grid;
-  transition: grid-template-rows 240ms var(--ease-liquid-morph),
-    opacity 200ms var(--ease-liquid-morph),
-    margin-top 240ms var(--ease-liquid-morph);
+  grid-template-rows: 0fr;
+  transition:
+    grid-template-rows 340ms var(--spring-bouncy),
+    opacity 260ms var(--spring-liquid),
+    margin-top 340ms var(--spring-bouncy);
 }
 
 .m3-collapse-grid[data-expanded="true"] {
@@ -170,115 +525,133 @@
   overflow: hidden;
   min-height: 0;
   transform-origin: top center;
-  transition: transform 240ms var(--ease-liquid-morph),
-    opacity 200ms var(--ease-liquid-morph);
+  transition:
+    transform 340ms var(--spring-bouncy),
+    opacity 260ms var(--spring-liquid);
 }
 
 .m3-collapse-grid[data-expanded="true"] > .m3-collapse-inner {
-  transform: translate3d(0, 0, 0) scale(1);
+  transform: scale3d(1, 1, 1);
+  opacity: 1;
 }
 
 .m3-collapse-grid[data-expanded="false"] > .m3-collapse-inner {
-  transform: translate3d(0, -4px, 0) scale(0.99);
+  transform: scale3d(0.98, 0.96, 1);
+  opacity: 0;
 }
 
-/* Fast Shared-Element Floating Pill Indicator (220ms Spring) */
-.m3-pill-indicator {
-  transition: left 220ms var(--ease-m3-spring),
-    width 220ms var(--ease-m3-spring);
-  will-change: left, width;
+/* 3.5 Recessed Optical Glass Slider Channel & Monochrome Platinum Droplet Lens Thumb */
+.liquid-slider-track {
+  background: linear-gradient(
+    180deg,
+    rgba(6, 7, 10, 0.84) 0%,
+    rgba(16, 18, 22, 0.68) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.78),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.07);
 }
 
-/* Fast Compositor-Only Tactile Spring Buttons (180ms - 220ms, No border-radius or blur animations) */
+.liquid-droplet-thumb {
+  will-change: transform;
+  transition:
+    transform 420ms var(--spring-bouncy),
+    background-color 200ms var(--spring-liquid),
+    border-color 200ms var(--spring-liquid),
+    box-shadow 240ms var(--spring-liquid);
+}
+
+/* Fast Compositor-Only Tactile Spring Buttons */
 .m3-btn-morph {
-  transition: transform 200ms var(--ease-m3-spring),
-    background-color 180ms var(--ease-liquid-morph),
-    border-color 180ms var(--ease-liquid-morph),
-    color 180ms var(--ease-liquid-morph),
-    box-shadow 200ms var(--ease-liquid-morph);
+  transition: transform 360ms var(--spring-bouncy),
+    background-color 200ms var(--spring-liquid),
+    border-color 200ms var(--spring-liquid),
+    color 200ms var(--spring-liquid),
+    box-shadow 220ms var(--spring-liquid);
 }
 
 .m3-btn-morph:not(:disabled):hover {
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.18),
-    0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 6px 16px rgba(0, 0, 0, 0.42);
 }
 
 .m3-btn-morph:not(:disabled):active {
-  transform: scale(0.965);
-  transition-duration: 80ms;
+  transform: scale3d(0.94, 0.94, 1);
+  transition-duration: 90ms;
   transition-timing-function: var(--ease-tactile-press);
 }
 
 .m3-btn-primary-morph {
-  transition: transform 200ms var(--ease-m3-spring),
-    background-color 180ms var(--ease-liquid-morph),
-    box-shadow 200ms var(--ease-liquid-morph);
+  transition: transform 360ms var(--spring-bouncy),
+    background-color 200ms var(--spring-liquid),
+    box-shadow 220ms var(--spring-liquid);
 }
 
 .m3-btn-primary-morph:not(:disabled):hover {
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.4),
-    0 6px 18px rgba(110, 231, 183, 0.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 8px 22px rgba(110, 231, 183, 0.22);
 }
 
 .m3-btn-primary-morph:not(:disabled):active {
-  transform: scale(0.965);
-  transition-duration: 80ms;
+  transform: scale3d(0.94, 0.94, 1);
+  transition-duration: 90ms;
   transition-timing-function: var(--ease-tactile-press);
 }
 
-/* GPU-Composited View, Modal & Workstation Cascade Animations (Transform + Opacity Only, 0 Blur) */
+/* GPU-Composited View, Modal & Workstation Cascade Animations */
 @keyframes m3FadeSlideIn {
   from {
     opacity: 0;
-    transform: translate3d(0, 6px, 0) scale(0.985);
+    transform: translate3d(0, 8px, 0) scale3d(0.98, 0.98, 1);
   }
   to {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
   }
 }
 
 @keyframes m3ModalIn {
   from {
     opacity: 0;
-    transform: translate3d(0, 6px, 0) scale(0.985);
+    transform: translate3d(0, 10px, 0) scale3d(0.96, 0.96, 1);
   }
   to {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
   }
 }
 
 @keyframes m3ToastIn {
   from {
     opacity: 0;
-    transform: translate3d(0, 12px, 0) scale(0.97);
+    transform: translate3d(0, 14px, 0) scale3d(0.92, 0.92, 1);
   }
   to {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
   }
 }
 
 @keyframes liquidTopBarMorphIn {
   0% {
     opacity: 0;
-    transform: translate3d(0, -16px, 0) scale(0.98);
+    transform: translate3d(0, -16px, 0) scale3d(0.98, 0.98, 1);
   }
   100% {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
   }
 }
 
 @keyframes liquidPanelMorphIn {
   0% {
     opacity: 0;
-    transform: translate3d(0, 18px, 0) scale(0.96);
+    transform: translate3d(0, 18px, 0) scale3d(0.97, 0.97, 1);
   }
   100% {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
   }
 }
 
@@ -296,59 +669,64 @@
 @keyframes m3IntroElementRise {
   0% {
     opacity: 0;
-    transform: translate3d(0, 12px, 0) scale(0.97);
+    transform: translate3d(0, 12px, 0) scale3d(0.97, 0.97, 1);
   }
   100% {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
   }
 }
 
 .m3-tab-enter {
-  animation: m3FadeSlideIn 220ms var(--ease-liquid-morph) forwards;
+  animation: m3FadeSlideIn 320ms var(--spring-bouncy) forwards;
 }
 
 .m3-modal-enter {
-  animation: m3ModalIn 220ms var(--ease-liquid-morph) forwards;
+  animation: m3ModalIn 340ms var(--spring-bouncy) forwards;
 }
 
 .m3-toast-enter {
-  animation: m3ToastIn 240ms var(--ease-m3-spring) forwards;
+  animation: m3ToastIn 380ms var(--spring-bouncy) forwards;
 }
 
 .m3-morph-topbar {
-  animation: liquidTopBarMorphIn 340ms var(--ease-m3-spring) both;
+  animation: liquidTopBarMorphIn 420ms var(--spring-bouncy) both;
   animation-delay: 0ms;
   will-change: transform, opacity;
 }
 
 .m3-morph-panel {
-  animation: liquidPanelMorphIn 380ms var(--ease-m3-spring) both;
+  animation: liquidPanelMorphIn 460ms var(--spring-bouncy) both;
   animation-delay: var(--morph-delay, 0ms);
   will-change: transform, opacity;
 }
 
 .m3-morph-slider-row {
-  animation: liquidSliderRowMorphIn 320ms var(--ease-liquid-morph) both;
+  animation: liquidSliderRowMorphIn 340ms var(--spring-liquid) both;
   animation-delay: var(--row-delay, 120ms);
 }
 
 .m3-intro-item {
   opacity: 0;
-  animation: m3IntroElementRise 420ms var(--ease-m3-spring) forwards;
+  animation: m3IntroElementRise 440ms var(--spring-bouncy) forwards;
 }
 
 /* Respect System Reduced-Motion Preference */
 @media (prefers-reduced-motion: reduce) {
   :root {
+    --spring-bouncy: cubic-bezier(0.2, 0, 0, 1);
+    --spring-liquid: cubic-bezier(0.2, 0, 0, 1);
     --ease-m3-spring: cubic-bezier(0.2, 0, 0, 1);
     --ease-bouncy-spring: cubic-bezier(0.2, 0, 0, 1);
     --ease-liquid-morph: cubic-bezier(0.2, 0, 0, 1);
     --ease-tactile-press: cubic-bezier(0.2, 0, 0, 1);
   }
 
-  .m3-liquid-orb-1,
-  .m3-liquid-orb-2 {
+  .argan-caustic-sweep,
+  .workspace-anamorphic-ribbon-a,
+  .workspace-anamorphic-ribbon-b,
+  .workspace-caustic-pool-a,
+  .workspace-caustic-pool-b {
     animation: none !important;
   }
 
@@ -371,7 +749,8 @@
   .m3-morph-topbar,
   .m3-morph-panel,
   .m3-morph-slider-row,
-  .m3-intro-item {
+  .m3-intro-item,
+  .liquid-droplet-badge {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
@@ -385,7 +764,7 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #070709;
+  background: #060709;
 }
 
 ::-webkit-scrollbar-thumb {

@@ -4,7 +4,7 @@
 export const RASTER_EXTS = ["jpg", "jpeg", "png", "webp", "avif", "bmp", "tiff", "tif", "heic", "heif"];
 export const RAW_EXTS = ["dng", "cr2", "cr3", "nef", "arw", "raf", "orf", "rw2"];
 export const VIDEO_EXTS = ["mp4", "webm", "mov", "m4v", "mkv"];
-export const PRESET_EXTS = ["cube", "lut", "kfplug"];
+export const PRESET_EXTS = ["ffx", "cube", "lut", "kfplug"];
 
 export const IMAGE_ACCEPT = [...RASTER_EXTS, ...RAW_EXTS].map((e) => `.${e}`).join(",");
 export const VIDEO_ACCEPT = VIDEO_EXTS.map((e) => `.${e}`).join(",");
@@ -47,6 +47,7 @@ function sniff(h) {
     return "ftyp";
   }
   if (h[0] === 0x50 && h[1] === 0x4b) return "zip";
+  if (ascii(h, 0, 4) === "RIFX") return "rifx";
   return "unknown";
 }
 
@@ -112,6 +113,9 @@ export async function inspectFile(file) {
   if (PRESET_EXTS.includes(ext)) {
     if (ext === "kfplug" && s !== "zip") {
       return { category: null, error: "This .kfplug file is not a valid plugin archive." };
+    }
+    if (ext === "ffx" && s !== "rifx") {
+      return { category: null, error: "This .ffx file is not a valid After Effects RIFX preset." };
     }
     return { category: "preset", ext, label: ext.toUpperCase() };
   }

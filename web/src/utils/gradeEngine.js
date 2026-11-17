@@ -2,6 +2,8 @@
 // grading equation (CPU side).
 // The GLSL twin lives in gradeShader.js and must stay 1:1 with gradeRGB().
 import { DEFAULT_PARAMS, PARAM_LIMITS } from "./paramSchema.js";
+import { oklabSoftGamutCompressRGB } from "./colorMatcher.js";
+import { applyLogProfileRGB, isLogProfileActive } from "./logProfiles.js";
 
 export { DEFAULT_PARAMS, PARAM_LIMITS };
 
@@ -314,6 +316,13 @@ export function applyHybridLayerRGB(G, baseR, baseG, baseB, out) {
   pg = Math.max(y2 + dg * gScale, 0.0);
   pb = Math.max(y2 + db * gScale, 0.0);
 
+  // Perceptual OKLab Soft Gamut Compression (smooth shoulder roll-off above C > 0.22)
+  const gamutOut = [0, 0, 0];
+  oklabSoftGamutCompressRGB(pr, pg, pb, gamutOut);
+  pr = gamutOut[0];
+  pg = gamutOut[1];
+  pb = gamutOut[2];
+
   // Analytical AgX inset -> sigmoid shoulder -> outset.
   const ir = 0.856 * pr + 0.095 * pg + 0.049 * pb;
   const ig = 0.070 * pr + 0.875 * pg + 0.055 * pb;
@@ -420,36 +429,28 @@ export function gradeRGB(G, origR, origG, origB, out) {
   out[2] = origB * (1.0 - mix) + baseB * mix;
 }
 
-// Preview-only Rec.709 -> Gentle Flat Log input curve (never exported to .kfplug).
-export function applyLogInputRGB(r, g, b, out) {
-  const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  const dr = clamp(luma + 0.82 * (r - luma), 0.0, 1.0);
-  const dg = clamp(luma + 0.82 * (g - luma), 0.0, 1.0);
-  const db = clamp(luma + 0.82 * (b - luma), 0.0, 1.0);
-  const t = clamp(luma / 0.08, 0.0, 1.0);
-  const toe = 0.04 * (t * t * (3.0 - 2.0 * t));
-  out[0] = clamp(toe + Math.pow(dr, 0.84) * 0.88, 0.0, 0.92);
-  out[1] = clamp(toe + Math.pow(dg, 0.84) * 0.88, 0.0, 0.92);
-  out[2] = clamp(toe + Math.pow(db, 0.84) * 0.88, 0.0, 0.92);
+// Camera Log -> Rec.709 input curve (supports S-Log3, C-Log3, D-Log M, Apple Log).
+export function applyLogInputRGB(r, g, b, out, logProfile = "slog3") {
+  applyLogProfileRGB(r, g, b, logProfile === true ? "slog3" : logProfile, out);
 }
 
-// Evaluates gradeRGB() with 1:1 shadow-toe protection.
+// Evaluates gradeRGB() with 1:1 shadow-toe protection and optional Camera Log input transform.
 // Matches PREVIEW_FRAGMENT and KFPLUG_FRAGMENT identically.
 export function evaluateGradeRGB(G, rawR, rawG, rawB, out, simulateLogInput = false) {
-  const baseLuma = 0.2126 * rawR + 0.7152 * rawG + 0.0722 * rawB;
   let inR = rawR;
   let inG = rawG;
   let inB = rawB;
-  if (simulateLogInput) {
-    applyLogInputRGB(rawR, rawG, rawB, out);
+  if (isLogProfileActive(simulateLogInput)) {
+    applyLogProfileRGB(rawR, rawG, rawB, simulateLogInput, out);
     inR = out[0];
     inG = out[1];
     inB = out[2];
   }
+  const baseLuma = 0.2126 * inR + 0.7152 * inG + 0.0722 * inB;
   gradeRGB(G, inR, inG, inB, out);
   const shadowMask = smoothstep(0.015, 0.16, baseLuma);
   const blackProtect = smoothstep(0.0, 0.06, baseLuma) * (0.15 + 0.85 * shadowMask);
-  out[0] = rawR * (1.0 - blackProtect) + out[0] * blackProtect;
-  out[1] = rawG * (1.0 - blackProtect) + out[1] * blackProtect;
-  out[2] = rawB * (1.0 - blackProtect) + out[2] * blackProtect;
+  out[0] = inR * (1.0 - blackProtect) + out[0] * blackProtect;
+  out[1] = inG * (1.0 - blackProtect) + out[1] * blackProtect;
+  out[2] = inB * (1.0 - blackProtect) + out[2] * blackProtect;
 }
