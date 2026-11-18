@@ -758,7 +758,13 @@ export default function ComparisonSlider({
   const isHorizSplit = splitDirection === "horizontal";
 
   return (
-    <div className="liquid-glass-card m3-panel rounded-[18px] overflow-hidden p-3 lg:p-4 flex-1 flex flex-col">
+    <div
+      className={`liquid-glass-card m3-panel rounded-[18px] overflow-hidden p-3 lg:p-4 flex-1 flex flex-col ${
+        isPinned
+          ? "max-lg:!bg-[#0d0f12] max-lg:backdrop-blur-md max-lg:shadow-[0_12px_28px_rgba(0,0,0,0.85)]"
+          : ""
+      }`}
+    >
       {/* Header Row */}
       <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2.5 shrink-0">
         <div className="flex items-center gap-2">

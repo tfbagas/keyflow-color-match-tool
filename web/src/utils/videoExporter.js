@@ -103,8 +103,80 @@ async function decodeSourceAudio(resolvedSrc, targetFile) {
   }
 }
 
-function seekVideoFrame(video, targetTimeSec, abortSignal) {
+function waitWithAbort(ms, abortSignal) {
   return new Promise((resolve, reject) => {
+    if (abortSignal?.aborted) {
+      reject(new DOMException("Export cancelled", "AbortError"));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Export cancelled", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      abortSignal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    abortSignal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function waitForVideoFrameCallback(video, abortSignal, timeoutMs = 120) {
+  if (typeof video.requestVideoFrameCallback !== "function") {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    if (abortSignal?.aborted) {
+      reject(new DOMException("Export cancelled", "AbortError"));
+      return;
+    }
+    let settled = false;
+    let rvfcId = 0;
+    const cleanup = () => {
+      clearTimeout(timer);
+      if (rvfcId && typeof video.cancelVideoFrameCallback === "function") {
+        try {
+          video.cancelVideoFrameCallback(rvfcId);
+        } catch {
+          // ignore
+        }
+      }
+      abortSignal?.removeEventListener("abort", onAbort);
+    };
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new DOMException("Export cancelled", "AbortError"));
+    };
+    const timer = setTimeout(finish, timeoutMs);
+    abortSignal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      rvfcId = video.requestVideoFrameCallback(() => {
+        rvfcId = 0;
+        finish();
+      });
+    } catch {
+      finish();
+    }
+  });
+}
+
+async function seekVideoFrame(video, targetTimeSec, abortSignal) {
+  if (abortSignal?.aborted) {
+    throw new DOMException("Export cancelled", "AbortError");
+  }
+  if (Math.abs(video.currentTime - targetTimeSec) < 1e-4 && video.readyState >= 2) {
+    return;
+  }
+
+  await new Promise((resolve, reject) => {
     if (abortSignal?.aborted) {
       reject(new DOMException("Export cancelled", "AbortError"));
       return;
@@ -122,7 +194,7 @@ function seekVideoFrame(video, targetTimeSec, abortSignal) {
       cleanup();
       reject(new DOMException("Export cancelled", "AbortError"));
     };
-    const timer = setTimeout(finish, 400);
+    const timer = setTimeout(finish, 600);
     const cleanup = () => {
       clearTimeout(timer);
       video.removeEventListener("seeked", finish);
@@ -136,6 +208,8 @@ function seekVideoFrame(video, targetTimeSec, abortSignal) {
       finish();
     }
   });
+
+  await waitForVideoFrameCallback(video, abortSignal);
 }
 
 async function runMediaRecorderFallback({
@@ -144,13 +218,17 @@ async function runMediaRecorderFallback({
   drawCompositeFrame,
   bitrateBps,
   duration,
+  fps = 30,
   onProgress,
   abortSignal,
 }) {
   if (typeof MediaRecorder === "undefined") {
     throw new Error("Neither WebCodecs nor MediaRecorder is supported in this browser.");
   }
-  const stream = exportCanvas.captureStream(30);
+  video.pause();
+
+  const stream = exportCanvas.captureStream(0);
+  const [videoTrack] = stream.getVideoTracks();
   const candidates = [
     { mimeType: "video/webm;codecs=vp9", videoBitsPerSecond: bitrateBps },
     { mimeType: "video/webm;codecs=vp8", videoBitsPerSecond: bitrateBps },
@@ -187,9 +265,8 @@ async function runMediaRecorderFallback({
     throw new Error("No supported video encoder found.");
   }
 
-  let rafId = 0;
   try {
-    const blob = await new Promise((resolve, reject) => {
+    const recorderStopped = new Promise((resolve, reject) => {
       recorder.onstop = () => {
         if (abortSignal?.aborted) {
           reject(new DOMException("Export cancelled", "AbortError"));
@@ -199,50 +276,43 @@ async function runMediaRecorderFallback({
       };
       recorder.onerror = (ev) =>
         reject(ev?.error || new Error("MediaRecorder encoding failed."));
-
-      abortSignal?.addEventListener(
-        "abort",
-        () => {
-          try {
-            if (recorder.state !== "inactive") recorder.stop();
-          } catch {
-            // ignore
-          }
-          reject(new DOMException("Export cancelled", "AbortError"));
-        },
-        { once: true }
-      );
-
-      const pump = () => {
-        if (abortSignal?.aborted || video.paused || video.ended) return;
-        drawCompositeFrame();
-        onProgress?.(Math.min(99, Math.round((video.currentTime / duration) * 100)));
-        rafId = requestAnimationFrame(pump);
-      };
-
-      video.addEventListener(
-        "ended",
-        () => {
-          drawCompositeFrame();
-          onProgress?.(100);
-          setTimeout(() => {
-            if (recorder.state !== "inactive") recorder.stop();
-          }, 150);
-        },
-        { once: true }
-      );
-
-      video.play().then(
-        () => {
-          rafId = requestAnimationFrame(pump);
-        },
-        (err) => reject(err)
-      );
     });
+
+    const totalFrames = Math.max(1, Math.floor(duration * fps));
+    const frameIntervalMs = 1000 / fps;
+    onProgress?.(0);
+
+    for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+      if (abortSignal?.aborted) {
+        throw new DOMException("Export cancelled", "AbortError");
+      }
+      const targetTime = Math.min(Math.max(0, duration - 0.001), frameIndex / fps);
+      await seekVideoFrame(video, targetTime, abortSignal);
+      drawCompositeFrame();
+
+      if (videoTrack && typeof videoTrack.requestFrame === "function") {
+        videoTrack.requestFrame();
+      }
+
+      onProgress?.(Math.round(((frameIndex + 1) / totalFrames) * 100));
+      await waitWithAbort(frameIntervalMs, abortSignal);
+    }
+
+    if (recorder.state !== "inactive") {
+      recorder.stop();
+    }
+
+    const blob = await recorderStopped;
     const ext = chosenMime.toLowerCase().includes("mp4") ? "mp4" : "webm";
     return { blob, ext };
   } finally {
-    if (rafId) cancelAnimationFrame(rafId);
+    try {
+      if (recorder.state !== "inactive") {
+        recorder.stop();
+      }
+    } catch {
+      // ignore
+    }
     stream.getTracks().forEach((t) => t.stop());
   }
 }
@@ -251,6 +321,8 @@ export async function exportGradedVideo({
   videoSrc,
   targetFile = null,
   params,
+  activeLut = null,
+  lutMix = 1.0,
   engine = "v3",
   matchStrength = 100,
   logProfile = "rec709",
@@ -295,6 +367,7 @@ export async function exportGradedVideo({
   let grader = null;
   let videoEncoder = null;
   let audioEncoder = null;
+  let exportCanvas = null;
 
   const cleanupAll = () => {
     try {
@@ -324,6 +397,11 @@ export async function exportGradedVideo({
       }
     } catch {
       // ignore
+    }
+    if (exportCanvas) {
+      exportCanvas.width = 0;
+      exportCanvas.height = 0;
+      exportCanvas = null;
     }
     if (grader) {
       grader.cleanup();
@@ -402,11 +480,15 @@ export async function exportGradedVideo({
         : params;
     const safeParams = sanitizeParams(effective);
 
+    video.pause();
+
     // Initialize persistent WebGL grading context ONCE
     grader = createWebGLFrameGrader({
       width,
       height,
       params: safeParams,
+      activeLut,
+      lutMix,
       layout,
       splitPos: splitPosition,
       simulateLogInput: logProfile,
@@ -416,7 +498,7 @@ export async function exportGradedVideo({
       throw new Error("WebGL is unavailable for video export.");
     }
 
-    const exportCanvas = document.createElement("canvas");
+    exportCanvas = document.createElement("canvas");
     exportCanvas.width = width;
     exportCanvas.height = height;
     const exportCtx = exportCanvas.getContext("2d", { alpha: false });
@@ -578,6 +660,7 @@ export async function exportGradedVideo({
         drawCompositeFrame,
         bitrateBps,
         duration,
+        fps,
         onProgress,
         abortSignal,
       });

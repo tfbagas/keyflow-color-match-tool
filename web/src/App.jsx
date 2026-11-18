@@ -1668,6 +1668,8 @@ export default function App() {
           videoSrc: src,
           targetFile: fileFallback,
           params: gradingParams,
+          activeLut,
+          lutMix: matchStrength / 100,
           engine: activeEngineId,
           matchStrength,
           logProfile: simulateLogInput,
@@ -1703,6 +1705,7 @@ export default function App() {
       presetName,
       referenceImage,
       gradingParams,
+      activeLut,
       activeEngineId,
       matchStrength,
       simulateLogInput,
@@ -2452,7 +2455,7 @@ export default function App() {
 
       {/* Foreground Application Content Wrapper (no transform when visible so sticky header + backdrop-filter work reliably) */}
       <div
-        className={`relative z-10 min-h-screen flex flex-col bg-transparent ${
+        className={`relative z-10 min-h-screen overflow-x-clip flex flex-col bg-transparent ${
           workspacePhase === "hidden"
             ? "opacity-0 pointer-events-none scale-[0.97]"
             : "opacity-100"
@@ -2471,10 +2474,10 @@ export default function App() {
         }`}
       >
         {/* Left: Achromatic Keyflow Logo + Brand Title + v0.9.5 Beta Badge + Support Capsule */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0 max-w-full">
           <KeyflowLogo size={26} />
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            <h1 className="text-sm sm:text-base font-bold font-display tracking-tight text-[#E2E4E9]">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0">
+            <h1 className="text-sm sm:text-base font-bold font-display tracking-tight text-[#E2E4E9] truncate">
               Color Match for Keyflow
             </h1>
             <button
@@ -2522,7 +2525,7 @@ export default function App() {
         </div>
 
         {/* Right: Apple Smoked Obsidian Sliding & Stretching Pill Nav + EN|ID Switcher + Status Chip */}
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 ml-auto max-w-full">
           <nav
             aria-label={t("nav.primaryLabel")}
             className="relative flex items-center gap-0.5 bg-white/[0.06] border border-white/[0.10] rounded-full p-0.5"
@@ -2535,7 +2538,7 @@ export default function App() {
                   key={item.id}
                   type="button"
                   onClick={() => setActiveTab(item.id)}
-                  className={`relative z-10 flex items-center justify-center gap-1.5 px-2.5 sm:px-3.5 py-1 rounded-full text-xs font-medium transition-colors duration-200 active:scale-[0.96] cursor-pointer ${
+                  className={`relative z-10 flex items-center justify-center gap-1.5 px-2 sm:px-3.5 py-1 rounded-full text-xs font-medium transition-colors duration-200 active:scale-[0.96] cursor-pointer ${
                     isActive
                       ? "bg-white text-zinc-950 font-semibold shadow-sm"
                       : "text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.06]"
@@ -2553,7 +2556,7 @@ export default function App() {
             role="group"
             aria-label={t("nav.langSwitchTitle")}
             title={t("nav.langSwitchTitle")}
-            className="inline-flex items-center p-0.5 rounded-full bg-white/[0.06] border border-white/[0.11] text-[10px] font-mono select-none"
+            className="inline-flex items-center p-0.5 rounded-full bg-white/[0.06] border border-white/[0.11] text-[10px] font-mono select-none shrink-0"
           >
             {[
               { code: "en", label: "EN" },
@@ -2566,7 +2569,7 @@ export default function App() {
                   type="button"
                   onClick={() => handleSwitchLanguage(item.code)}
                   aria-pressed={isLangActive}
-                  className={`px-2 py-0.5 rounded-full transition-colors duration-150 cursor-pointer ${
+                  className={`px-1.5 sm:px-2 py-0.5 rounded-full transition-colors duration-150 cursor-pointer ${
                     isLangActive
                       ? "bg-white text-zinc-950 font-semibold"
                       : "text-zinc-400 hover:text-white"
@@ -2582,7 +2585,7 @@ export default function App() {
             type="button"
             onClick={() => setIsCommandPaletteOpen(true)}
             title={t("nav.commandPaletteTitle")}
-            className="m3-btn-morph inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.11] text-xs font-medium text-[#E2E4E9] cursor-pointer"
+            className="m3-btn-morph inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-full bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.11] text-xs font-medium text-[#E2E4E9] cursor-pointer shrink-0"
           >
             <Search className="w-3.5 h-3.5 text-[#6EE7B7]" />
             <span className="hidden md:inline font-mono text-[10px] text-[#9CA3AF]">Ctrl+K</span>
@@ -2592,7 +2595,7 @@ export default function App() {
             type="button"
             onClick={() => setIsLooksOpen(true)}
             title={t("nav.looksTitle")}
-            className="m3-btn-morph inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.11] text-xs font-medium text-[#E2E4E9] cursor-pointer"
+            className="m3-btn-morph inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-full bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.11] text-xs font-medium text-[#E2E4E9] cursor-pointer shrink-0"
           >
             <Bookmark className="w-3.5 h-3.5 text-[#6EE7B7]" />
             <span className="hidden sm:inline">{t("nav.looks")}</span>
@@ -2606,7 +2609,7 @@ export default function App() {
             onClick={() => setIsShortcutsOpen(true)}
             title={t("nav.shortcutsTitle")}
             aria-label={t("nav.shortcutsTitle")}
-            className="m3-btn-morph inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.11] text-xs font-mono text-[#9CA3AF] hover:text-[#E2E4E9] cursor-pointer"
+            className="m3-btn-morph inline-flex items-center justify-center w-7 h-7 rounded-full bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.11] text-xs font-mono text-[#9CA3AF] hover:text-[#E2E4E9] cursor-pointer shrink-0"
           >
             <HelpCircle className="w-3.5 h-3.5" />
           </button>
@@ -2642,7 +2645,7 @@ export default function App() {
             {/* LEFT COLUMN WRAPPER: display:contents on <1024px so order-1/order-2 work directly in grid */}
             <div className="contents lg:flex lg:flex-col lg:gap-2.5 lg:col-span-7 lg:col-start-1">
               {/* MEDIA DROPZONES (order-2 on mobile, top of left column on desktop) */}
-              <div className="order-2 lg:order-none grid grid-cols-2 gap-2 lg:gap-2.5 items-stretch">
+              <div className="order-2 lg:order-none grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-stretch">
                 {/* 3. Panel REFERENCE (delay: 110ms) */}
                 <div
                   className={`h-full ${
@@ -2716,7 +2719,7 @@ export default function App() {
                   !hasPreviewImage ? "hidden lg:flex" : "flex"
                 } lg:flex-1 flex-col min-h-[420px] lg:min-h-[490px] [&>*]:flex-1 ${
                   isPreviewPinned
-                    ? "sticky top-[var(--kf-header-h,48px)] z-30 pb-1 lg:static lg:z-auto lg:pb-0"
+                    ? "sticky top-[var(--kf-header-h,48px)] z-30 bg-[#0d0f12] backdrop-blur-md rounded-[18px] border-b border-white/[0.1] pb-1 lg:static lg:z-auto lg:bg-transparent lg:backdrop-blur-none lg:border-b-0 lg:pb-0"
                     : ""
                 } ${
                   workspacePhase === "morphing-in" ? "m3-morph-panel" : ""
@@ -3515,7 +3518,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="m3-panel rounded-2xl p-5 sm:p-6 space-y-5">
+            <div className="m3-panel overflow-visible relative z-20 rounded-2xl p-5 sm:p-6 space-y-5">
               <div className="flex items-center gap-2.5 border-b border-white/[0.08] pb-3.5">
                 <Settings className="w-4 h-4 text-[#E2E4E9]" />
                 <h2 className="text-base font-bold font-display text-[#E2E4E9]">
@@ -3564,7 +3567,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="m3-panel rounded-2xl p-5 sm:p-6 space-y-5">
+            <div className="m3-panel relative z-10 rounded-2xl p-5 sm:p-6 space-y-5">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.08] pb-3.5">
                 <div className="flex items-center gap-2.5">
                   <Cpu className="w-4 h-4 text-[#E2E4E9]" />

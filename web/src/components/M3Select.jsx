@@ -1,17 +1,41 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { ChevronDown, Check } from "lucide-react";
 
 export default function M3Select({ value, onChange, options = [], ariaLabel }) {
   const [open, setOpen] = useState(false);
+  const [openUpward, setOpenUpward] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const containerRef = useRef(null);
   const triggerRef = useRef(null);
+  const menuRef = useRef(null);
 
   const selectedIndex = Math.max(
     0,
     options.findIndex((opt) => opt.value === value)
   );
   const selectedOption = options[selectedIndex] || options[0] || { label: "" };
+
+  const updatePlacement = useCallback(() => {
+    const triggerEl = triggerRef.current;
+    if (!triggerEl) return;
+    const rect = triggerEl.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const measuredHeight = menuRef.current?.scrollHeight || 0;
+    const menuHeight = Math.max(measuredHeight, options.length * 36 + 16);
+    setOpenUpward(spaceBelow < menuHeight + 12 && spaceAbove > spaceBelow);
+  }, [options.length]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePlacement();
+    window.addEventListener("resize", updatePlacement, { passive: true });
+    window.addEventListener("scroll", updatePlacement, { passive: true, capture: true });
+    return () => {
+      window.removeEventListener("resize", updatePlacement);
+      window.removeEventListener("scroll", updatePlacement, { capture: true });
+    };
+  }, [open, updatePlacement]);
 
   useEffect(() => {
     if (!open) return;
@@ -66,7 +90,10 @@ export default function M3Select({ value, onChange, options = [], ariaLabel }) {
   };
 
   return (
-    <div ref={containerRef} className="relative w-full select-none">
+    <div
+      ref={containerRef}
+      className={`relative w-full select-none ${open ? "z-50" : ""}`}
+    >
       {/* Trigger Button */}
       <button
         ref={triggerRef}
@@ -95,9 +122,12 @@ export default function M3Select({ value, onChange, options = [], ariaLabel }) {
       <div
         aria-hidden={!open}
         data-expanded={open}
-        className="m3-collapse-grid absolute left-0 right-0 mt-1.5 z-40"
+        className={`m3-collapse-grid absolute left-0 right-0 z-50 ${
+          openUpward ? "bottom-full mb-2" : "top-full mt-1.5"
+        }`}
       >
         <div
+          ref={menuRef}
           role="listbox"
           className="m3-collapse-inner rounded-xl bg-[#15151B] border border-white/[0.14] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_14px_34px_rgba(0,0,0,0.75)]"
         >
