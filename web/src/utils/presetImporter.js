@@ -25,22 +25,31 @@ export function parseLutText(text) {
 
   for (let line of rawLines) {
     line = line.trim();
-    if (!line) continue;
-    if (line.startsWith("#")) continue;
+    if (!line || line.startsWith("#")) continue;
+
+    if (/^TITLE\b/i.test(line)) {
+      title = line.replace(/^TITLE\s*/i, "").replace(/^"|"$/g, "").trim();
+      continue;
+    }
+
+    const hashIdx = line.indexOf("#");
+    if (hashIdx !== -1) {
+      line = line.slice(0, hashIdx).trim();
+      if (!line) continue;
+    }
+
     const first = line.charCodeAt(0);
     const isNumeric = (first >= 48 && first <= 57) || first === 45 || first === 43 || first === 46;
     if (!isNumeric) {
       const parts = line.split(/\s+/);
       const key = parts[0].toUpperCase();
-      if (key === "TITLE") {
-        title = line.replace(/^TITLE\s*/i, "").replace(/^"|"$/g, "");
-      } else if (key === "LUT_3D_SIZE") {
+      if (key === "LUT_3D_SIZE") {
         size3d = parseInt(parts[1], 10);
       } else if (key === "LUT_1D_SIZE") {
         size1d = parseInt(parts[1], 10);
-      } else if (key === "DOMAIN_MIN") {
+      } else if (key === "DOMAIN_MIN" && parts.length >= 4) {
         dMin = parts.slice(1, 4).map(Number);
-      } else if (key === "DOMAIN_MAX") {
+      } else if (key === "DOMAIN_MAX" && parts.length >= 4) {
         dMax = parts.slice(1, 4).map(Number);
       }
       continue;
@@ -75,7 +84,13 @@ export function parseLutText(text) {
     if (!Number.isFinite(values[i])) throw new Error("LUT contains non-numeric values.");
   }
 
-  const domainOk = dMin.every(Number.isFinite) && dMax.every(Number.isFinite);
+  const domainOk =
+    dMin.length === 3 &&
+    dMax.length === 3 &&
+    dMin.every(Number.isFinite) &&
+    dMax.every(Number.isFinite) &&
+    dMin.every((v, i) => dMax[i] > v + 1e-6);
+
   return {
     title: sanitizeMetadataText(title, "", 64),
     kind: size3d ? "3d" : "1d",
@@ -86,7 +101,7 @@ export function parseLutText(text) {
   };
 }
 
-function makeLutSampler(lut) {
+export function makeLutSampler(lut) {
   const N = lut.size;
   const d = lut.data;
   const norm = (v, c) => {
@@ -107,32 +122,101 @@ function makeLutSampler(lut) {
     };
   }
 
+  // Standard Adobe/Resolve .cube 3D LUT: R varies fastest, G second, B slowest.
+  // Tetrahedral interpolation for exact vertex & diagonal fidelity.
   return (r, g, b, out) => {
     const x = norm(r, 0) * (N - 1);
     const y = norm(g, 1) * (N - 1);
     const z = norm(b, 2) * (N - 1);
-    const x0 = Math.floor(x), y0 = Math.floor(y), z0 = Math.floor(z);
-    const x1 = Math.min(N - 1, x0 + 1), y1 = Math.min(N - 1, y0 + 1), z1 = Math.min(N - 1, z0 + 1);
-    const fx = x - x0, fy = y - y0, fz = z - z0;
-    const idx = (xi, yi, zi) => (xi + yi * N + zi * N * N) * 3;
-    for (let c = 0; c < 3; c++) {
-      const c000 = d[idx(x0, y0, z0) + c];
-      const c100 = d[idx(x1, y0, z0) + c];
-      const c010 = d[idx(x0, y1, z0) + c];
-      const c110 = d[idx(x1, y1, z0) + c];
-      const c001 = d[idx(x0, y0, z1) + c];
-      const c101 = d[idx(x1, y0, z1) + c];
-      const c011 = d[idx(x0, y1, z1) + c];
-      const c111 = d[idx(x1, y1, z1) + c];
-      const c00 = c000 * (1 - fx) + c100 * fx;
-      const c10 = c010 * (1 - fx) + c110 * fx;
-      const c01 = c001 * (1 - fx) + c101 * fx;
-      const c11 = c011 * (1 - fx) + c111 * fx;
-      const c0 = c00 * (1 - fy) + c10 * fy;
-      const c1 = c01 * (1 - fy) + c11 * fy;
-      out[c] = c0 * (1 - fz) + c1 * fz;
+    const x0 = Math.floor(x);
+    const y0 = Math.floor(y);
+    const z0 = Math.floor(z);
+    const x1 = Math.min(N - 1, x0 + 1);
+    const y1 = Math.min(N - 1, y0 + 1);
+    const z1 = Math.min(N - 1, z0 + 1);
+    const fx = x - x0;
+    const fy = y - y0;
+    const fz = z - z0;
+
+    const i000 = ((z0 * N + y0) * N + x0) * 3;
+    const i111 = ((z1 * N + y1) * N + x1) * 3;
+
+    if (fx >= fy) {
+      if (fy >= fz) {
+        // fx >= fy >= fz
+        const i100 = ((z0 * N + y0) * N + x1) * 3;
+        const i110 = ((z0 * N + y1) * N + x1) * 3;
+        for (let c = 0; c < 3; c++) {
+          const v000 = d[i000 + c];
+          const v100 = d[i100 + c];
+          const v110 = d[i110 + c];
+          const v111 = d[i111 + c];
+          out[c] = v000 + fx * (v100 - v000) + fy * (v110 - v100) + fz * (v111 - v110);
+        }
+      } else if (fx >= fz) {
+        // fx >= fz > fy
+        const i100 = ((z0 * N + y0) * N + x1) * 3;
+        const i101 = ((z1 * N + y0) * N + x1) * 3;
+        for (let c = 0; c < 3; c++) {
+          const v000 = d[i000 + c];
+          const v100 = d[i100 + c];
+          const v101 = d[i101 + c];
+          const v111 = d[i111 + c];
+          out[c] = v000 + fx * (v100 - v000) + fz * (v101 - v100) + fy * (v111 - v101);
+        }
+      } else {
+        // fz > fx >= fy
+        const i001 = ((z1 * N + y0) * N + x0) * 3;
+        const i101 = ((z1 * N + y0) * N + x1) * 3;
+        for (let c = 0; c < 3; c++) {
+          const v000 = d[i000 + c];
+          const v001 = d[i001 + c];
+          const v101 = d[i101 + c];
+          const v111 = d[i111 + c];
+          out[c] = v000 + fz * (v001 - v000) + fx * (v101 - v001) + fy * (v111 - v101);
+        }
+      }
+    } else if (fz > fy) {
+      // fz > fy > fx
+      const i001 = ((z1 * N + y0) * N + x0) * 3;
+      const i011 = ((z1 * N + y1) * N + x0) * 3;
+      for (let c = 0; c < 3; c++) {
+        const v000 = d[i000 + c];
+        const v001 = d[i001 + c];
+        const v011 = d[i011 + c];
+        const v111 = d[i111 + c];
+        out[c] = v000 + fz * (v001 - v000) + fy * (v011 - v001) + fx * (v111 - v011);
+      }
+    } else if (fz > fx) {
+      // fy >= fz > fx
+      const i010 = ((z0 * N + y1) * N + x0) * 3;
+      const i011 = ((z1 * N + y1) * N + x0) * 3;
+      for (let c = 0; c < 3; c++) {
+        const v000 = d[i000 + c];
+        const v010 = d[i010 + c];
+        const v011 = d[i011 + c];
+        const v111 = d[i111 + c];
+        out[c] = v000 + fy * (v010 - v000) + fz * (v011 - v010) + fx * (v111 - v011);
+      }
+    } else {
+      // fy > fx >= fz
+      const i010 = ((z0 * N + y1) * N + x0) * 3;
+      const i110 = ((z0 * N + y1) * N + x1) * 3;
+      for (let c = 0; c < 3; c++) {
+        const v000 = d[i000 + c];
+        const v010 = d[i010 + c];
+        const v110 = d[i110 + c];
+        const v111 = d[i111 + c];
+        out[c] = v000 + fy * (v010 - v000) + fx * (v110 - v010) + fz * (v111 - v110);
+      }
     }
   };
+}
+
+export function evaluate3DLut(lut, r, g, b, out = [0, 0, 0]) {
+  const sample = makeLutSampler(lut);
+  sample(r, g, b, out);
+  return out;
 }
 
 // UI ranges used while fitting (keeps fitted values inside slider ranges).

@@ -6,9 +6,9 @@ import { getLogProfile } from "../utils/logProfiles";
 import { useLanguage } from "../i18n/LanguageContext";
 
 function formatEngineName(engineId) {
-  if (engineId === "v1") return "Altair v1";
-  if (engineId === "v2") return "Vega v2";
-  return "Polaris v3 PRO";
+  if (engineId === "v1") return "Vega 1.0";
+  if (engineId === "v2") return "Sirius 2.5";
+  return "Polaris 3.5 Pro";
 }
 
 export default function ShareModal({

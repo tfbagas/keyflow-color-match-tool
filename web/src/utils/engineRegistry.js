@@ -1280,19 +1280,19 @@ function prepareTargetForAnalysis(tgtData, targetNumPixels, options = {}) {
 export const ENGINE_REGISTRY = {
   v1: {
     id: "v1",
-    name: "Altair",
+    name: "Vega",
     codename: "altair",
-    versionBadge: "v1",
-    badge: "v1",
-    subtitle: "Fast RGB",
-    shortTag: "Fast RGB",
+    versionBadge: "1.0",
+    badge: "1.0",
+    subtitle: "Fast Matrix Engine",
+    shortTag: "Fast Matrix",
     shortcutKey: "1",
     bestFor: "Fast shot matching & simple color tweaks",
     summary:
-      "Quickly matches overall brightness, contrast, and color tint. Ideal when both clips were shot in similar lighting.",
+      "Fast global color matrix & linear balance. Ideal when both clips were shot in similar lighting.",
     pipelineBadges: ["Fast Speed", "Punchy Contrast", "Simple Match"],
     description:
-      "Quickly matches overall brightness, contrast, and color tint. Ideal when both clips were shot in similar lighting.",
+      "Fast global color matrix & linear balance. Ideal when both clips were shot in similar lighting.",
     analyze(refData, tgtData, options = {}) {
       const prep = prepareTargetForAnalysis(tgtData, options.targetNumPixels, options);
       const out = analyzeEngineV1(refData, prep.data, {
@@ -1304,19 +1304,19 @@ export const ENGINE_REGISTRY = {
   },
   v2: {
     id: "v2",
-    name: "Vega",
+    name: "Sirius",
     codename: "vega",
-    versionBadge: "v2",
-    badge: "v2",
-    subtitle: "Balanced",
-    shortTag: "Balanced",
+    versionBadge: "2.5",
+    badge: "2.5",
+    subtitle: "Tonal Engine",
+    shortTag: "Tonal",
     shortcutKey: "2",
     bestFor: "Clean everyday grades & natural lighting",
     summary:
-      "Smooths harsh lighting differences while keeping whites clean and highlights soft. Great for everyday Rec.709 footage.",
+      "Multi-zone tonal & contrast matching while keeping whites clean and highlights soft.",
     pipelineBadges: ["Clean Whites", "Soft Highlights", "Natural Tone"],
     description:
-      "Smooths harsh lighting differences while keeping whites clean and highlights soft. Great for everyday Rec.709 footage.",
+      "Multi-zone tonal & contrast matching while keeping whites clean and highlights soft.",
     analyze(refData, tgtData, options = {}) {
       const {
         numPixels = 0,
@@ -1344,17 +1344,17 @@ export const ENGINE_REGISTRY = {
     id: "v3",
     name: "Polaris",
     codename: "polaris",
-    versionBadge: "v3 PRO",
-    badge: "v3 PRO",
-    subtitle: "Cinema Pro",
-    shortTag: "Cinema Pro",
+    versionBadge: "3.5 Pro",
+    badge: "3.5 Pro",
+    subtitle: "Perceptual Optical Engine",
+    shortTag: "Perceptual",
     shortcutKey: "3",
     bestFor: "Cinematic looks, skin tones & tricky lighting",
     summary:
-      "Smartly transfers rich film colors while protecting skin tones, deep blacks, and bright skies from color bleed or muddiness.",
+      "Deep perceptual spectral & LUT matching while protecting skin tones, deep blacks, and bright skies.",
     pipelineBadges: ["Skin-Safe", "Deep Blacks", "Film Color", "Gamut Safe"],
     description:
-      "Smartly transfers rich film colors while protecting skin tones, deep blacks, and bright skies from color bleed or muddiness.",
+      "Deep perceptual spectral & LUT matching while protecting skin tones, deep blacks, and bright skies.",
     analyze(refData, tgtData, options = {}) {
       const prep = prepareTargetForAnalysis(tgtData, options.targetNumPixels, options);
       const out = analyzeEngineV3(refData, prep.data, {

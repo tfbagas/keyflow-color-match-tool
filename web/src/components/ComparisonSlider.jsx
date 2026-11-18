@@ -101,6 +101,8 @@ export default function ComparisonSlider({
   onModeChange,
   videoEl = null,
   gradingParams,
+  activeLut = null,
+  lutMix = 1.0,
   onVideoError,
   onSplitDragChange,
   isPinned = true,
@@ -1072,6 +1074,8 @@ export default function ComparisonSlider({
                     videoEl={videoEl}
                     imageEl={imageEl}
                     params={gradingParams}
+                    activeLut={activeLut}
+                    lutMix={lutMix}
                     mode={mode}
                     splitPos={splitPos}
                     splitDirection={splitDirection}

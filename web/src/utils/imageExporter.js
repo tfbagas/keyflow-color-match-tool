@@ -4,6 +4,10 @@ import {
   UNIFORM_MAP,
   getHybridUniformLocations,
   bindHybridUniforms,
+  getLutUniformLocations,
+  createLutGLState,
+  cleanupLutGLState,
+  bindLutTextureAndUniforms,
 } from "./gradeShader";
 import { DEFAULT_PARAMS, sanitizeParams } from "./gradeEngine";
 import { simulateGradePixels } from "./colorGrading";
@@ -26,6 +30,8 @@ export function createWebGLFrameGrader({
   width,
   height,
   params,
+  activeLut = null,
+  lutMix = 1.0,
   layout = "graded",
   splitPos = 50,
   simulateLogInput = false,
@@ -126,11 +132,15 @@ export function createWebGLFrameGrader({
       }
     }
     bindHybridUniforms(gl, getHybridUniformLocations(gl, program), safe);
+    const lutLoc = getLutUniformLocations(gl, program);
+    const lutState = createLutGLState(gl);
+    bindLutTextureAndUniforms(gl, lutLoc, lutState, activeLut, lutMix, 1);
     gl.viewport(0, 0, width, height);
 
     return {
       canvas: glCanvas,
       render(source) {
+        gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
         if (alpha) {
@@ -142,6 +152,7 @@ export function createWebGLFrameGrader({
       },
       cleanup: () => {
         try {
+          cleanupLutGLState(gl, lutState);
           if (texture) gl.deleteTexture(texture);
           if (buffer) gl.deleteBuffer(buffer);
           if (program) gl.deleteProgram(program);
@@ -168,11 +179,23 @@ export function createWebGLFrameGrader({
   }
 }
 
-function renderViaWebGL(source, width, height, params, layout, splitPos, simulateLogInput) {
+function renderViaWebGL(
+  source,
+  width,
+  height,
+  params,
+  layout,
+  splitPos,
+  simulateLogInput,
+  activeLut = null,
+  lutMix = 1.0
+) {
   const grader = createWebGLFrameGrader({
     width,
     height,
     params,
+    activeLut,
+    lutMix,
     layout,
     splitPos,
     simulateLogInput,
@@ -217,9 +240,9 @@ function renderViaCPU(source, width, height, params, layout, splitPos, simulateL
 }
 
 function formatEngineBadge(engineId) {
-  if (engineId === "v1") return "Altair v1";
-  if (engineId === "v2") return "Vega v2";
-  return "Polaris v3 PRO";
+  if (engineId === "v1") return "Vega 1.0";
+  if (engineId === "v2") return "Sirius 2.5";
+  return "Polaris 3.5 Pro";
 }
 
 function rgbToHex(r, g, b) {
@@ -967,6 +990,8 @@ export async function exportGradedImage({
   includeQr = true,
   qrMode = "grade",
   qrUrl = "",
+  activeLut = null,
+  lutMix = 1.0,
 }) {
   if (!source || !width || !height) {
     throw new Error("No valid source media to export.");
@@ -1010,7 +1035,17 @@ export async function exportGradedImage({
     outCanvas.height = height;
     const outCtx = outCanvas.getContext("2d");
 
-    const webglRes = renderViaWebGL(source, width, height, params, layout, splitPos, simulateLogInput);
+    const webglRes = renderViaWebGL(
+      source,
+      width,
+      height,
+      params,
+      layout,
+      splitPos,
+      simulateLogInput,
+      activeLut,
+      lutMix
+    );
     if (webglRes) {
       try {
         if (normalizedFormat === "jpg") {

@@ -68,6 +68,8 @@ export const TRANSLATIONS = {
         "No supported color grading effects found in {fileName}. Effects found: {effects}.",
       unsupportedEmpty:
         "No supported color grading effects found in {fileName}.",
+      thirdPartyPlugin:
+        "Detected third-party plugin(s) ({effects}) in {fileName}. External plugin shaders (Magic Bullet Looks, Sapphire, BCC, etc.) cannot be read directly from .ffx — render 1 graded frame (PNG/JPG) from After Effects and drop it here as Reference for 100% accurate color matching.",
     },
     toasts: {
       backedUpSlotB: "Previous grade backed up to Slot B",
@@ -125,14 +127,14 @@ export const TRANSLATIONS = {
       step3: "3. Match & Export",
       tipReset: "Tips: Double-click slider to reset",
       tipFine: "Shift+Drag: 0.01 fine",
-      tipEngines: "1 / 2 / 3: Altair / Vega / Polaris",
+      tipEngines: "1 / 2 / 3: Vega 1.0 / Sirius 2.5 / Polaris 3.5 Pro",
       tipUndo: "Ctrl+Z: Undo",
     },
     engineCard: {
       title: "ENGINE & MATCH STRENGTH",
       compareAria: "Compare Color Match Engines",
-      compareTitle: "Compare Altair (v1), Vega (v2), and Polaris (v3) side-by-side",
-      compareHeader: "Engine Comparison (Altair / Vega / Polaris)",
+      compareTitle: "Compare Vega 1.0, Sirius 2.5, and Polaris 3.5 Pro side-by-side",
+      compareHeader: "Engine Comparison (Vega 1.0 / Sirius 2.5 / Polaris 3.5 Pro)",
       selectorAria: "Color Match Engine Selector",
       bestForPrefix: "Best for:",
       shortcutPrefix: "Shortcut",
@@ -416,7 +418,7 @@ export const TRANSLATIONS = {
     },
     commandPalette: {
       ariaLabel: "Spotlight Command Bar",
-      searchPlaceholder: "Search engines (Altair/Vega/Polaris), Log profiles, Looks, or exports...",
+      searchPlaceholder: "Search engines (Vega/Sirius/Polaris), Log profiles, Looks, or exports...",
       closeAria: "Close Command Bar",
       noMatch: 'No matching studio commands for "{query}"',
       footerNavigate: "Up/Down to navigate - Enter to run",
@@ -534,7 +536,7 @@ export const TRANSLATIONS = {
           text: "Instant EN | ID studio language switcher in the top header and Settings with natural Indonesian editing terminology and localized 2400x1350 release poster.",
         },
         {
-          bold: "Polaris v3 PRO Cinema Engine + Auto-Normalize:",
+          bold: "Polaris 3.5 Pro Perceptual Optical Engine + Auto-Normalize:",
           text: "3D polynomial and OKLab color matching with optional target exposure and white-balance normalization.",
         },
         {
@@ -586,7 +588,7 @@ export const TRANSLATIONS = {
       shortcuts: [
         { keys: "\\", desc: "Hold to preview original ungraded source" },
         { keys: "Space", desc: "Play or pause video preview" },
-        { keys: "1 / 2 / 3", desc: "Switch Altair (v1), Vega (v2), or Polaris (v3) engine" },
+        { keys: "1 / 2 / 3", desc: "Switch Vega 1.0, Sirius 2.5, or Polaris 3.5 Pro engine" },
         { keys: "Ctrl + K", desc: "Open Spotlight Command Bar" },
         { keys: "Ctrl + Z", desc: "Undo last grading parameter change" },
         { keys: "Ctrl + Shift + Z", desc: "Redo grading parameter change" },
@@ -679,6 +681,8 @@ export const TRANSLATIONS = {
         "Tidak ada efek color grading yang didukung di {fileName}. Efek ditemukan: {effects}.",
       unsupportedEmpty:
         "Tidak ada efek color grading yang didukung di {fileName}.",
+      thirdPartyPlugin:
+        "Terdeteksi plugin pihak ketiga ({effects}) di {fileName}. Shader plugin eksternal (Magic Bullet Looks, Sapphire, BCC, dll.) tidak dapat dibaca langsung dari .ffx — render 1 frame hasil grading (PNG/JPG) dari After Effects lalu masukkan ke Referensi untuk hasil color match 100% akurat.",
     },
     toasts: {
       backedUpSlotB: "Grade sebelumnya dicadangkan ke Slot B",
@@ -736,14 +740,14 @@ export const TRANSLATIONS = {
       step3: "3. Match & Ekspor",
       tipReset: "Tips: Klik 2x slider untuk reset",
       tipFine: "Shift+Geser: Presisi 0.01",
-      tipEngines: "1 / 2 / 3: Altair / Vega / Polaris",
+      tipEngines: "1 / 2 / 3: Vega 1.0 / Sirius 2.5 / Polaris 3.5 Pro",
       tipUndo: "Ctrl+Z: Undo",
     },
     engineCard: {
       title: "ENGINE & KEKUATAN MATCH",
       compareAria: "Bandingkan Engine Color Match",
-      compareTitle: "Bandingkan Altair (v1), Vega (v2), dan Polaris (v3) berdampingan",
-      compareHeader: "Perbandingan Engine (Altair / Vega / Polaris)",
+      compareTitle: "Bandingkan Vega 1.0, Sirius 2.5, dan Polaris 3.5 Pro berdampingan",
+      compareHeader: "Perbandingan Engine (Vega 1.0 / Sirius 2.5 / Polaris 3.5 Pro)",
       selectorAria: "Pemilih Engine Color Match",
       bestForPrefix: "Cocok untuk:",
       shortcutPrefix: "Pintasan",
@@ -1027,7 +1031,7 @@ export const TRANSLATIONS = {
     },
     commandPalette: {
       ariaLabel: "Spotlight Command Bar",
-      searchPlaceholder: "Cari engine (Altair/Vega/Polaris), profil Log, Looks, atau menu ekspor...",
+      searchPlaceholder: "Cari engine (Vega/Sirius/Polaris), profil Log, Looks, atau menu ekspor...",
       closeAria: "Tutup Command Bar",
       noMatch: 'Tidak ada perintah studio untuk "{query}"',
       footerNavigate: "Atas/Bawah untuk pilih - Enter untuk jalankan",
@@ -1145,7 +1149,7 @@ export const TRANSLATIONS = {
           text: "Tombol ganti bahasa instan EN | ID di header atas dan Pengaturan dengan istilah editing Bahasa Indonesia yang natural serta poster rilis 2400x1350 dua bahasa.",
         },
         {
-          bold: "Polaris v3 PRO Cinema Engine + Auto-Normalize:",
+          bold: "Polaris 3.5 Pro Perceptual Optical Engine + Auto-Normalize:",
           text: "Color matching polinomial 3D dan OKLab dengan opsi normalisasi otomatis exposure serta white balance target.",
         },
         {
@@ -1197,7 +1201,7 @@ export const TRANSLATIONS = {
       shortcuts: [
         { keys: "\\", desc: "Tahan untuk mengintip gambar asli sebelum di-grade" },
         { keys: "Space", desc: "Putar atau jeda pratinjau video" },
-        { keys: "1 / 2 / 3", desc: "Ganti engine Altair (v1), Vega (v2), atau Polaris (v3)" },
+        { keys: "1 / 2 / 3", desc: "Ganti engine Vega 1.0, Sirius 2.5, atau Polaris 3.5 Pro" },
         { keys: "Ctrl + K", desc: "Buka Spotlight Command Bar" },
         { keys: "Ctrl + Z", desc: "Undo perubahan parameter grading terakhir" },
         { keys: "Ctrl + Shift + Z", desc: "Redo perubahan parameter grading" },

@@ -5,6 +5,10 @@ import {
   UNIFORM_MAP,
   getHybridUniformLocations,
   bindHybridUniforms,
+  getLutUniformLocations,
+  createLutGLState,
+  cleanupLutGLState,
+  bindLutTextureAndUniforms,
 } from "../utils/gradeShader";
 import { sanitizeParams } from "../utils/gradeEngine";
 import { getLogProfileCode } from "../utils/logProfiles";
@@ -44,6 +48,8 @@ export default function WebGLPreviewCanvas({
   videoEl = null,
   imageEl = null,
   params,
+  activeLut = null,
+  lutMix = 1.0,
   mode = "split",
   splitPos = 50,
   splitDirection = "vertical",
@@ -64,6 +70,8 @@ export default function WebGLPreviewCanvas({
 
   const stateRef = useRef({
     params,
+    activeLut,
+    lutMix,
     mode,
     splitPos,
     splitDirection,
@@ -74,6 +82,8 @@ export default function WebGLPreviewCanvas({
   });
   stateRef.current = {
     params,
+    activeLut,
+    lutMix,
     mode,
     splitPos,
     splitDirection,
@@ -174,6 +184,8 @@ export default function WebGLPreviewCanvas({
           loc[uName] = gl.getUniformLocation(program, uName);
         });
         const hybridLoc = getHybridUniformLocations(gl, program);
+        const lutLoc = getLutUniformLocations(gl, program);
+        const lutState = createLutGLState(gl);
         const uViewMode = gl.getUniformLocation(program, "u_viewMode");
         const uResolution = gl.getUniformLocation(program, "u_resolution");
         const uSplit = gl.getUniformLocation(program, "uSplit");
@@ -195,6 +207,8 @@ export default function WebGLPreviewCanvas({
           texture,
           loc,
           hybridLoc,
+          lutLoc,
+          lutState,
           uViewMode,
           uResolution,
           uSplit,
@@ -227,6 +241,7 @@ export default function WebGLPreviewCanvas({
       glStateRef.current = null;
       if (!res) return;
       try {
+        cleanupLutGLState(res.gl, res.lutState);
         if (res.texture) res.gl.deleteTexture(res.texture);
         if (res.buffer) res.gl.deleteBuffer(res.buffer);
         if (res.vs) res.gl.deleteShader(res.vs);
@@ -369,6 +384,7 @@ export default function WebGLPreviewCanvas({
         }
       });
       bindHybridUniforms(gl, res.hybridLoc, safe);
+      bindLutTextureAndUniforms(gl, res.lutLoc, res.lutState, st.activeLut, st.lutMix, 1);
       if (res.uFlipY !== null) {
         gl.uniform1f(res.uFlipY, ms.videoEl ? 0.0 : 1.0);
       }
@@ -413,6 +429,14 @@ export default function WebGLPreviewCanvas({
         setParams: (nextParams) => {
           stateRef.current.params = nextParams;
           sanitizedParamsRef.current = sanitizeParams(nextParams);
+          scheduleDraw();
+        },
+        setActiveLut: (nextLut) => {
+          stateRef.current.activeLut = nextLut;
+          scheduleDraw();
+        },
+        setLutMix: (nextMix) => {
+          stateRef.current.lutMix = nextMix;
           scheduleDraw();
         },
         setSplitPos: (nextSplit) => {
@@ -688,10 +712,10 @@ export default function WebGLPreviewCanvas({
     scheduleDrawRef.current();
   }, [params]);
 
-  // Coalesced redraw when view options change.
+  // Coalesced redraw when view options or active 3D LUT change.
   useEffect(() => {
     scheduleDrawRef.current();
-  }, [mode, splitPos, splitDirection, hold, simulateLogInput, monitorMode, maxSide]);
+  }, [activeLut, lutMix, mode, splitPos, splitDirection, hold, simulateLogInput, monitorMode, maxSide]);
 
   // Stop WebGL video loop when leaving Home tab; render 1 frame & resume when returning.
   useEffect(() => {

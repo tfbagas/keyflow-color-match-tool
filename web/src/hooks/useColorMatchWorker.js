@@ -1,6 +1,7 @@
 import { useRef, useCallback, useEffect } from "react";
 import { getEngine, DEFAULT_ENGINE_ID } from "../utils/engineRegistry";
-import { parseLutText, fitParamsToLut } from "../utils/presetImporter";
+import { parseLutText } from "../utils/presetImporter";
+import { fitPolarisV3ToLut } from "../utils/polarisV3Engine";
 
 const ANALYSIS_TIMEOUT_MS = 6000;
 const LUT_FIT_TIMEOUT_MS = 15000;
@@ -116,7 +117,7 @@ export function useColorMatchWorker({
     );
 
     worker.onmessage = (e) => {
-      const { type, jobId, params, stage, error, rms, kind, title } = e.data || {};
+      const { type, jobId, params, stage, error, rms, kind, title, lut } = e.data || {};
       if (jobId !== undefined && jobId !== analysisJobIdRef.current) {
         return;
       }
@@ -127,7 +128,7 @@ export function useColorMatchWorker({
         if (pendingLut && pendingLut.jobId === jobId) {
           clearTimeout(pendingLut.timer);
           pendingLutFitRef.current = null;
-          pendingLut.resolve({ params, rms, kind, title });
+          pendingLut.resolve({ params, rms, kind, title, lut });
         }
       } else if (type === "success" && params) {
         clearAnalysisTimeout();
@@ -275,7 +276,7 @@ export function useColorMatchWorker({
     [clearAnalysisTimeout, initWorker, runFallbackAnalysisOrReset]
   );
 
-  const fitLutInWorker = useCallback((lutText) => {
+  const fitLutInWorker = useCallback((lutText, tgt = null) => {
     return new Promise((resolve, reject) => {
       if (pendingLutFitRef.current) {
         clearTimeout(pendingLutFitRef.current.timer);
@@ -287,10 +288,15 @@ export function useColorMatchWorker({
       const runMainThreadFallback = () => {
         try {
           const lut = parseLutText(lutText);
-          const { params, rms } = fitParamsToLut(lut);
+          const { params, rms } = fitPolarisV3ToLut(
+            lut,
+            tgt?.data || null,
+            tgt?.numPixels || 0
+          );
           resolve({
             params,
             rms,
+            lut,
             kind: lut.kind === "3d" ? `3D LUT ${lut.size}^3` : `1D LUT ${lut.size}`,
             title: lut.title,
           });
@@ -321,7 +327,18 @@ export function useColorMatchWorker({
           runMainThreadFallback();
           return;
         }
-        workerRef.current.postMessage({ type: "fitLut", jobId, lutText });
+        const tgtBuffer = tgt?.data ? toTransferableBuffer(tgt.data, true) : null;
+        const transferables = tgtBuffer ? [tgtBuffer] : [];
+        workerRef.current.postMessage(
+          {
+            type: "fitLut",
+            jobId,
+            lutText,
+            tgtBuffer,
+            targetNumPixels: tgt ? tgt.numPixels : 0,
+          },
+          transferables
+        );
       } catch {
         clearTimeout(timer);
         pendingLutFitRef.current = null;

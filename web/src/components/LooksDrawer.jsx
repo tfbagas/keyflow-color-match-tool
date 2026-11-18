@@ -45,10 +45,10 @@ function persistSavedLooks(looks) {
 
 function formatEngineTag(engineId) {
   const c = getEngineCodename(engineId);
-  if (engineId === "v1") return "Altair v1";
-  if (engineId === "v2") return "Vega v2";
-  if (c === "polaris" || engineId === "v3") return "Polaris v3";
-  return "Polaris v3";
+  if (engineId === "v1") return "Vega 1.0";
+  if (engineId === "v2") return "Sirius 2.5";
+  if (c === "polaris" || engineId === "v3") return "Polaris 3.5 Pro";
+  return "Polaris 3.5 Pro";
 }
 
 export default function LooksDrawer({

@@ -294,6 +294,53 @@ void main() {
 
 // u_viewMode: 0 = Split Slider, 1 = Side by Side, 2 = Graded Only
 // uMonitorMode: 0 = Off, 1 = Zebra/Clipping (>0.98 or <0.02), 2 = False Color IRE
+export const LUT_UNIFORMS = `uniform sampler2D uLutTex;
+uniform float uLutActive;
+uniform float uLutMix;
+uniform float uLutSize;
+uniform float uLutGridCols;
+uniform vec2 uLutTexSize;
+uniform vec3 uLutDomainMin;
+uniform vec3 uLutDomainMax;
+`;
+
+export const LUT_FUNCTION = `vec3 kfFetchLutNode(float rIdx, float gIdx, float bIdx) {
+    float tileY = floor((bIdx + 0.001) / max(uLutGridCols, 1.0));
+    float tileX = floor(bIdx - tileY * uLutGridCols + 0.5);
+    float px = tileX * uLutSize + rIdx;
+    float py = tileY * uLutSize + gIdx;
+    vec2 uv = (vec2(px, py) + vec2(0.5)) / max(uLutTexSize, vec2(1.0));
+    return texture2D(uLutTex, uv).rgb;
+}
+
+vec3 kfSampleLut3D(vec3 rgb) {
+    vec3 domSpan = max(uLutDomainMax - uLutDomainMin, vec3(1e-5));
+    vec3 normRgb = clamp((rgb - uLutDomainMin) / domSpan, 0.0, 1.0);
+    float maxIdx = max(uLutSize - 1.0, 1.0);
+    vec3 pos = normRgb * maxIdx;
+    vec3 i0 = min(floor(pos), vec3(maxIdx));
+    vec3 i1 = min(i0 + vec3(1.0), vec3(maxIdx));
+    vec3 f = pos - i0;
+
+    vec3 c000 = kfFetchLutNode(i0.r, i0.g, i0.b);
+    vec3 c100 = kfFetchLutNode(i1.r, i0.g, i0.b);
+    vec3 c010 = kfFetchLutNode(i0.r, i1.g, i0.b);
+    vec3 c110 = kfFetchLutNode(i1.r, i1.g, i0.b);
+    vec3 c001 = kfFetchLutNode(i0.r, i0.g, i1.b);
+    vec3 c101 = kfFetchLutNode(i1.r, i0.g, i1.b);
+    vec3 c011 = kfFetchLutNode(i0.r, i1.g, i1.b);
+    vec3 c111 = kfFetchLutNode(i1.r, i1.g, i1.b);
+
+    vec3 c00 = mix(c000, c100, f.r);
+    vec3 c10 = mix(c010, c110, f.r);
+    vec3 c01 = mix(c001, c101, f.r);
+    vec3 c11 = mix(c011, c111, f.r);
+    vec3 c0 = mix(c00, c10, f.g);
+    vec3 c1 = mix(c01, c11, f.g);
+    return mix(c0, c1, f.b);
+}
+`;
+
 export const PREVIEW_FRAGMENT = `${PRECISION_HEADER}
 uniform sampler2D uTexture;
 uniform float u_viewMode;
@@ -306,7 +353,9 @@ uniform float uMonitorMode;
 varying vec2 vTex;
 
 ${GRADE_UNIFORMS}
+${LUT_UNIFORMS}
 ${GRADE_FUNCTION}
+${LUT_FUNCTION}
 ${GLSL_LOG_PROFILE_FUNCTIONS}
 
 void main() {
@@ -342,11 +391,17 @@ void main() {
     vec3 src = clamp(texture2D(uTexture, uv).rgb, 0.0, 1.0);
     vec3 inputRgb = uLogInput > 0.5 ? kfApplyLogProfile(src, uLogInput) : src;
     float baseLuma = dot(inputRgb, vec3(0.2126, 0.7152, 0.0722));
-    vec3 outRgb = graded ? kfGrade(inputRgb) : src;
+    vec3 outRgb = src;
     if (graded) {
-        float shadowMask = smoothstep(0.015, 0.16, baseLuma);
-        float blackProtect = smoothstep(0.0, 0.06, baseLuma) * (0.15 + 0.85 * shadowMask);
-        outRgb = mix(inputRgb, outRgb, blackProtect);
+        if (uLutActive > 0.5) {
+            vec3 lutRgb = kfSampleLut3D(inputRgb);
+            outRgb = clamp(mix(inputRgb, lutRgb, clamp(uLutMix, 0.0, 1.5)), 0.0, 1.0);
+        } else {
+            outRgb = kfGrade(inputRgb);
+            float shadowMask = smoothstep(0.015, 0.16, baseLuma);
+            float blackProtect = smoothstep(0.0, 0.06, baseLuma) * (0.15 + 0.85 * shadowMask);
+            outRgb = mix(inputRgb, outRgb, blackProtect);
+        }
     }
     if (uMonitorMode > 0.5) {
         float monLuma = dot(outRgb, vec3(0.2126, 0.7152, 0.0722));
@@ -435,4 +490,253 @@ export function bindHybridUniforms(gl, hybridLoc, safeParams) {
   if (hybridLoc.uHueLumaB !== null) {
     gl.uniform2f(hybridLoc.uHueLumaB, hl[4], hl[5]);
   }
+}
+
+// Packs a parsed 3D (or 1D) LUT into a 2D-tiled RGBA float/byte texture payload.
+// 3D LUT data follows Adobe/Resolve .cube order: R fastest, G second, B slowest.
+export function buildLutTexturePayload(lut) {
+  if (!lut || !lut.data || !lut.size) return null;
+  if (lut._cachedPayload) return lut._cachedPayload;
+
+  let size = lut.size;
+  let data3d = lut.data;
+  const dMin = lut.dMin || [0, 0, 0];
+  const dMax = lut.dMax || [1, 1, 1];
+
+  if (lut.kind === "1d") {
+    const N1 = lut.size;
+    size = 17;
+    const out = new Float32Array(size * size * size * 3);
+    const sample1d = (v, c) => {
+      const span = dMax[c] - dMin[c];
+      const norm = Math.min(1, Math.max(0, (v - dMin[c]) / (span > 1e-6 ? span : 1)));
+      const x = norm * (N1 - 1);
+      const i0 = Math.floor(x);
+      const i1 = Math.min(N1 - 1, i0 + 1);
+      const f = x - i0;
+      return lut.data[i0 * 3 + c] * (1 - f) + lut.data[i1 * 3 + c] * f;
+    };
+    let p = 0;
+    for (let b = 0; b < size; b++) {
+      const bv = dMin[2] + (b / (size - 1)) * (dMax[2] - dMin[2]);
+      const ob = sample1d(bv, 2);
+      for (let g = 0; g < size; g++) {
+        const gv = dMin[1] + (g / (size - 1)) * (dMax[1] - dMin[1]);
+        const og = sample1d(gv, 1);
+        for (let r = 0; r < size; r++) {
+          const rv = dMin[0] + (r / (size - 1)) * (dMax[0] - dMin[0]);
+          out[p++] = sample1d(rv, 0);
+          out[p++] = og;
+          out[p++] = ob;
+        }
+      }
+    }
+    data3d = out;
+  }
+
+  const cols = Math.ceil(Math.sqrt(size));
+  const rows = Math.ceil(size / cols);
+  const width = cols * size;
+  const height = rows * size;
+  const floatData = new Float32Array(width * height * 4);
+
+  for (let b = 0; b < size; b++) {
+    const tileX = b % cols;
+    const tileY = Math.floor(b / cols);
+    for (let g = 0; g < size; g++) {
+      const py = tileY * size + g;
+      for (let r = 0; r < size; r++) {
+        const px = tileX * size + r;
+        const srcIdx = ((b * size + g) * size + r) * 3;
+        const dstIdx = (py * width + px) * 4;
+        floatData[dstIdx] = data3d[srcIdx];
+        floatData[dstIdx + 1] = data3d[srcIdx + 1];
+        floatData[dstIdx + 2] = data3d[srcIdx + 2];
+        floatData[dstIdx + 3] = 1.0;
+      }
+    }
+  }
+
+  const payload = {
+    width,
+    height,
+    size,
+    cols,
+    rows,
+    dMin,
+    dMax,
+    floatData,
+    byteData: null,
+  };
+  lut._cachedPayload = payload;
+  return payload;
+}
+
+export function getLutUniformLocations(gl, program) {
+  return {
+    uLutTex: gl.getUniformLocation(program, "uLutTex"),
+    uLutActive: gl.getUniformLocation(program, "uLutActive"),
+    uLutMix: gl.getUniformLocation(program, "uLutMix"),
+    uLutSize: gl.getUniformLocation(program, "uLutSize"),
+    uLutGridCols: gl.getUniformLocation(program, "uLutGridCols"),
+    uLutTexSize: gl.getUniformLocation(program, "uLutTexSize"),
+    uLutDomainMin: gl.getUniformLocation(program, "uLutDomainMin"),
+    uLutDomainMax: gl.getUniformLocation(program, "uLutDomainMax"),
+  };
+}
+
+export function createLutGLState(gl) {
+  const dummyTexture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, dummyTexture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texImage2D(
+    gl.TEXTURE_2D,
+    0,
+    gl.RGBA,
+    1,
+    1,
+    0,
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    new Uint8Array([0, 0, 0, 255])
+  );
+  const floatExt = gl.getExtension("OES_texture_float");
+  return {
+    texture: null,
+    dummyTexture,
+    uploadedLutRef: null,
+    supportsFloat: Boolean(floatExt),
+  };
+}
+
+export function cleanupLutGLState(gl, lutState) {
+  if (!gl || !lutState) return;
+  try {
+    if (lutState.texture) {
+      gl.deleteTexture(lutState.texture);
+      lutState.texture = null;
+    }
+    if (lutState.dummyTexture) {
+      gl.deleteTexture(lutState.dummyTexture);
+      lutState.dummyTexture = null;
+    }
+    lutState.uploadedLutRef = null;
+  } catch {
+    // ignore WebGL cleanup errors
+  }
+}
+
+export function bindLutTextureAndUniforms(
+  gl,
+  lutLoc,
+  lutState,
+  activeLut,
+  lutMix = 1.0,
+  texUnit = 1
+) {
+  if (!lutLoc || !lutState) return;
+  gl.activeTexture(gl.TEXTURE0 + texUnit);
+
+  if (!activeLut) {
+    if (lutState.texture) {
+      gl.deleteTexture(lutState.texture);
+      lutState.texture = null;
+      lutState.uploadedLutRef = null;
+    }
+    gl.bindTexture(gl.TEXTURE_2D, lutState.dummyTexture);
+    if (lutLoc.uLutTex !== null) gl.uniform1i(lutLoc.uLutTex, texUnit);
+    if (lutLoc.uLutActive !== null) gl.uniform1f(lutLoc.uLutActive, 0.0);
+    if (lutLoc.uLutMix !== null) gl.uniform1f(lutLoc.uLutMix, 0.0);
+    gl.activeTexture(gl.TEXTURE0);
+    return;
+  }
+
+  const payload = buildLutTexturePayload(activeLut);
+  if (!payload) {
+    gl.bindTexture(gl.TEXTURE_2D, lutState.dummyTexture);
+    if (lutLoc.uLutTex !== null) gl.uniform1i(lutLoc.uLutTex, texUnit);
+    if (lutLoc.uLutActive !== null) gl.uniform1f(lutLoc.uLutActive, 0.0);
+    gl.activeTexture(gl.TEXTURE0);
+    return;
+  }
+
+  if (!lutState.texture) {
+    lutState.texture = gl.createTexture();
+    lutState.uploadedLutRef = null;
+  }
+  gl.bindTexture(gl.TEXTURE_2D, lutState.texture);
+
+  if (lutState.uploadedLutRef !== activeLut) {
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+    let uploaded = false;
+    if (lutState.supportsFloat) {
+      try {
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGBA,
+          payload.width,
+          payload.height,
+          0,
+          gl.RGBA,
+          gl.FLOAT,
+          payload.floatData
+        );
+        if (gl.getError() === gl.NO_ERROR) {
+          uploaded = true;
+        }
+      } catch {
+        uploaded = false;
+      }
+    }
+    if (!uploaded) {
+      if (!payload.byteData) {
+        const bd = new Uint8Array(payload.floatData.length);
+        for (let i = 0; i < payload.floatData.length; i++) {
+          const v = payload.floatData[i];
+          bd[i] = Math.round(Math.min(1, Math.max(0, Number.isFinite(v) ? v : 0)) * 255);
+        }
+        payload.byteData = bd;
+      }
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        payload.width,
+        payload.height,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        payload.byteData
+      );
+    }
+    lutState.uploadedLutRef = activeLut;
+  }
+
+  if (lutLoc.uLutTex !== null) gl.uniform1i(lutLoc.uLutTex, texUnit);
+  if (lutLoc.uLutActive !== null) gl.uniform1f(lutLoc.uLutActive, 1.0);
+  if (lutLoc.uLutMix !== null) {
+    gl.uniform1f(lutLoc.uLutMix, Math.min(1.5, Math.max(0.0, lutMix)));
+  }
+  if (lutLoc.uLutSize !== null) gl.uniform1f(lutLoc.uLutSize, payload.size);
+  if (lutLoc.uLutGridCols !== null) gl.uniform1f(lutLoc.uLutGridCols, payload.cols);
+  if (lutLoc.uLutTexSize !== null) {
+    gl.uniform2f(lutLoc.uLutTexSize, payload.width, payload.height);
+  }
+  if (lutLoc.uLutDomainMin !== null) {
+    gl.uniform3f(lutLoc.uLutDomainMin, payload.dMin[0], payload.dMin[1], payload.dMin[2]);
+  }
+  if (lutLoc.uLutDomainMax !== null) {
+    gl.uniform3f(lutLoc.uLutDomainMax, payload.dMax[0], payload.dMax[1], payload.dMax[2]);
+  }
+  gl.activeTexture(gl.TEXTURE0);
 }

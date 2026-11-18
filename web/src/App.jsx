@@ -245,6 +245,7 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [statusText, setStatusText] = useState("Ready");
   const [importedLook, setImportedLook] = useState(null);
+  const [activeLut, setActiveLut] = useState(null);
   const targetRef = useRef(null);
   const referenceRef = useRef(null);
   const triggerAnalysisRef = useRef(() => {});
@@ -857,26 +858,37 @@ export default function App() {
       setStatusText(`Importing ${meta.label}...`);
       try {
         let result;
+        let nextLut = null;
         if (meta.ext === "kfplug") {
           result = await importKfplugFile(file);
         } else if (meta.ext === "ffx") {
-          result = await parseFfxPreset(file, file.name);
+          result = await parseFfxPreset(file, file.name, lang);
         } else {
           if (file.size > 40 * 1024 * 1024) {
             throw new Error("LUT file is too large (limit 40 MB).");
           }
           const text = await file.text();
-          const fitted = await fitLutInWorker(text);
+          const tgtInfo = targetRef.current;
+          let tgtSample = null;
+          if (tgtInfo?.kind === "video" && tgtInfo.videoEl?.readyState >= 2) {
+            tgtSample = captureRgba(tgtInfo.videoEl, analysisMaxDim);
+          } else if (tgtInfo?.imgElement) {
+            tgtSample = captureRgba(tgtInfo.imgElement, analysisMaxDim);
+          }
+          const fitted = await fitLutInWorker(text, tgtSample);
           const baseName = file.name.replace(/\.[^/.]+$/, "");
+          nextLut = fitted.lut || null;
           result = {
             kind: fitted.kind,
             name: fitted.title || sanitizeMetadataText(baseName, "Imported LUT", 48),
             author: "",
             description: "",
+            statusSummary: `Imported ${fitted.kind} from ${file.name}`,
             params: fitted.params,
-            rms: fitted.rms,
+            rms: null,
           };
         }
+        setActiveLut(nextLut);
         setGradingParams({ ...result.params });
         setLastMatchedParams({ ...result.params });
         setImportedLook({
@@ -904,11 +916,12 @@ export default function App() {
         setStatusText("Import Error");
       }
     },
-    [fitLutInWorker, showMobileToast]
+    [analysisMaxDim, captureRgba, fitLutInWorker, lang, showMobileToast]
   );
 
   const handleReferenceLoaded = useCallback(
     (info) => {
+      setActiveLut(null);
       setImportedLook(null);
       setPresetName(info.baseName.slice(0, 28));
       setDescription(`Grading preset matched from reference '${info.baseName}'.`);
@@ -1391,6 +1404,8 @@ export default function App() {
 
   const handleParamChange = useCallback(
     (key, value) => {
+      setActiveLut(null);
+      glPreviewRef.current?.setActiveLut?.(null);
       const next = { ...liveParamsRef.current, [key]: value };
       liveParamsRef.current = next;
       const eff = scaleParamsByStrength(next, liveStrengthRef.current);
@@ -1410,6 +1425,7 @@ export default function App() {
       liveStrengthRef.current = nextStrength;
       const eff = scaleParamsByStrength(liveParamsRef.current, nextStrength);
       glPreviewRef.current?.setParams?.(eff);
+      glPreviewRef.current?.setLutMix?.(nextStrength / 100);
       if (isControlDraggingRef.current) {
         scheduleParamCommit();
       } else {
@@ -1427,6 +1443,8 @@ export default function App() {
   }, []);
 
   const handleResetParams = useCallback(() => {
+    setActiveLut(null);
+    glPreviewRef.current?.setActiveLut?.(null);
     setGradingParams({ ...DEFAULT_PARAMS });
     setMatchStrength(100);
     setSimulateLogInput(DEFAULT_LOG_PROFILE);
@@ -1466,6 +1484,8 @@ export default function App() {
 
   const handleWheelChange = useCallback(
     (prefix, [r, g, b]) => {
+      setActiveLut(null);
+      glPreviewRef.current?.setActiveLut?.(null);
       const next = {
         ...liveParamsRef.current,
         [`${prefix}R`]: r,
@@ -1603,6 +1623,8 @@ export default function App() {
         includeQr,
         qrMode,
         qrUrl,
+        activeLut,
+        lutMix: matchStrength / 100,
       });
       setStatusText(`Saved ${format.toUpperCase()}`);
       showMobileToast(t("toasts.savedFormat", { format: format.toUpperCase() }));
@@ -1771,7 +1793,9 @@ export default function App() {
           safePreset,
           ext,
           simulateLogInput,
-          size
+          size,
+          activeLut,
+          matchStrength / 100
         );
         downloadBlob(blob, fileName);
         setStatusText(`Exported .${ext}`);
@@ -1789,6 +1813,8 @@ export default function App() {
       effectiveParams,
       calibration,
       simulateLogInput,
+      activeLut,
+      matchStrength,
       showMobileToast,
       t,
     ]
@@ -1868,7 +1894,9 @@ export default function App() {
         safePreset,
         safeAuthor,
         safeDesc,
-        simulateLogInput
+        simulateLogInput,
+        activeLut,
+        matchStrength / 100
       );
       downloadBlob(blob, fileName);
       setStatusText("Exported!");
@@ -1890,6 +1918,8 @@ export default function App() {
     authorName,
     description,
     simulateLogInput,
+    activeLut,
+    matchStrength,
     showMobileToast,
     t,
   ]);
@@ -1911,7 +1941,15 @@ export default function App() {
           safePreset.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "Custom_Look";
 
         const [kfRes, ffxRes] = await Promise.all([
-          generateKfplug(calibratedParams, safePreset, safeAuthor, safeDesc, simulateLogInput),
+          generateKfplug(
+            calibratedParams,
+            safePreset,
+            safeAuthor,
+            safeDesc,
+            simulateLogInput,
+            activeLut,
+            matchStrength / 100
+          ),
           exportToFfx(calibratedParams, safePreset, null, simulateLogInput),
         ]);
         const cubeRes = generateLutFile(
@@ -1919,7 +1957,9 @@ export default function App() {
           safePreset,
           "cube",
           simulateLogInput,
-          cubeSize
+          cubeSize,
+          activeLut,
+          matchStrength / 100
         );
 
         const entries = [
@@ -1975,6 +2015,8 @@ export default function App() {
       authorName,
       description,
       simulateLogInput,
+      activeLut,
+      matchStrength,
       targetImage,
       videoEl,
       showMobileToast,
@@ -1985,6 +2027,7 @@ export default function App() {
   const handleApplyLook = useCallback(
     (look) => {
       if (!look || !look.params) return;
+      setActiveLut(null);
       if (look.engineId && ["v1", "v2", "v3"].includes(look.engineId)) {
         setActiveEngineId(look.engineId);
       }
@@ -2027,6 +2070,7 @@ export default function App() {
 
   const handleRestoreSession = useCallback(() => {
     if (!restorableSession) return;
+    setActiveLut(null);
     if (restorableSession.engineId) setActiveEngineId(restorableSession.engineId);
     if (restorableSession.logProfile) setSimulateLogInput(resolveLogProfileId(restorableSession.logProfile));
     if (typeof restorableSession.matchStrength === "number") {
@@ -2059,7 +2103,9 @@ export default function App() {
         safePreset,
         safeAuthor,
         safeDesc,
-        simulateLogInput
+        simulateLogInput,
+        activeLut,
+        matchStrength / 100
       );
       const file = new File([blob], fileName, { type: "application/zip" });
       if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
@@ -2088,6 +2134,8 @@ export default function App() {
     authorName,
     description,
     simulateLogInput,
+    activeLut,
+    matchStrength,
     showMobileToast,
     t,
   ]);
@@ -2109,6 +2157,7 @@ export default function App() {
     [handleTrySample]
   );
   const handleClearImportedLook = useCallback(() => {
+    setActiveLut(null);
     setImportedLook(null);
     setLastMatchedParams(null);
   }, []);
@@ -2691,6 +2740,8 @@ export default function App() {
                   onModeChange={setPreviewMode}
                   videoEl={videoEl}
                   gradingParams={effectiveParams}
+                  activeLut={activeLut}
+                  lutMix={matchStrength / 100}
                   onVideoError={(msg) => setTargetError(msg)}
                   onSplitDragChange={handleControlDragChange}
                   isPinned={isPreviewPinned}

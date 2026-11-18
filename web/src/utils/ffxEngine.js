@@ -14,6 +14,8 @@ const SUPPORTED_COLOR_EFFECTS = {
   "adbe vibrance": "Vibrance",
   "adbe hue saturation": "Hue/Saturation",
   "adbe tint": "Tint",
+  "adbe easy levels2": "Levels",
+  "adbe easy levels": "Levels",
   "adbe levels2": "Levels",
   "adbe levels": "Levels",
   "adbe pro levels2": "Levels (Individual Controls)",
@@ -31,27 +33,12 @@ const SUPPORTED_COLOR_EFFECTS = {
   "adbe black & white": "Black & White",
   "adbe gamma/pedestal/gain2": "Gamma/Pedestal/Gain",
   "adbe gamma/pedestal/gain": "Gamma/Pedestal/Gain",
-  "mb looksuite3": "Magic Bullet Looks",
-  "mb looksuite2": "Magic Bullet Looks",
-  "mb looksuite": "Magic Bullet Looks",
-  "mbl3": "Magic Bullet Looks",
-  "mbl2": "Magic Bullet Looks",
-  "s_huesatbright": "Sapphire HueSatBright",
-  "s_colorbalance": "Sapphire ColorBalance",
-  "s_gamma": "Sapphire Gamma",
-  "s_tint": "Sapphire Tint",
 };
-
-const BCC_COLOR_RE =
-  /^bcc\d*\s*(color|hue|sat|curve|level|bright|contrast|tritone|tint|gamma|exposure|looks|grade|balance|white)/i;
 
 function resolveSupportedColorLabel(prefix = "") {
   const clean = String(prefix || "").trim();
   if (!clean) return null;
-  const lower = clean.toLowerCase();
-  if (SUPPORTED_COLOR_EFFECTS[lower]) return SUPPORTED_COLOR_EFFECTS[lower];
-  if (BCC_COLOR_RE.test(clean)) return clean;
-  return null;
+  return SUPPORTED_COLOR_EFFECTS[clean.toLowerCase()] || null;
 }
 
 const STRUCTURAL_MATCH_NAMES = new Set([
@@ -332,62 +319,6 @@ function applyCurvesCustomLut(u8, base, out) {
   shiftWheel(out, "gain", hiRgb[0], hiRgb[1], hiRgb[2]);
 }
 
-function applyMblLookBlob(u8, dv, start, len, strength, out) {
-  if (len < 12 || readFourCC(u8, start) !== "MBL2") return;
-  const mix = clamp(strength, 0.0, 1.0);
-  if (mix <= 0.001) return;
-
-  let pos = 8;
-  while (pos + 8 <= len) {
-    const cid = readFourCC(u8, start + pos);
-    const csz = dv.getUint32(start + pos + 4, false);
-    const cds = start + pos + 8;
-    if (cid === "\0\0\0\0" && csz === 0) break;
-
-    if (cid === "tool" && csz >= 12 && cds + csz <= start + len) {
-      const tid = readFourCC(u8, cds);
-      if (tid === "expo" && csz >= 20) {
-        const val = dv.getFloat64(cds + 12, false);
-        if (Number.isFinite(val)) {
-          out.exposure = round2(clamp(out.exposure + val * mix, -2.0, 2.0));
-        }
-      } else if (tid === "cont" && csz >= 20) {
-        const val = dv.getFloat64(cds + 12, false);
-        if (Number.isFinite(val)) {
-          out.contrast = round2(clamp(out.contrast + val * mix, 0.5, 2.0));
-        }
-      } else if (tid === "pop2" && csz >= 20) {
-        const val = dv.getFloat64(cds + 12, false);
-        if (Number.isFinite(val)) {
-          out.contrast = round2(clamp(out.contrast + (val / 500.0) * mix, 0.5, 2.0));
-        }
-      } else if (tid === "husa" && csz >= 28) {
-        const satPct = dv.getFloat64(cds + 20, false);
-        if (Number.isFinite(satPct)) {
-          const factor = 1.0 + (satPct / 100.0 - 1.0) * mix;
-          out.sat = round2(clamp(out.sat * factor, 0.0, 2.0));
-        }
-      } else if (tid === "rhsl" && csz >= 228) {
-        let satSum = 0;
-        let validRanges = 0;
-        for (let r = 0; r < 8; r++) {
-          const satDelta = dv.getFloat64(cds + 36 + r * 24 + 8, false);
-          if (Number.isFinite(satDelta)) {
-            satSum += satDelta;
-            validRanges++;
-          }
-        }
-        if (validRanges > 0) {
-          const avgSat = satSum / validRanges;
-          out.sat = round2(clamp(out.sat + (avgSat / 100.0) * mix, 0.0, 2.0));
-        }
-      }
-    }
-
-    pos = pos + 8 + csz;
-  }
-}
-
 function applyLumetriStream(s, dv, out, state) {
   const val = s.cdatValue;
   const m = s.matchName;
@@ -455,31 +386,6 @@ function applyLumetriStream(s, dv, out, state) {
     out.gainR = hr;
     out.gainG = hg;
     out.gainB = hb;
-  }
-}
-
-function applyGenericColorStream(s, out) {
-  const val = s.cdatValue;
-  if (!Number.isFinite(val)) return;
-  const label = (s.tdsn || "").toLowerCase();
-
-  if (label === "brightness" || label === "exposure") {
-    const scale = Math.abs(val) > 5 ? val / 150.0 : val;
-    out.exposure = round2(clamp(out.exposure + scale, -2.0, 2.0));
-  } else if (label === "contrast") {
-    const scale = Math.abs(val) > 3 ? val / 100.0 : val - 1.0;
-    out.contrast = round2(clamp(out.contrast + scale, 0.5, 2.0));
-  } else if (label === "saturation") {
-    const scale = Math.abs(val) > 3 ? val / 100.0 : val - 1.0;
-    out.sat = round2(clamp(out.sat + scale, 0.0, 2.0));
-  } else if (label === "vibrance") {
-    out.vib = round2(clamp(out.vib + val / 100.0, -0.8, 0.8));
-  } else if (label === "gamma" && val > 0.1) {
-    out.pivot = round2(clamp(0.435 / val, 0.1, 0.9));
-  } else if (label === "temperature" || label === "warmth") {
-    out.temp = round2(clamp(out.temp + val / 100.0, -1.0, 1.0));
-  } else if (label === "tint") {
-    out.tint = round2(clamp(out.tint + val / 100.0, -1.0, 1.0));
   }
 }
 
@@ -601,6 +507,7 @@ export async function parseFfxPreset(input, fileName = "preset.ffx", lang = "en"
   }
 
   const colorEffectsFound = [];
+  const thirdPartyPrefixes = [];
   let nonColorEffectsCount = 0;
 
   for (const prefix of effectBlocks) {
@@ -609,21 +516,34 @@ export async function parseFfxPreset(input, fileName = "preset.ffx", lang = "en"
       if (!colorEffectsFound.includes(label)) {
         colorEffectsFound.push(label);
       }
-    } else if (prefix.startsWith("ADBE ") || prefix.length > 3) {
-      nonColorEffectsCount++;
+    } else {
+      if (!prefix.startsWith("ADBE ")) {
+        thirdPartyPrefixes.push(prefix);
+      }
+      if (prefix.startsWith("ADBE ") || prefix.length > 3) {
+        nonColorEffectsCount++;
+      }
     }
   }
 
   if (colorEffectsFound.length === 0) {
     const i18nFfx = TRANSLATIONS[lang]?.ffxImport || TRANSLATIONS.en.ffxImport;
-    const effectsList = discoveredEffectNames.join(", ");
-    const msg = effectsList
-      ? i18nFfx.unsupportedWithEffects
-          .replace("{fileName}", fileName)
-          .replace("{effects}", effectsList)
-      : i18nFfx.unsupportedEmpty.replace("{fileName}", fileName);
+    const effectsList = discoveredEffectNames.join(", ") || thirdPartyPrefixes.join(", ");
+    let msg;
+    if (thirdPartyPrefixes.length > 0) {
+      msg = i18nFfx.thirdPartyPlugin
+        .replace("{fileName}", fileName)
+        .replace("{effects}", effectsList);
+    } else if (effectsList) {
+      msg = i18nFfx.unsupportedWithEffects
+        .replace("{fileName}", fileName)
+        .replace("{effects}", effectsList);
+    } else {
+      msg = i18nFfx.unsupportedEmpty.replace("{fileName}", fileName);
+    }
     const err = new Error(msg);
     err.foundEffects = discoveredEffectNames;
+    err.isThirdPartyPlugin = thirdPartyPrefixes.length > 0;
     throw err;
   }
 
@@ -633,7 +553,6 @@ export async function parseFfxPreset(input, fileName = "preset.ffx", lang = "en"
   // Deduplicate multi-pass aRbp blobs per effect instance (AE writes default then active)
   const latestCurvesByInstance = new Map();
   const latestHueSatByInstance = new Map();
-  const mblInstances = new Map();
   const hueSatColorizeByInstance = new Map();
 
   for (const s of streams) {
@@ -657,23 +576,6 @@ export async function parseFfxPreset(input, fileName = "preset.ffx", lang = "en"
         entry.colorizeSat = s.cdatValue;
       }
       hueSatColorizeByInstance.set(s.instanceId, entry);
-    } else if (
-      mLower.startsWith("mb looksuite") ||
-      mLower.startsWith("mbl3") ||
-      mLower.startsWith("mbl2")
-    ) {
-      const entry = mblInstances.get(s.instanceId) || { strength: 1.0, lookStream: null };
-      const label = (s.tdsn || "").toLowerCase();
-      if ((mLower.endsWith("-0013") || label === "strength") && Number.isFinite(s.cdatValue)) {
-        entry.strength = clamp(s.cdatValue / 100.0, 0.0, 1.0);
-      } else if (
-        (mLower.endsWith("-0001") || label === "look") &&
-        s.aRbpOffset !== null &&
-        s.aRbpLength > 16
-      ) {
-        entry.lookStream = s;
-      }
-      mblInstances.set(s.instanceId, entry);
     }
   }
 
@@ -714,7 +616,11 @@ export async function parseFfxPreset(input, fileName = "preset.ffx", lang = "en"
         const amt = clamp(val / 100.0, 0.0, 1.0);
         out.sat = round2(clamp(out.sat * (1.0 - amt), 0.0, 2.0));
       }
-    } else if (mLower.startsWith("adbe levels") || mLower.startsWith("adbe pro levels")) {
+    } else if (
+      mLower.startsWith("adbe easy levels") ||
+      mLower.startsWith("adbe levels") ||
+      mLower.startsWith("adbe pro levels")
+    ) {
       if (label.includes("gamma") && Number.isFinite(val) && val > 0.1) {
         out.contrast = round2(clamp(out.contrast * (1.0 + (1.0 - val) * 0.5), 0.5, 2.0));
       }
@@ -773,19 +679,6 @@ export async function parseFfxPreset(input, fileName = "preset.ffx", lang = "en"
           out.highlights = round2(clamp(out.highlights + (val - 1.0) * 0.5, -0.5, 0.5));
         }
       }
-    } else if (
-      mLower.startsWith("s_huesatbright") ||
-      mLower.startsWith("s_colorbalance") ||
-      mLower.startsWith("s_gamma") ||
-      mLower.startsWith("s_tint")
-    ) {
-      if (mLower.startsWith("s_tint") && label.includes("amount") && Number.isFinite(val)) {
-        out.sat = round2(clamp(out.sat * (1.0 - clamp(val, 0.0, 1.0)), 0.0, 2.0));
-      } else {
-        applyGenericColorStream(s, out);
-      }
-    } else if (BCC_COLOR_RE.test(getEffectPrefix(m))) {
-      applyGenericColorStream(s, out);
     }
   }
 
@@ -806,12 +699,6 @@ export async function parseFfxPreset(input, fileName = "preset.ffx", lang = "en"
     const cInfo = hueSatColorizeByInstance.get(instId);
     if (cInfo?.colorize) {
       out.sat = round2(clamp(cInfo.colorizeSat / 100.0, 0.0, 2.0));
-    }
-  }
-
-  for (const { strength, lookStream } of mblInstances.values()) {
-    if (lookStream) {
-      applyMblLookBlob(u8, dv, lookStream.aRbpOffset, lookStream.aRbpLength, strength, out);
     }
   }
 
