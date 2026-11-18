@@ -4,10 +4,12 @@ import { scaleParamsByStrength } from "./gradeEngine";
 
 const CLOUD_CLIENT_ID_KEY = "kf_cloud_client_id";
 const DEFAULT_PROD_CLOUD_RENDER_URL = "https://color-match-tool-cloud-render.onrender.com";
-const DEFAULT_MAX_DURATION_SEC = 30;
-const DEFAULT_MAX_FILE_SIZE_MB = 80;
-const DEFAULT_DAILY_LIMIT = 3;
+const DEFAULT_MAX_DURATION_SEC = 60;
+const DEFAULT_MAX_FILE_SIZE_MB = 100;
+const DEFAULT_DAILY_LIMIT = 5;
+const DEFAULT_MAX_CONCURRENCY = 3;
 const POLL_INTERVAL_MS = 2000;
+const RENDER_POLL_TIMEOUT_MS = 360_000;
 const WAKE_TIMEOUT_MS = 75_000;
 const WAKE_POLL_INTERVAL_MS = 3_000;
 
@@ -235,6 +237,9 @@ export async function fetchCloudQuota(signal) {
       remaining: 0,
       limit: DEFAULT_DAILY_LIMIT,
       queueLength: 0,
+      activeWorkers: 0,
+      maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+      queuedJobs: 0,
       maxDurationSec: DEFAULT_MAX_DURATION_SEC,
       maxFileSizeMb: DEFAULT_MAX_FILE_SIZE_MB,
     };
@@ -257,6 +262,9 @@ export async function fetchCloudQuota(signal) {
     remaining: Number(data.remaining ?? 0),
     limit: Number(data.limit ?? DEFAULT_DAILY_LIMIT),
     queueLength: Number(data.queueLength ?? 0),
+    activeWorkers: Number(data.activeWorkers ?? 0),
+    maxConcurrency: Number(data.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY),
+    queuedJobs: Number(data.queuedJobs ?? 0),
     maxDurationSec: Number(data.maxDurationSec ?? DEFAULT_MAX_DURATION_SEC),
     maxFileSizeMb: Number(data.maxFileSizeMb ?? DEFAULT_MAX_FILE_SIZE_MB),
   };
@@ -416,10 +424,16 @@ export async function exportVideoInCloud({
     throw new Error(startData.error || `Failed to start cloud render (HTTP ${startResp.status}).`);
   }
 
-  // 7. Poll job status every 2s
+  // 7. Poll job status every 2s (up to 6 minutes)
   let downloadUrl = null;
+  const pollStartTime = Date.now();
   while (true) {
     throwIfAborted(abortSignal);
+    if (Date.now() - pollStartTime > RENDER_POLL_TIMEOUT_MS) {
+      throw new Error(
+        "Cloud render timed out after 6 minutes. Please try again or use Local Render."
+      );
+    }
     await sleepWithAbort(POLL_INTERVAL_MS, abortSignal);
 
     const statusResp = await fetchWithDetail(

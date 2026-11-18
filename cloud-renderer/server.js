@@ -23,10 +23,14 @@ const R2_ACCESS_KEY_ID = (process.env.R2_ACCESS_KEY_ID || "").trim();
 const R2_SECRET_ACCESS_KEY = (process.env.R2_SECRET_ACCESS_KEY || "").trim();
 const R2_BUCKET_NAME = (process.env.R2_BUCKET_NAME || "match-tool-cloud-render").trim();
 
-const DAILY_LIMIT_PER_USER = Math.max(1, Number(process.env.DAILY_LIMIT_PER_USER) || 3);
-const MAX_DURATION_SEC = Math.max(1, Number(process.env.MAX_DURATION_SEC) || 30);
-const MAX_FILE_SIZE_MB = Math.max(1, Number(process.env.MAX_FILE_SIZE_MB) || 80);
+const DAILY_LIMIT_PER_USER = Math.max(1, Number(process.env.DAILY_LIMIT_PER_USER) || 5);
+const MAX_DURATION_SEC = Math.max(1, Number(process.env.MAX_DURATION_SEC) || 60);
+const MAX_FILE_SIZE_MB = Math.max(1, Number(process.env.MAX_FILE_SIZE_MB) || 100);
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+const RENDER_CONCURRENCY = Math.min(3, Math.max(1, Number(process.env.RENDER_CONCURRENCY) || 3));
+const MIN_FREE_RAM_FOR_EXTRA_WORKER_BYTES = 145 * 1024 * 1024;
+const MEMORY_RECHECK_INTERVAL_MS = 1500;
+const FFMPEG_TIMEOUT_MS = 360_000;
 const PRESIGN_TTL_SEC = 15 * 60;
 const OUTPUT_CLEANUP_MS = 15 * 60 * 1000;
 
@@ -58,10 +62,11 @@ app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 app.use(express.json({ limit: "64kb" }));
 
-// Strict FIFO queue (concurrency = 1)
+// Elastic FIFO queue (1 to RENDER_CONCURRENCY concurrent workers based on cgroup RAM)
 const jobs = new Map();
 const queue = [];
-let activeJobId = null;
+const activeJobs = new Set();
+let memoryRecheckTimer = null;
 
 // Daily quota maps keyed by UTC YYYY-MM-DD -> Map<key, count>
 const clientDailyUsage = new Map();
@@ -139,13 +144,42 @@ function decrementQuota(clientId, ip) {
 }
 
 function getQueueLength() {
-  return queue.length + (activeJobId ? 1 : 0);
+  return queue.length + activeJobs.size;
 }
 
 function getQueuePosition(jobId) {
-  if (activeJobId === jobId) return 0;
+  if (activeJobs.has(jobId)) return 0;
   const idx = queue.indexOf(jobId);
   return idx >= 0 ? idx + 1 : 0;
+}
+
+function readCgroupNumber(filePath) {
+  try {
+    const raw = fs.readFileSync(filePath, "utf8").trim();
+    if (!raw || raw === "max") return null;
+    const val = Number(raw);
+    return Number.isFinite(val) && val >= 0 ? val : null;
+  } catch {
+    return null;
+  }
+}
+
+function getContainerFreeMemoryBytes() {
+  // cgroup v2
+  const currentV2 = readCgroupNumber("/sys/fs/cgroup/memory.current");
+  const maxV2 = readCgroupNumber("/sys/fs/cgroup/memory.max");
+  if (currentV2 !== null && maxV2 !== null && maxV2 > 0) {
+    return Math.max(0, maxV2 - currentV2);
+  }
+
+  // cgroup v1
+  const currentV1 = readCgroupNumber("/sys/fs/cgroup/memory/memory.usage_in_bytes");
+  const maxV1 = readCgroupNumber("/sys/fs/cgroup/memory/memory.limit_in_bytes");
+  if (currentV1 !== null && maxV1 !== null && maxV1 > 0 && maxV1 <= os.totalmem() * 2) {
+    return Math.max(0, maxV1 - currentV1);
+  }
+
+  return os.freemem();
 }
 
 function sanitizeVideoExtension(fileName, contentType) {
@@ -208,39 +242,54 @@ function parseFfmpegTimeSec(line) {
   return hours * 3600 + mins * 60 + secs;
 }
 
-function runFfmpegLut(inputPath, lutPath, outputPath, durationSec, onProgressText) {
+function runFfmpegPass(inputPath, lutPath, outputPath, durationSec, audioArgs, onProgressText) {
   return new Promise((resolve, reject) => {
     // Escape colons/backslashes for FFmpeg filtergraph path safety
     const escapedLut = lutPath.replace(/\\/g, "/").replace(/:/g, "\\:");
+    const vf =
+      `scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,` +
+      `scale=trunc(iw/2)*2:trunc(ih/2)*2,` +
+      `lut3d=${escapedLut}:interp=trilinear`;
+
     const args = [
       "-y",
       "-i",
       inputPath,
       "-vf",
-      `lut3d=${escapedLut}`,
+      vf,
       "-c:v",
       "libx264",
       "-preset",
-      "veryfast",
+      "ultrafast",
       "-crf",
-      "19",
-      "-maxrate",
-      "12M",
-      "-bufsize",
-      "24M",
+      "18",
+      "-tune",
+      "fastdecode",
       "-pix_fmt",
       "yuv420p",
       "-movflags",
       "+faststart",
       "-threads",
       "2",
-      "-c:a",
-      "copy",
+      ...audioArgs,
       outputPath,
     ];
 
-    const proc = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
+    const proc = spawn("ffmpeg", args, {
+      stdio: ["ignore", "ignore", "pipe"],
+      timeout: FFMPEG_TIMEOUT_MS,
+    });
     let stderrTail = "";
+    let settled = false;
+    let timedOut = false;
+
+    const killTimer = setTimeout(() => {
+      timedOut = true;
+      proc.kill("SIGKILL");
+    }, FFMPEG_TIMEOUT_MS);
+    if (typeof killTimer.unref === "function") {
+      killTimer.unref();
+    }
 
     proc.stderr.on("data", (chunk) => {
       const text = chunk.toString("utf8");
@@ -255,17 +304,50 @@ function runFfmpegLut(inputPath, lutPath, outputPath, durationSec, onProgressTex
     });
 
     proc.on("error", (err) => {
+      clearTimeout(killTimer);
+      if (settled) return;
+      settled = true;
       reject(new Error(`Failed to start FFmpeg: ${err.message}`));
     });
 
-    proc.on("close", (code) => {
+    proc.on("close", (code, signal) => {
+      clearTimeout(killTimer);
+      if (settled) return;
+      settled = true;
+      if (timedOut) {
+        const err = new Error(`FFmpeg timed out after ${Math.round(FFMPEG_TIMEOUT_MS / 1000)}s`);
+        err.timedOut = true;
+        reject(err);
+        return;
+      }
       if (code === 0) {
         resolve();
       } else {
-        reject(new Error(`FFmpeg exited with code ${code}: ${stderrTail.trim().slice(-300)}`));
+        reject(
+          new Error(
+            `FFmpeg exited with code ${code}${signal ? ` (${signal})` : ""}: ${stderrTail.trim().slice(-300)}`
+          )
+        );
       }
     });
   });
+}
+
+async function runFfmpegLut(inputPath, lutPath, outputPath, durationSec, onProgressText) {
+  try {
+    await runFfmpegPass(inputPath, lutPath, outputPath, durationSec, ["-c:a", "copy"], onProgressText);
+  } catch (err) {
+    if (err.timedOut) throw err;
+    console.warn(`[FFmpeg] Audio stream copy failed (${err.message}); retrying with AAC 192k...`);
+    await runFfmpegPass(
+      inputPath,
+      lutPath,
+      outputPath,
+      durationSec,
+      ["-c:a", "aac", "-b:a", "192k"],
+      onProgressText
+    );
+  }
 }
 
 function scheduleOutputCleanup(job) {
@@ -279,16 +361,27 @@ function scheduleOutputCleanup(job) {
   }
 }
 
-async function processNext() {
-  if (activeJobId || queue.length === 0) return;
-  const nextId = queue.shift();
-  const job = jobs.get(nextId);
-  if (!job) {
-    setImmediate(processNext);
+function clearMemoryRecheckTimer() {
+  if (memoryRecheckTimer) {
+    clearTimeout(memoryRecheckTimer);
+    memoryRecheckTimer = null;
+  }
+}
+
+function scheduleMemoryRecheck() {
+  if (memoryRecheckTimer || queue.length === 0 || activeJobs.size >= RENDER_CONCURRENCY) {
     return;
   }
+  memoryRecheckTimer = setTimeout(() => {
+    memoryRecheckTimer = null;
+    processNext();
+  }, MEMORY_RECHECK_INTERVAL_MS);
+  if (typeof memoryRecheckTimer.unref === "function") {
+    memoryRecheckTimer.unref();
+  }
+}
 
-  activeJobId = nextId;
+async function runJob(job) {
   job.status = "processing";
   job.progressText = "Downloading media from cloud storage...";
 
@@ -336,8 +429,28 @@ async function processNext() {
   } finally {
     await fsp.rm(jobDir, { recursive: true, force: true }).catch(() => {});
     await Promise.all([deleteR2Object(job.videoKey), deleteR2Object(job.lutKey)]);
-    activeJobId = null;
+    activeJobs.delete(job.jobId);
+    clearMemoryRecheckTimer();
     setImmediate(processNext);
+  }
+}
+
+function processNext() {
+  while (queue.length > 0 && activeJobs.size < RENDER_CONCURRENCY) {
+    if (activeJobs.size >= 1) {
+      const freeBytes = getContainerFreeMemoryBytes();
+      if (freeBytes < MIN_FREE_RAM_FOR_EXTRA_WORKER_BYTES) {
+        scheduleMemoryRecheck();
+        break;
+      }
+    }
+    const nextId = queue.shift();
+    const job = jobs.get(nextId);
+    if (!job) continue;
+
+    clearMemoryRecheckTimer();
+    activeJobs.add(nextId);
+    void runJob(job);
   }
 }
 
@@ -345,6 +458,9 @@ app.get("/health", (_req, res) => {
   res.json({
     ok: true,
     queueLength: getQueueLength(),
+    activeWorkers: activeJobs.size,
+    maxConcurrency: RENDER_CONCURRENCY,
+    queuedJobs: queue.length,
     r2Configured,
   });
 });
@@ -356,6 +472,9 @@ app.get("/api/quota", (req, res) => {
   res.json({
     ...quota,
     queueLength: getQueueLength(),
+    activeWorkers: activeJobs.size,
+    maxConcurrency: RENDER_CONCURRENCY,
+    queuedJobs: queue.length,
     maxDurationSec: MAX_DURATION_SEC,
     maxFileSizeMb: MAX_FILE_SIZE_MB,
   });
@@ -510,6 +629,9 @@ app.post("/api/jobs/:jobId/start", (req, res) => {
     status: job.status,
     queuePosition,
     queueLength: getQueueLength(),
+    activeWorkers: activeJobs.size,
+    maxConcurrency: RENDER_CONCURRENCY,
+    queuedJobs: queue.length,
   });
 });
 
@@ -525,6 +647,9 @@ app.get("/api/jobs/:jobId", (req, res) => {
     status: job.status,
     queuePosition: getQueuePosition(job.jobId),
     queueLength: getQueueLength(),
+    activeWorkers: activeJobs.size,
+    maxConcurrency: RENDER_CONCURRENCY,
+    queuedJobs: queue.length,
     progressText: job.progressText,
     downloadUrl: job.downloadUrl,
     error: job.error,

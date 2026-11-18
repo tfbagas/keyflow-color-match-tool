@@ -12,6 +12,7 @@ RUN npm install --production
 COPY server.js ./
 
 ENV PORT=8080
+ENV NODE_OPTIONS="--max-old-space-size=96"
 EXPOSE 8080
 
 CMD ["node", "server.js"]

@@ -135,8 +135,11 @@ export default function SaveImagePopover({
       : exportLayout === "split"
       ? "split"
       : "graded";
-  const maxCloudDurationSec = cloudQuota?.maxDurationSec ?? 30;
-  const maxCloudFileSizeMb = cloudQuota?.maxFileSizeMb ?? 80;
+  const maxCloudDurationSec = cloudQuota?.maxDurationSec ?? 60;
+  const maxCloudFileSizeMb = cloudQuota?.maxFileSizeMb ?? 100;
+  const activeCloudWorkers = cloudQuota?.activeWorkers ?? 0;
+  const maxCloudConcurrency = cloudQuota?.maxConcurrency ?? 3;
+  const queuedCloudJobs = cloudQuota?.queuedJobs ?? cloudQuota?.queueLength ?? 0;
   const targetFileSizeMb =
     targetFile && typeof targetFile.size === "number"
       ? targetFile.size / (1024 * 1024)
@@ -388,7 +391,7 @@ export default function SaveImagePopover({
                           60fps FFmpeg • Quota{" "}
                           {cloudQuota
                             ? `${cloudQuota.remaining}/${cloudQuota.limit}`
-                            : "3/3"}
+                            : "5/5"}
                         </div>
                       </button>
                     </div>
@@ -409,10 +412,13 @@ export default function SaveImagePopover({
                               ? "Checking quota..."
                               : cloudQuota
                               ? `Quota: ${cloudQuota.remaining}/${cloudQuota.limit} left`
-                              : "Quota: 3/day"}
+                              : "Quota: 5/day"}
                           </span>
                           <span className="text-[#9CA3AF]">
-                            Queue: {cloudQuota ? cloudQuota.queueLength : 0}
+                            Workers: {activeCloudWorkers}/{maxCloudConcurrency}
+                          </span>
+                          <span className="text-[#9CA3AF]">
+                            Queue: {queuedCloudJobs}
                           </span>
                         </div>
                         <span className="text-[#9CA3AF]">
