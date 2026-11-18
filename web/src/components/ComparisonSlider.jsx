@@ -112,9 +112,11 @@ export default function ComparisonSlider({
   onExportVideo,
   isExportingVideo = false,
   videoExportProgress = 0,
+  videoExportStatusText = "",
   onCancelVideoExport,
   targetVideoSrc = "",
   targetFile = null,
+  videoDurationSec = 0,
   onTryInstantDemo,
   nativeWidth = 0,
   nativeHeight = 0,
@@ -810,9 +812,11 @@ export default function ComparisonSlider({
               onExportVideo={onExportVideo}
               isExportingVideo={isExportingVideo}
               videoExportProgress={videoExportProgress}
+              videoExportStatusText={videoExportStatusText}
               onCancelVideoExport={onCancelVideoExport}
               targetVideoSrc={targetVideoSrc}
               targetFile={targetFile}
+              videoDurationSec={videoDurationSec}
               nativeWidth={nativeWidth}
               nativeHeight={nativeHeight}
               targetBaseName={targetBaseName}

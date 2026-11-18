@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Download, Check, X, Film, Image as ImageIcon, AlertTriangle, QrCode } from "lucide-react";
+import { Download, Check, X, Film, Image as ImageIcon, AlertTriangle, QrCode, Cloud, Cpu } from "lucide-react";
 import { getEngineCodename } from "../utils/engineRegistry";
 import { encodeGradeToHash } from "../utils/shareCodec";
+import { fetchCloudQuota, isCloudRenderConfigured } from "../utils/cloudVideoExporter";
 import { useLanguage } from "../i18n/LanguageContext";
 
 const PROMO_QR_STORAGE_KEY = "cmk_promo_qr_url";
@@ -25,9 +26,11 @@ export default function SaveImagePopover({
   onExportVideo,
   isExportingVideo = false,
   videoExportProgress = 0,
+  videoExportStatusText = "",
   onCancelVideoExport,
   targetVideoSrc = "",
   targetFile = null,
+  videoDurationSec = 0,
   nativeWidth = 0,
   nativeHeight = 0,
   targetBaseName = "Target",
@@ -47,6 +50,10 @@ export default function SaveImagePopover({
   const [includeQr, setIncludeQr] = useState(true);
   const [promoQrMode, setPromoQrMode] = useState("grade"); // "grade" | "custom"
   const [promoQrCustomUrl, setPromoQrCustomUrl] = useState(readStoredPromoQrUrl);
+  const [renderMode, setRenderMode] = useState("local"); // "local" | "cloud"
+  const [cloudQuota, setCloudQuota] = useState(null);
+  const [cloudQuotaLoading, setCloudQuotaLoading] = useState(false);
+  const [cloudQuotaError, setCloudQuotaError] = useState("");
   const [videoLayout, setVideoLayout] = useState("graded"); // "graded" | "split"
   const [videoBitrate, setVideoBitrate] = useState(16); // 16 | 8
   const [includeAudio, setIncludeAudio] = useState(true);
@@ -55,6 +62,7 @@ export default function SaveImagePopover({
   const exportPopoverRef = useRef(null);
   const savedTimerRef = useRef(null);
   const wasCancelledRef = useRef(false);
+  const cloudConfigured = isCloudRenderConfigured();
 
   useEffect(() => {
     if (!isVideo) {
@@ -85,6 +93,28 @@ export default function SaveImagePopover({
     []
   );
 
+  useEffect(() => {
+    if (!isExportOpen || !isVideo || mediaMode !== "video" || !cloudConfigured) {
+      return undefined;
+    }
+    const controller = new AbortController();
+    setCloudQuotaLoading(true);
+    setCloudQuotaError("");
+    fetchCloudQuota(controller.signal)
+      .then((q) => {
+        setCloudQuota(q);
+      })
+      .catch((err) => {
+        if (err?.name !== "AbortError") {
+          setCloudQuotaError(err?.message || "Unable to reach cloud renderer.");
+        }
+      })
+      .finally(() => {
+        setCloudQuotaLoading(false);
+      });
+    return () => controller.abort();
+  }, [isExportOpen, isVideo, mediaMode, cloudConfigured, renderMode]);
+
   const rawTargetBase = String(targetBaseName || "Target").trim();
   const safeTargetBase = /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(rawTargetBase)
     ? "Custom-Color-Grade"
@@ -105,10 +135,45 @@ export default function SaveImagePopover({
       : exportLayout === "split"
       ? "split"
       : "graded";
-  const videoExtPreview = typeof VideoEncoder !== "undefined" ? "mp4" : "webm";
+  const maxCloudDurationSec = cloudQuota?.maxDurationSec ?? 30;
+  const maxCloudFileSizeMb = cloudQuota?.maxFileSizeMb ?? 80;
+  const targetFileSizeMb =
+    targetFile && typeof targetFile.size === "number"
+      ? targetFile.size / (1024 * 1024)
+      : 0;
+  const cloudDurationExceeded =
+    videoDurationSec > 0 && videoDurationSec > maxCloudDurationSec;
+  const cloudSizeExceeded =
+    targetFileSizeMb > 0 && targetFileSizeMb > maxCloudFileSizeMb;
+  const cloudQuotaExhausted =
+    cloudQuota !== null && cloudQuota.remaining <= 0;
+
+  let cloudBlockReason = "";
+  if (isVideo && mediaMode === "video" && renderMode === "cloud") {
+    if (!cloudConfigured) {
+      cloudBlockReason =
+        "Cloud Render URL is not configured (VITE_CLOUD_RENDER_URL). Switch to Local Render for instant unlimited exports.";
+    } else if (cloudQuotaExhausted) {
+      cloudBlockReason = `Daily Cloud Render quota (${cloudQuota.limit}/${cloudQuota.limit}) reached. Switch to Local Render for unlimited exports.`;
+    } else if (cloudDurationExceeded) {
+      cloudBlockReason = `Clip is ${Math.ceil(videoDurationSec)}s (max ${maxCloudDurationSec}s for Cloud Render). Use Local Render instead.`;
+    } else if (cloudSizeExceeded) {
+      cloudBlockReason = `File is ${targetFileSizeMb.toFixed(1)} MB (max ${maxCloudFileSizeMb} MB for Cloud Render). Use Local Render instead.`;
+    }
+  }
+  const isCloudBlocked = Boolean(cloudBlockReason);
+
+  const videoExtPreview =
+    renderMode === "cloud"
+      ? "mp4"
+      : typeof VideoEncoder !== "undefined"
+      ? "mp4"
+      : "webm";
   const previewExportFilename =
     isVideo && mediaMode === "video"
-      ? `${baseWithEngine}_graded.${videoLayout === "split" ? "split." : ""}${videoExtPreview}`
+      ? renderMode === "cloud"
+        ? `${baseWithEngine}_cloud_graded.mp4`
+        : `${baseWithEngine}_graded.${videoLayout === "split" ? "split." : ""}${videoExtPreview}`
       : `${baseWithEngine}-${layoutSuffix}.${exportFormat}`;
 
   const handleDownloadClick = async () => {
@@ -116,9 +181,10 @@ export default function SaveImagePopover({
     wasCancelledRef.current = false;
 
     if (isVideo && mediaMode === "video") {
-      if (!onExportVideo || isExportingVideo) return;
+      if (!onExportVideo || isExportingVideo || isCloudBlocked) return;
       try {
         const ok = await onExportVideo({
+          renderMode,
           targetVideoSrc,
           targetFile,
           layout: videoLayout,
@@ -127,6 +193,11 @@ export default function SaveImagePopover({
           includeAudio,
         });
         if (ok !== false) {
+          if (renderMode === "cloud" && cloudConfigured) {
+            fetchCloudQuota()
+              .then((q) => setCloudQuota(q))
+              .catch(() => {});
+          }
           if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
           setSavedLabel(t("savePopover.savedVideo"));
           savedTimerRef.current = setTimeout(() => setSavedLabel(""), 1400);
@@ -271,74 +342,172 @@ export default function SaveImagePopover({
                 <>
                   <div className="space-y-1">
                     <span className="text-[10px] text-[#9CA3AF]">
-                      {t("savePopover.layout")}
+                      Render Mode
                     </span>
                     <div className="grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-[#0A0A0D]/70 border border-white/[0.08]">
-                      {[
-                        { id: "graded", label: t("savePopover.gradedOnly") },
-                        { id: "split", label: t("savePopover.beforeAfterSplit") },
-                      ].map((opt) => (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          disabled={isExportingVideo}
-                          onClick={() => setVideoLayout(opt.id)}
-                          className={`py-1 px-2 rounded-md text-[10px] font-medium transition-colors cursor-pointer truncate ${
-                            videoLayout === opt.id
-                              ? "bg-white/[0.14] text-[#F4F5F7]"
-                              : "text-[#9CA3AF] hover:text-[#F4F5F7]"
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
+                      <button
+                        type="button"
+                        disabled={isExportingVideo}
+                        onClick={() => {
+                          setRenderMode("local");
+                          setRenderError("");
+                        }}
+                        className={`py-1.5 px-2 rounded-md text-left transition-colors cursor-pointer ${
+                          renderMode === "local"
+                            ? "bg-[#E2E4E9] text-[#0E0E11] font-semibold"
+                            : "text-[#9CA3AF] hover:text-[#F4F5F7]"
+                        }`}
+                      >
+                        <div className="flex items-center gap-1 text-[11px] leading-tight">
+                          <Cpu className="w-3 h-3 shrink-0" />
+                          <span>Local Render</span>
+                        </div>
+                        <div className="text-[9px] opacity-75 leading-tight mt-0.5">
+                          Unlimited • Instant
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isExportingVideo}
+                        onClick={() => {
+                          setRenderMode("cloud");
+                          setRenderError("");
+                        }}
+                        className={`py-1.5 px-2 rounded-md text-left transition-colors cursor-pointer ${
+                          renderMode === "cloud"
+                            ? "bg-[#6EE7B7] text-[#042F1E] font-semibold"
+                            : "text-[#9CA3AF] hover:text-[#F4F5F7]"
+                        }`}
+                      >
+                        <div className="flex items-center gap-1 text-[11px] leading-tight">
+                          <Cloud className="w-3 h-3 shrink-0" />
+                          <span>Cloud Render</span>
+                        </div>
+                        <div className="text-[9px] opacity-80 leading-tight mt-0.5">
+                          60fps FFmpeg • Quota{" "}
+                          {cloudQuota
+                            ? `${cloudQuota.remaining}/${cloudQuota.limit}`
+                            : "3/3"}
+                        </div>
+                      </button>
                     </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <span className="text-[10px] text-[#9CA3AF]">
-                      {t("savePopover.bitrateQuality")}
-                    </span>
-                    <div className="grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-[#0A0A0D]/70 border border-white/[0.08]">
-                      {[
-                        { val: 16, label: t("savePopover.high16Mbps") },
-                        { val: 8, label: t("savePopover.standard8Mbps") },
-                      ].map((opt) => (
-                        <button
-                          key={opt.val}
-                          type="button"
-                          disabled={isExportingVideo}
-                          onClick={() => setVideoBitrate(opt.val)}
-                          className={`py-1 px-2 rounded-md text-[10px] font-medium transition-colors cursor-pointer truncate ${
-                            videoBitrate === opt.val
-                              ? "bg-white/[0.14] text-[#F4F5F7]"
-                              : "text-[#9CA3AF] hover:text-[#F4F5F7]"
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  {renderMode === "cloud" ? (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-2 rounded-lg bg-[#0A0A0D]/55 border border-white/[0.08] text-[10px] font-mono">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-1.5 py-0.5 rounded border ${
+                              cloudQuotaExhausted
+                                ? "bg-red-500/15 text-red-300 border-red-500/35"
+                                : "bg-[#6EE7B7]/15 text-[#6EE7B7] border-[#6EE7B7]/30"
+                            }`}
+                          >
+                            {cloudQuotaLoading
+                              ? "Checking quota..."
+                              : cloudQuota
+                              ? `Quota: ${cloudQuota.remaining}/${cloudQuota.limit} left`
+                              : "Quota: 3/day"}
+                          </span>
+                          <span className="text-[#9CA3AF]">
+                            Queue: {cloudQuota ? cloudQuota.queueLength : 0}
+                          </span>
+                        </div>
+                        <span className="text-[#9CA3AF]">
+                          Max {maxCloudDurationSec}s • {maxCloudFileSizeMb}MB
+                        </span>
+                      </div>
 
-                  <label className="flex items-center justify-between px-2.5 py-2 rounded-lg bg-[#0A0A0D]/55 border border-white/[0.08] cursor-pointer">
-                    <span className="text-[11px] text-[#E2E4E9] font-medium">
-                      {t("savePopover.includeAudio")}
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={includeAudio}
-                      disabled={isExportingVideo}
-                      onChange={(e) => setIncludeAudio(e.target.checked)}
-                      className="accent-[#6EE7B7] w-4 h-4 cursor-pointer"
-                    />
-                  </label>
+                      {cloudQuotaError && !cloudBlockReason && (
+                        <div className="px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-200 leading-snug">
+                          {cloudQuotaError} (Worker may be asleep; clicking export will wake it.)
+                        </div>
+                      )}
+
+                      {cloudBlockReason && (
+                        <div className="px-2.5 py-2 rounded-lg bg-amber-500/12 border border-amber-500/35 flex items-start gap-2 text-[11px] text-amber-200">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                          <span className="leading-snug">{cloudBlockReason}</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-[#9CA3AF]">
+                          {t("savePopover.layout")}
+                        </span>
+                        <div className="grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-[#0A0A0D]/70 border border-white/[0.08]">
+                          {[
+                            { id: "graded", label: t("savePopover.gradedOnly") },
+                            { id: "split", label: t("savePopover.beforeAfterSplit") },
+                          ].map((opt) => (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              disabled={isExportingVideo}
+                              onClick={() => setVideoLayout(opt.id)}
+                              className={`py-1 px-2 rounded-md text-[10px] font-medium transition-colors cursor-pointer truncate ${
+                                videoLayout === opt.id
+                                  ? "bg-white/[0.14] text-[#F4F5F7]"
+                                  : "text-[#9CA3AF] hover:text-[#F4F5F7]"
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-[#9CA3AF]">
+                          {t("savePopover.bitrateQuality")}
+                        </span>
+                        <div className="grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-[#0A0A0D]/70 border border-white/[0.08]">
+                          {[
+                            { val: 16, label: t("savePopover.high16Mbps") },
+                            { val: 8, label: t("savePopover.standard8Mbps") },
+                          ].map((opt) => (
+                            <button
+                              key={opt.val}
+                              type="button"
+                              disabled={isExportingVideo}
+                              onClick={() => setVideoBitrate(opt.val)}
+                              className={`py-1 px-2 rounded-md text-[10px] font-medium transition-colors cursor-pointer truncate ${
+                                videoBitrate === opt.val
+                                  ? "bg-white/[0.14] text-[#F4F5F7]"
+                                  : "text-[#9CA3AF] hover:text-[#F4F5F7]"
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <label className="flex items-center justify-between px-2.5 py-2 rounded-lg bg-[#0A0A0D]/55 border border-white/[0.08] cursor-pointer">
+                        <span className="text-[11px] text-[#E2E4E9] font-medium">
+                          {t("savePopover.includeAudio")}
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={includeAudio}
+                          disabled={isExportingVideo}
+                          onChange={(e) => setIncludeAudio(e.target.checked)}
+                          className="accent-[#6EE7B7] w-4 h-4 cursor-pointer"
+                        />
+                      </label>
+                    </>
+                  )}
 
                   {isExportingVideo && (
                     <div className="space-y-1.5 p-2.5 rounded-lg bg-[#0A0A0D]/70 border border-[#6EE7B7]/30">
-                      <div className="flex items-center justify-between text-[11px] font-mono">
-                        <span className="text-[#6EE7B7]">
-                          {t("savePopover.renderingVideo", { pct: videoExportProgress })}
+                      <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+                        <span className="text-[#6EE7B7] truncate">
+                          {videoExportStatusText ||
+                            t("savePopover.renderingVideo", { pct: videoExportProgress })}
                         </span>
                         <button
                           type="button"
@@ -347,7 +516,7 @@ export default function SaveImagePopover({
                             setRenderError("");
                             onCancelVideoExport?.();
                           }}
-                          className="px-2 py-0.5 rounded bg-white/[0.08] hover:bg-red-500/20 text-[#E2E4E9] hover:text-red-300 text-[10px] cursor-pointer"
+                          className="px-2 py-0.5 rounded bg-white/[0.08] hover:bg-red-500/20 text-[#E2E4E9] hover:text-red-300 text-[10px] cursor-pointer shrink-0"
                         >
                           {t("savePopover.cancel")}
                         </button>
@@ -539,8 +708,8 @@ export default function SaveImagePopover({
               <button
                 type="button"
                 onClick={handleDownloadClick}
-                disabled={isSavingImage || isExportingVideo}
-                className={`w-full py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-[opacity,transform] duration-200 cursor-pointer ${
+                disabled={isSavingImage || isExportingVideo || isCloudBlocked}
+                className={`w-full py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-[opacity,transform] duration-200 cursor-pointer disabled:cursor-not-allowed ${
                   savedLabel
                     ? "bg-[#86EFAC] text-[#042F1E] scale-[0.99]"
                     : "bg-[#6EE7B7] hover:bg-[#86EFAC] text-[#042F1E]"
@@ -557,7 +726,10 @@ export default function SaveImagePopover({
                     <span>
                       {isVideo && mediaMode === "video"
                         ? isExportingVideo
-                          ? t("savePopover.renderingVideo", { pct: videoExportProgress })
+                          ? videoExportStatusText ||
+                            t("savePopover.renderingVideo", { pct: videoExportProgress })
+                          : renderMode === "cloud"
+                          ? "Render in Cloud (FFmpeg)"
                           : t("savePopover.exportGradedVideo")
                         : isSavingImage
                         ? t("savePopover.rendering")

@@ -79,6 +79,7 @@ import {
   extractPaletteSwatches,
 } from "./utils/imageExporter";
 import { exportGradedVideo } from "./utils/videoExporter";
+import { exportVideoInCloud } from "./utils/cloudVideoExporter";
 import { buildZipBlob } from "./utils/zipBuilder";
 import { decodeGradeFromHash } from "./utils/shareCodec";
 import LooksDrawer from "./components/LooksDrawer";
@@ -306,6 +307,7 @@ export default function App() {
   const [isSavingFrame, setIsSavingFrame] = useState(false);
   const [isExportingVideo, setIsExportingVideo] = useState(false);
   const [videoExportProgress, setVideoExportProgress] = useState(0);
+  const [videoExportStatusText, setVideoExportStatusText] = useState("");
   const videoExportAbortRef = useRef(null);
   const [restorableSession, setRestorableSession] = useState(null);
   const hasHydratedRef = useRef(false);
@@ -1639,6 +1641,7 @@ export default function App() {
 
   const handleExportVideo = useCallback(
     async ({
+      renderMode = "local",
       targetVideoSrc = "",
       targetFile = null,
       layout = "graded",
@@ -1659,28 +1662,58 @@ export default function App() {
       videoExportAbortRef.current = controller;
       setIsExportingVideo(true);
       setVideoExportProgress(0);
-      setStatusText("Rendering Video...");
+      setVideoExportStatusText(
+        renderMode === "cloud" ? "Waking up cloud worker..." : ""
+      );
+      setStatusText(
+        renderMode === "cloud" ? "Cloud Rendering Video..." : "Rendering Video..."
+      );
 
       try {
         const baseName =
           presetName || targetImage?.baseName || referenceImage?.baseName || "Target";
-        const res = await exportGradedVideo({
-          videoSrc: src,
-          targetFile: fileFallback,
-          params: gradingParams,
-          activeLut,
-          lutMix: matchStrength / 100,
-          engine: activeEngineId,
-          matchStrength,
-          logProfile: simulateLogInput,
-          layout,
-          splitPosition,
-          bitrateMbps,
-          includeAudio,
-          presetName: baseName,
-          onProgress: (pct) => setVideoExportProgress(pct),
-          abortSignal: controller.signal,
-        });
+        const res =
+          renderMode === "cloud"
+            ? await exportVideoInCloud({
+                videoSrc: src,
+                targetFile: fileFallback,
+                videoDurationSec: Number.isFinite(videoEl?.duration)
+                  ? videoEl.duration
+                  : 0,
+                params: gradingParams,
+                activeLut,
+                lutMix: matchStrength / 100,
+                engine: activeEngineId,
+                matchStrength,
+                logProfile: simulateLogInput,
+                presetName: baseName,
+                onProgress: (pct) => setVideoExportProgress(pct),
+                onStatusChange: ({ progress, statusText: nextText }) => {
+                  if (typeof progress === "number") setVideoExportProgress(progress);
+                  if (nextText) {
+                    setVideoExportStatusText(nextText);
+                    setStatusText(nextText);
+                  }
+                },
+                abortSignal: controller.signal,
+              })
+            : await exportGradedVideo({
+                videoSrc: src,
+                targetFile: fileFallback,
+                params: gradingParams,
+                activeLut,
+                lutMix: matchStrength / 100,
+                engine: activeEngineId,
+                matchStrength,
+                logProfile: simulateLogInput,
+                layout,
+                splitPosition,
+                bitrateMbps,
+                includeAudio,
+                presetName: baseName,
+                onProgress: (pct) => setVideoExportProgress(pct),
+                abortSignal: controller.signal,
+              });
         setStatusText("Exported Video!");
         showMobileToast(t("toasts.savedFormat", { format: res.fileName }));
         return true;
@@ -1696,6 +1729,7 @@ export default function App() {
         videoExportAbortRef.current = null;
         setIsExportingVideo(false);
         setVideoExportProgress(0);
+        setVideoExportStatusText("");
       }
     },
     [
@@ -2754,9 +2788,11 @@ export default function App() {
                   onExportVideo={handleExportVideo}
                   isExportingVideo={isExportingVideo}
                   videoExportProgress={videoExportProgress}
+                  videoExportStatusText={videoExportStatusText}
                   onCancelVideoExport={handleCancelVideoExport}
                   targetVideoSrc={targetImage?.videoUrl || videoEl?.currentSrc || videoEl?.src || ""}
                   targetFile={targetImage?.file || null}
+                  videoDurationSec={Number.isFinite(videoEl?.duration) ? videoEl.duration : 0}
                   onTryInstantDemo={handleTryInstantDemo}
                   nativeWidth={targetImage?.width || referenceImage?.width || 0}
                   nativeHeight={targetImage?.height || referenceImage?.height || 0}
