@@ -1,4 +1,9 @@
 import { Muxer, ArrayBufferTarget } from "mp4-muxer";
+import {
+  createFile as createMp4BoxFile,
+  DataStream as MP4BoxDataStream,
+  Endianness as MP4BoxEndianness,
+} from "mp4box";
 import { scaleParamsByStrength, sanitizeParams } from "./gradeEngine";
 import { getEngineCodename } from "./engineRegistry";
 import { createWebGLFrameGrader } from "./imageExporter";
@@ -100,6 +105,560 @@ async function decodeSourceAudio(resolvedSrc, targetFile) {
   } finally {
     if (tempCtx) {
       tempCtx.close().catch(() => {});
+    }
+  }
+}
+
+async function encodeAudioToMuxer(muxer, decodedAudio, abortSignal) {
+  if (!decodedAudio) return;
+  let audioEncoder = null;
+  try {
+    audioEncoder = new AudioEncoder({
+      output: (chunk, meta) => {
+        muxer.addAudioChunk(chunk, meta);
+      },
+      error: () => {
+        // ignore non-fatal audio encoder error
+      },
+    });
+    audioEncoder.configure(decodedAudio.config);
+
+    const { audioBuffer, sampleRate, numberOfChannels } = decodedAudio;
+    const totalSamples = audioBuffer.length;
+    const chunkFrames = 4096;
+    const channels = [];
+    for (let c = 0; c < numberOfChannels; c++) {
+      channels.push(audioBuffer.getChannelData(c));
+    }
+
+    for (let offset = 0; offset < totalSamples; offset += chunkFrames) {
+      if (abortSignal?.aborted) {
+        throw new DOMException("Export cancelled", "AbortError");
+      }
+      const frameCount = Math.min(chunkFrames, totalSamples - offset);
+      const planar = new Float32Array(frameCount * numberOfChannels);
+      for (let c = 0; c < numberOfChannels; c++) {
+        planar.set(channels[c].subarray(offset, offset + frameCount), c * frameCount);
+      }
+      const audioData = new AudioData({
+        format: "f32-planar",
+        sampleRate,
+        numberOfFrames: frameCount,
+        numberOfChannels,
+        timestamp: Math.round((offset / sampleRate) * 1_000_000),
+        data: planar,
+      });
+      audioEncoder.encode(audioData);
+      audioData.close();
+    }
+    await audioEncoder.flush();
+    audioEncoder.close();
+    audioEncoder = null;
+  } catch (err) {
+    if (err?.name === "AbortError") throw err;
+    if (audioEncoder && audioEncoder.state !== "closed") {
+      try {
+        audioEncoder.close();
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
+function drawSplitLine(ctx, width, height, splitPosition) {
+  const splitX = Math.round((Math.max(0, Math.min(100, splitPosition)) / 100) * width);
+  const lineW = Math.max(2, Math.round(width / 640));
+  ctx.fillStyle = "rgba(226, 228, 233, 0.92)";
+  ctx.fillRect(Math.max(0, splitX - Math.floor(lineW / 2)), 0, lineW, height);
+}
+
+function drawOutputToCanvas(ctx, sourceCanvas, width, height, rotation, layout, splitPosition) {
+  if (rotation === 0) {
+    ctx.drawImage(sourceCanvas, 0, 0, width, height);
+  } else {
+    ctx.save();
+    ctx.translate(width / 2, height / 2);
+    ctx.rotate((rotation * Math.PI) / 180);
+    if (rotation === 90 || rotation === 270) {
+      ctx.drawImage(sourceCanvas, -height / 2, -width / 2, height, width);
+    } else {
+      ctx.drawImage(sourceCanvas, -width / 2, -height / 2, width, height);
+    }
+    ctx.restore();
+  }
+  if (layout === "split") {
+    drawSplitLine(ctx, width, height, splitPosition);
+  }
+}
+
+function isIsoBmffCandidate(targetFile, resolvedSrc) {
+  if (
+    typeof VideoDecoder === "undefined" ||
+    typeof VideoEncoder === "undefined" ||
+    typeof EncodedVideoChunk === "undefined" ||
+    typeof VideoFrame === "undefined"
+  ) {
+    return false;
+  }
+  if (targetFile instanceof Blob) {
+    const type = (targetFile.type || "").toLowerCase();
+    const name = typeof targetFile.name === "string" ? targetFile.name.toLowerCase() : "";
+    if (
+      type.includes("webm") ||
+      type.includes("ogg") ||
+      type.includes("matroska") ||
+      /\.(webm|mkv|ogv|ogg|avi)$/i.test(name)
+    ) {
+      return false;
+    }
+    if (
+      type.includes("mp4") ||
+      type.includes("quicktime") ||
+      type.includes("m4v") ||
+      /\.(mp4|mov|m4v)$/i.test(name)
+    ) {
+      return true;
+    }
+    // Unknown mime/name on Blob: allow ftyp header check to decide
+    return true;
+  }
+  return /\.(mp4|mov|m4v)(\?|#|$)/i.test(resolvedSrc) || resolvedSrc.startsWith("blob:");
+}
+
+async function hasFtypHeader(blob) {
+  if (!(blob instanceof Blob) || blob.size < 12) return false;
+  const headerBuf = await blob.slice(0, 12).arrayBuffer();
+  const bytes = new Uint8Array(headerBuf);
+  // ISO-BMFF ftyp box signature at offset 4..7
+  return (
+    bytes[4] === 0x66 &&
+    bytes[5] === 0x74 &&
+    bytes[6] === 0x79 &&
+    bytes[7] === 0x70
+  );
+}
+
+function extractDecoderDescription(mp4boxfile, trackId) {
+  const trak = mp4boxfile.getTrackById(trackId);
+  const entries = trak?.mdia?.minf?.stbl?.stsd?.entries;
+  if (!Array.isArray(entries)) return undefined;
+  for (const entry of entries) {
+    const box = entry.avcC || entry.hvcC || entry.vpcC || entry.av1C;
+    if (box) {
+      const stream = new MP4BoxDataStream(
+        undefined,
+        0,
+        MP4BoxEndianness.BIG_ENDIAN
+      );
+      box.write(stream);
+      if (stream.byteLength > 8) {
+        return new Uint8Array(stream.buffer, 8, stream.byteLength - 8).slice();
+      }
+    }
+  }
+  return undefined;
+}
+
+function getTrackRotation(mp4boxfile, trackId) {
+  const trak = mp4boxfile.getTrackById(trackId);
+  const m = trak?.tkhd?.matrix;
+  if (!m || m.length < 5) return 0;
+  const [a, b, , c, d] = m;
+  if (a === 0 && d === 0) {
+    if (b > 0 && c < 0) return 90;
+    if (b < 0 && c > 0) return 270;
+  }
+  if (a < 0 && d < 0 && b === 0 && c === 0) return 180;
+  return 0;
+}
+
+/**
+ * Pure WebCodecs Demux -> Decode -> WebGL Grade -> Encode pipeline for ISO-BMFF (.mp4/.mov/.m4v).
+ * Eliminates HTML5 <video> seeking so Android hardware decoders never deliver stale/duplicate frames.
+ * Returns null if the container/codec is unsupported so caller can seamlessly fall back.
+ */
+async function tryWebCodecsDemuxDecodeExport({
+  targetFile,
+  resolvedSrc,
+  width,
+  height,
+  safeParams,
+  activeLut,
+  lutMix,
+  layout,
+  splitPosition,
+  logProfile,
+  bitrateBps,
+  includeAudio,
+  onProgress,
+  abortSignal,
+}) {
+  if (!isIsoBmffCandidate(targetFile, resolvedSrc)) {
+    return null;
+  }
+
+  let sourceBlob = targetFile instanceof Blob ? targetFile : null;
+  if (!sourceBlob) {
+    try {
+      const resp = await fetch(resolvedSrc);
+      if (!resp.ok) return null;
+      sourceBlob = await resp.blob();
+    } catch {
+      return null;
+    }
+  }
+
+  if (!(await hasFtypHeader(sourceBlob))) {
+    return null;
+  }
+
+  const mp4boxfile = createMp4BoxFile();
+  let readyInfo = null;
+  let mp4Error = null;
+  const pendingSamples = [];
+
+  mp4boxfile.onError = (err) => {
+    mp4Error = err instanceof Error ? err : new Error(String(err));
+  };
+  mp4boxfile.onReady = (info) => {
+    readyInfo = info;
+  };
+  mp4boxfile.onSamples = (_trackId, _user, samples) => {
+    if (Array.isArray(samples)) {
+      for (const s of samples) {
+        pendingSamples.push(s);
+      }
+    }
+  };
+
+  const CHUNK_SIZE = 2 * 1024 * 1024;
+  let offset = 0;
+
+  while (!readyInfo && !mp4Error && offset < sourceBlob.size) {
+    if (abortSignal?.aborted) {
+      throw new DOMException("Export cancelled", "AbortError");
+    }
+    const end = Math.min(sourceBlob.size, offset + CHUNK_SIZE);
+    const buf = await sourceBlob.slice(offset, end).arrayBuffer();
+    buf.fileStart = offset;
+    mp4boxfile.appendBuffer(buf);
+    offset = end;
+  }
+
+  if (!readyInfo && !mp4Error) {
+    mp4boxfile.flush();
+  }
+
+  if (mp4Error || !readyInfo) {
+    return null;
+  }
+
+  const videoTrack =
+    readyInfo.videoTracks?.find((t) => t.nb_samples > 0) ||
+    readyInfo.videoTracks?.[0];
+  if (!videoTrack || !videoTrack.codec) {
+    return null;
+  }
+
+  const rotation = getTrackRotation(mp4boxfile, videoTrack.id);
+  const graderWidth = rotation === 90 || rotation === 270 ? height : width;
+  const graderHeight = rotation === 90 || rotation === 270 ? width : height;
+  const description = extractDecoderDescription(mp4boxfile, videoTrack.id);
+
+  const decoderConfig = {
+    codec: videoTrack.codec,
+    codedWidth: videoTrack.video?.width || graderWidth,
+    codedHeight: videoTrack.video?.height || graderHeight,
+    ...(description ? { description } : {}),
+  };
+
+  let decSupport = null;
+  try {
+    decSupport = await VideoDecoder.isConfigSupported(decoderConfig);
+  } catch {
+    return null;
+  }
+  if (!decSupport || !decSupport.supported) {
+    return null;
+  }
+
+  const trackDurationSec =
+    videoTrack.timescale > 0 && videoTrack.duration > 0
+      ? videoTrack.duration / videoTrack.timescale
+      : 0;
+  const rawFps =
+    trackDurationSec > 0 && videoTrack.nb_samples > 0
+      ? videoTrack.nb_samples / trackDurationSec
+      : 30;
+  const fps = Math.max(15, Math.min(60, Math.round(rawFps) || 30));
+
+  const h264Config = await negotiateH264Config(width, height, bitrateBps, fps);
+  if (!h264Config) {
+    return null;
+  }
+
+  let grader = null;
+  let exportCanvas = null;
+  let exportCtx = null;
+  let videoDecoder = null;
+  let videoEncoder = null;
+  let decodedCount = 0;
+
+  try {
+    grader = createWebGLFrameGrader({
+      width: graderWidth,
+      height: graderHeight,
+      params: safeParams,
+      activeLut,
+      lutMix,
+      layout,
+      splitPos: splitPosition,
+      simulateLogInput: logProfile,
+      alpha: false,
+    });
+    if (!grader) {
+      throw new Error("WebGL is unavailable for video export.");
+    }
+
+    if (layout === "split" || rotation !== 0) {
+      exportCanvas = document.createElement("canvas");
+      exportCanvas.width = width;
+      exportCanvas.height = height;
+      exportCtx = exportCanvas.getContext("2d", { alpha: false });
+    }
+
+    const decodedAudio = includeAudio
+      ? await decodeSourceAudio(resolvedSrc, sourceBlob)
+      : null;
+
+    const muxerTarget = new ArrayBufferTarget();
+    const muxer = new Muxer({
+      target: muxerTarget,
+      video: {
+        codec: "avc",
+        width,
+        height,
+      },
+      audio: decodedAudio
+        ? {
+            codec: "aac",
+            sampleRate: decodedAudio.sampleRate,
+            numberOfChannels: decodedAudio.numberOfChannels,
+          }
+        : undefined,
+      fastStart: "in-memory",
+    });
+
+    let encoderError = null;
+    videoEncoder = new VideoEncoder({
+      output: (chunk, meta) => {
+        muxer.addVideoChunk(chunk, meta);
+      },
+      error: (err) => {
+        encoderError = err instanceof Error ? err : new Error(String(err));
+      },
+    });
+    videoEncoder.configure(h264Config);
+
+    await encodeAudioToMuxer(muxer, decodedAudio, abortSignal);
+
+    let decoderError = null;
+    let lastEncodedTimestamp = -1;
+    const totalSamples = Math.max(1, videoTrack.nb_samples || 1);
+    const keyFrameInterval = Math.max(1, Math.round(fps * 2));
+    const defaultFrameDurationUs = Math.round(1_000_000 / fps);
+
+    videoDecoder = new VideoDecoder({
+      output: (decodedVideoFrame) => {
+        try {
+          if (abortSignal?.aborted || encoderError || decoderError) {
+            return;
+          }
+          // 1. Draw decoded VideoFrame directly into WebGL (zero-copy texImage2D)
+          grader.render(decodedVideoFrame);
+
+          const rawTs = Number.isFinite(decodedVideoFrame.timestamp)
+            ? Math.max(0, Math.round(decodedVideoFrame.timestamp))
+            : 0;
+          const timestamp =
+            rawTs > lastEncodedTimestamp ? rawTs : lastEncodedTimestamp + 1;
+          lastEncodedTimestamp = timestamp;
+          const frameDuration =
+            Number.isFinite(decodedVideoFrame.duration) &&
+            decodedVideoFrame.duration > 0
+              ? Math.round(decodedVideoFrame.duration)
+              : defaultFrameDurationUs;
+
+          // 2. Immediately release mobile hardware decoder buffer
+          decodedVideoFrame.close();
+
+          let sourceForEncoder = grader.canvas;
+          if (exportCanvas && exportCtx) {
+            drawOutputToCanvas(
+              exportCtx,
+              grader.canvas,
+              width,
+              height,
+              rotation,
+              layout,
+              splitPosition
+            );
+            sourceForEncoder = exportCanvas;
+          }
+
+          // 3. Encode graded frame and close VideoFrame immediately
+          const outFrame = new VideoFrame(sourceForEncoder, {
+            timestamp,
+            duration: frameDuration,
+          });
+          try {
+            videoEncoder.encode(outFrame, {
+              keyFrame: decodedCount % keyFrameInterval === 0,
+            });
+          } finally {
+            outFrame.close();
+          }
+
+          decodedCount += 1;
+          onProgress?.(
+            Math.min(99, Math.round((decodedCount / totalSamples) * 100))
+          );
+        } catch (err) {
+          decoderError = err instanceof Error ? err : new Error(String(err));
+        } finally {
+          try {
+            decodedVideoFrame.close();
+          } catch {
+            // already closed
+          }
+        }
+      },
+      error: (err) => {
+        decoderError = err instanceof Error ? err : new Error(String(err));
+      },
+    });
+    videoDecoder.configure(decSupport.config || decoderConfig);
+
+    mp4boxfile.setExtractionOptions(videoTrack.id, null, { nbSamples: 256 });
+    mp4boxfile.start();
+    onProgress?.(0);
+
+    const drainPendingSamples = async () => {
+      while (pendingSamples.length > 0) {
+        if (abortSignal?.aborted) {
+          throw new DOMException("Export cancelled", "AbortError");
+        }
+        if (decoderError) throw decoderError;
+        if (encoderError) throw encoderError;
+
+        while (
+          videoDecoder.decodeQueueSize > 4 ||
+          videoEncoder.encodeQueueSize > 4
+        ) {
+          if (abortSignal?.aborted) {
+            throw new DOMException("Export cancelled", "AbortError");
+          }
+          if (decoderError) throw decoderError;
+          if (encoderError) throw encoderError;
+          await waitWithAbort(5, abortSignal);
+        }
+
+        const sample = pendingSamples.shift();
+        const timescale = sample.timescale || videoTrack.timescale || 1000;
+        const timestampUs = Math.round((sample.cts * 1_000_000) / timescale);
+        const durationUs = Math.max(
+          1,
+          Math.round(((sample.duration || 0) * 1_000_000) / timescale)
+        );
+
+        const chunk = new EncodedVideoChunk({
+          type: sample.is_sync ? "key" : "delta",
+          timestamp: timestampUs,
+          duration: durationUs,
+          data: sample.data,
+        });
+        videoDecoder.decode(chunk);
+        try {
+          mp4boxfile.releaseUsedSamples(videoTrack.id, sample.number);
+        } catch {
+          // ignore sample release errors
+        }
+      }
+    };
+
+    await drainPendingSamples();
+
+    while (offset < sourceBlob.size) {
+      if (abortSignal?.aborted) {
+        throw new DOMException("Export cancelled", "AbortError");
+      }
+      if (mp4Error) throw mp4Error;
+      if (decoderError) throw decoderError;
+      if (encoderError) throw encoderError;
+
+      const end = Math.min(sourceBlob.size, offset + CHUNK_SIZE);
+      const buf = await sourceBlob.slice(offset, end).arrayBuffer();
+      buf.fileStart = offset;
+      mp4boxfile.appendBuffer(buf);
+      offset = end;
+
+      await drainPendingSamples();
+    }
+
+    mp4boxfile.flush();
+    await drainPendingSamples();
+
+    await videoDecoder.flush();
+    if (decoderError) throw decoderError;
+    if (encoderError) throw encoderError;
+
+    await videoEncoder.flush();
+    if (encoderError) throw encoderError;
+
+    videoDecoder.close();
+    videoDecoder = null;
+    videoEncoder.close();
+    videoEncoder = null;
+
+    onProgress?.(100);
+    muxer.finalize();
+    return {
+      blob: new Blob([muxerTarget.buffer], { type: "video/mp4" }),
+      ext: "mp4",
+    };
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      throw err;
+    }
+    // If hardware decoder failed before outputting any frames, fall back to <video> pipeline
+    if (decodedCount === 0) {
+      return null;
+    }
+    throw err;
+  } finally {
+    try {
+      if (videoDecoder && videoDecoder.state !== "closed") {
+        videoDecoder.close();
+      }
+    } catch {
+      // ignore
+    }
+    try {
+      if (videoEncoder && videoEncoder.state !== "closed") {
+        videoEncoder.close();
+      }
+    } catch {
+      // ignore
+    }
+    if (exportCanvas) {
+      exportCanvas.width = 0;
+      exportCanvas.height = 0;
+      exportCanvas = null;
+    }
+    if (grader) {
+      grader.cleanup();
+      grader = null;
     }
   }
 }
@@ -367,20 +926,12 @@ export async function exportGradedVideo({
 
   let grader = null;
   let videoEncoder = null;
-  let audioEncoder = null;
   let exportCanvas = null;
 
   const cleanupAll = () => {
     try {
       if (videoEncoder && videoEncoder.state !== "closed") {
         videoEncoder.close();
-      }
-    } catch {
-      // ignore
-    }
-    try {
-      if (audioEncoder && audioEncoder.state !== "closed") {
-        audioEncoder.close();
       }
     } catch {
       // ignore
@@ -483,198 +1034,164 @@ export async function exportGradedVideo({
 
     video.pause();
 
-    // Initialize persistent WebGL grading context ONCE
-    grader = createWebGLFrameGrader({
-      width,
-      height,
-      params: safeParams,
-      activeLut,
-      lutMix,
-      layout,
-      splitPos: splitPosition,
-      simulateLogInput: logProfile,
-      alpha: false,
-    });
-    if (!grader) {
-      throw new Error("WebGL is unavailable for video export.");
-    }
-
-    exportCanvas = document.createElement("canvas");
-    exportCanvas.width = width;
-    exportCanvas.height = height;
-    const exportCtx = exportCanvas.getContext("2d", { alpha: false });
-
-    const drawCompositeFrame = () => {
-      grader.render(video);
-      exportCtx.drawImage(grader.canvas, 0, 0, width, height);
-      if (layout === "split") {
-        const splitX = Math.round((Math.max(0, Math.min(100, splitPosition)) / 100) * width);
-        const lineW = Math.max(2, Math.round(width / 640));
-        exportCtx.fillStyle = "rgba(226, 228, 233, 0.92)";
-        exportCtx.fillRect(Math.max(0, splitX - Math.floor(lineW / 2)), 0, lineW, height);
-      }
-    };
-
-    const h264Config = await negotiateH264Config(width, height, bitrateBps, fps);
     let outBlob;
     let outExt = "mp4";
 
-    if (h264Config) {
-      const decodedAudio = includeAudio
-        ? await decodeSourceAudio(resolvedSrc, targetFile)
-        : null;
+    const webCodecsResult = await tryWebCodecsDemuxDecodeExport({
+      targetFile,
+      resolvedSrc,
+      width,
+      height,
+      safeParams,
+      activeLut,
+      lutMix,
+      layout,
+      splitPosition,
+      logProfile,
+      bitrateBps,
+      includeAudio,
+      onProgress,
+      abortSignal,
+    });
 
-      const muxerTarget = new ArrayBufferTarget();
-      const muxer = new Muxer({
-        target: muxerTarget,
-        video: {
-          codec: "avc",
-          width,
-          height,
-        },
-        audio: decodedAudio
-          ? {
-              codec: "aac",
-              sampleRate: decodedAudio.sampleRate,
-              numberOfChannels: decodedAudio.numberOfChannels,
-            }
-          : undefined,
-        fastStart: "in-memory",
+    if (webCodecsResult) {
+      outBlob = webCodecsResult.blob;
+      outExt = webCodecsResult.ext;
+    } else {
+      // Initialize persistent WebGL grading context ONCE for fallback <video> seek path
+      grader = createWebGLFrameGrader({
+        width,
+        height,
+        params: safeParams,
+        activeLut,
+        lutMix,
+        layout,
+        splitPos: splitPosition,
+        simulateLogInput: logProfile,
+        alpha: false,
       });
-
-      let encoderError = null;
-      videoEncoder = new VideoEncoder({
-        output: (chunk, meta) => {
-          muxer.addVideoChunk(chunk, meta);
-        },
-        error: (err) => {
-          encoderError = err;
-        },
-      });
-      videoEncoder.configure(h264Config);
-
-      // Encode offline audio if present
-      if (decodedAudio) {
-        try {
-          audioEncoder = new AudioEncoder({
-            output: (chunk, meta) => {
-              muxer.addAudioChunk(chunk, meta);
-            },
-            error: () => {
-              // ignore non-fatal audio encoder error
-            },
-          });
-          audioEncoder.configure(decodedAudio.config);
-
-          const { audioBuffer, sampleRate, numberOfChannels } = decodedAudio;
-          const totalSamples = audioBuffer.length;
-          const chunkFrames = 4096;
-          const channels = [];
-          for (let c = 0; c < numberOfChannels; c++) {
-            channels.push(audioBuffer.getChannelData(c));
-          }
-
-          for (let offset = 0; offset < totalSamples; offset += chunkFrames) {
-            if (abortSignal?.aborted) {
-              throw new DOMException("Export cancelled", "AbortError");
-            }
-            const frameCount = Math.min(chunkFrames, totalSamples - offset);
-            const planar = new Float32Array(frameCount * numberOfChannels);
-            for (let c = 0; c < numberOfChannels; c++) {
-              planar.set(channels[c].subarray(offset, offset + frameCount), c * frameCount);
-            }
-            const audioData = new AudioData({
-              format: "f32-planar",
-              sampleRate,
-              numberOfFrames: frameCount,
-              numberOfChannels,
-              timestamp: Math.round((offset / sampleRate) * 1_000_000),
-              data: planar,
-            });
-            audioEncoder.encode(audioData);
-            audioData.close();
-          }
-          await audioEncoder.flush();
-          audioEncoder.close();
-          audioEncoder = null;
-        } catch (err) {
-          if (err?.name === "AbortError") throw err;
-          if (audioEncoder && audioEncoder.state !== "closed") {
-            try {
-              audioEncoder.close();
-            } catch {
-              // ignore
-            }
-          }
-          audioEncoder = null;
-        }
+      if (!grader) {
+        throw new Error("WebGL is unavailable for video export.");
       }
 
-      const totalFrames = Math.max(1, Math.floor(duration * fps));
-      const frameDurationUs = Math.round((1 / fps) * 1_000_000);
-      onProgress?.(0);
+      exportCanvas = document.createElement("canvas");
+      exportCanvas.width = width;
+      exportCanvas.height = height;
+      const exportCtx = exportCanvas.getContext("2d", { alpha: false });
 
-      for (let i = 0; i < totalFrames; i++) {
-        if (abortSignal?.aborted) {
-          throw new DOMException("Export cancelled", "AbortError");
+      const drawCompositeFrame = () => {
+        grader.render(video);
+        exportCtx.drawImage(grader.canvas, 0, 0, width, height);
+        if (layout === "split") {
+          drawSplitLine(exportCtx, width, height, splitPosition);
         }
-        if (encoderError) {
-          throw encoderError;
-        }
+      };
 
-        const targetTime = Math.min(Math.max(0, duration - 0.001), i / fps);
-        await seekVideoFrame(video, targetTime, abortSignal);
-        drawCompositeFrame();
+      const h264Config = await negotiateH264Config(width, height, bitrateBps, fps);
 
-        const timestampUs = Math.round((i * 1_000_000) / fps);
-        const frame = new VideoFrame(exportCanvas, {
-          timestamp: timestampUs,
-          duration: frameDurationUs,
+      if (h264Config) {
+        const decodedAudio = includeAudio
+          ? await decodeSourceAudio(resolvedSrc, targetFile)
+          : null;
+
+        const muxerTarget = new ArrayBufferTarget();
+        const muxer = new Muxer({
+          target: muxerTarget,
+          video: {
+            codec: "avc",
+            width,
+            height,
+          },
+          audio: decodedAudio
+            ? {
+                codec: "aac",
+                sampleRate: decodedAudio.sampleRate,
+                numberOfChannels: decodedAudio.numberOfChannels,
+              }
+            : undefined,
+          fastStart: "in-memory",
         });
-        try {
-          videoEncoder.encode(frame, {
-            keyFrame: i % Math.round(fps * 2) === 0,
-          });
-        } finally {
-          frame.close();
-        }
 
-        while (videoEncoder.encodeQueueSize > 4) {
+        let encoderError = null;
+        videoEncoder = new VideoEncoder({
+          output: (chunk, meta) => {
+            muxer.addVideoChunk(chunk, meta);
+          },
+          error: (err) => {
+            encoderError = err;
+          },
+        });
+        videoEncoder.configure(h264Config);
+
+        // Encode offline audio if present
+        await encodeAudioToMuxer(muxer, decodedAudio, abortSignal);
+
+        const totalFrames = Math.max(1, Math.floor(duration * fps));
+        const frameDurationUs = Math.round((1 / fps) * 1_000_000);
+        onProgress?.(0);
+
+        for (let i = 0; i < totalFrames; i++) {
           if (abortSignal?.aborted) {
             throw new DOMException("Export cancelled", "AbortError");
           }
           if (encoderError) {
             throw encoderError;
           }
-          await new Promise((r) => setTimeout(r, 5));
+
+          const targetTime = Math.min(Math.max(0, duration - 0.001), i / fps);
+          await seekVideoFrame(video, targetTime, abortSignal);
+          drawCompositeFrame();
+
+          const timestampUs = Math.round((i * 1_000_000) / fps);
+          const frame = new VideoFrame(exportCanvas, {
+            timestamp: timestampUs,
+            duration: frameDurationUs,
+          });
+          try {
+            videoEncoder.encode(frame, {
+              keyFrame: i % Math.round(fps * 2) === 0,
+            });
+          } finally {
+            frame.close();
+          }
+
+          while (videoEncoder.encodeQueueSize > 4) {
+            if (abortSignal?.aborted) {
+              throw new DOMException("Export cancelled", "AbortError");
+            }
+            if (encoderError) {
+              throw encoderError;
+            }
+            await new Promise((r) => setTimeout(r, 5));
+          }
+
+          onProgress?.(Math.round(((i + 1) / totalFrames) * 100));
         }
 
-        onProgress?.(Math.round(((i + 1) / totalFrames) * 100));
-      }
+        await videoEncoder.flush();
+        if (encoderError) {
+          throw encoderError;
+        }
+        videoEncoder.close();
+        videoEncoder = null;
 
-      await videoEncoder.flush();
-      if (encoderError) {
-        throw encoderError;
+        muxer.finalize();
+        outBlob = new Blob([muxerTarget.buffer], { type: "video/mp4" });
+        outExt = "mp4";
+      } else {
+        const fallbackRes = await runMediaRecorderFallback({
+          video,
+          exportCanvas,
+          drawCompositeFrame,
+          bitrateBps,
+          duration,
+          fps,
+          onProgress,
+          abortSignal,
+        });
+        outBlob = fallbackRes.blob;
+        outExt = fallbackRes.ext;
       }
-      videoEncoder.close();
-      videoEncoder = null;
-
-      muxer.finalize();
-      outBlob = new Blob([muxerTarget.buffer], { type: "video/mp4" });
-      outExt = "mp4";
-    } else {
-      const fallbackRes = await runMediaRecorderFallback({
-        video,
-        exportCanvas,
-        drawCompositeFrame,
-        bitrateBps,
-        duration,
-        fps,
-        onProgress,
-        abortSignal,
-      });
-      outBlob = fallbackRes.blob;
-      outExt = fallbackRes.ext;
     }
 
     const codename = getEngineCodename(engine) || "polaris";
