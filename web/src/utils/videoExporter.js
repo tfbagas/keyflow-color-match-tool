@@ -5,6 +5,7 @@ import { createWebGLFrameGrader } from "./imageExporter";
 
 const H264_CODEC_CANDIDATES = [
   "avc1.640028", // High Profile Level 4.0 (up to 1080p)
+  "avc1.4d002a", // Main Profile Level 4.2 (up to 1080p60)
   "avc1.420028", // Baseline Profile Level 4.0 (up to 1080p)
   "avc1.640033", // High Profile Level 5.1
   "avc1.42001f", // Baseline Profile Level 3.1
@@ -625,17 +626,25 @@ export async function exportGradedVideo({
         await seekVideoFrame(video, targetTime, abortSignal);
         drawCompositeFrame();
 
-        const timestampUs = Math.round((i / fps) * 1_000_000);
+        const timestampUs = Math.round((i * 1_000_000) / fps);
         const frame = new VideoFrame(exportCanvas, {
           timestamp: timestampUs,
           duration: frameDurationUs,
         });
-        videoEncoder.encode(frame, { keyFrame: i % 60 === 0 });
-        frame.close();
+        try {
+          videoEncoder.encode(frame, {
+            keyFrame: i % Math.round(fps * 2) === 0,
+          });
+        } finally {
+          frame.close();
+        }
 
-        while (videoEncoder.encodeQueueSize > 8) {
+        while (videoEncoder.encodeQueueSize > 4) {
           if (abortSignal?.aborted) {
             throw new DOMException("Export cancelled", "AbortError");
+          }
+          if (encoderError) {
+            throw encoderError;
           }
           await new Promise((r) => setTimeout(r, 5));
         }
