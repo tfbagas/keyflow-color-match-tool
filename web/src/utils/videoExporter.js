@@ -464,34 +464,19 @@ async function tryWebCodecsDemuxDecodeExport({
     await encodeAudioToMuxer(muxer, decodedAudio, abortSignal);
 
     let decoderError = null;
-    let lastEncodedTimestamp = -1;
+    let renderedFrameCount = 0;
     const totalSamples = Math.max(1, videoTrack.nb_samples || 1);
-    const keyFrameInterval = Math.max(1, Math.round(fps * 2));
-    const defaultFrameDurationUs = Math.round(1_000_000 / fps);
+    const keyFrameInterval = Math.max(1, Math.round(fps));
+    const frameDurationUs = Math.round(1_000_000 / fps);
 
     videoDecoder = new VideoDecoder({
-      output: (decodedVideoFrame) => {
+      output: (decodedFrame) => {
         try {
           if (abortSignal?.aborted || encoderError || decoderError) {
             return;
           }
           // 1. Draw decoded VideoFrame directly into WebGL (zero-copy texImage2D)
-          grader.render(decodedVideoFrame);
-
-          const rawTs = Number.isFinite(decodedVideoFrame.timestamp)
-            ? Math.max(0, Math.round(decodedVideoFrame.timestamp))
-            : 0;
-          const timestamp =
-            rawTs > lastEncodedTimestamp ? rawTs : lastEncodedTimestamp + 1;
-          lastEncodedTimestamp = timestamp;
-          const frameDuration =
-            Number.isFinite(decodedVideoFrame.duration) &&
-            decodedVideoFrame.duration > 0
-              ? Math.round(decodedVideoFrame.duration)
-              : defaultFrameDurationUs;
-
-          // 2. Immediately release mobile hardware decoder buffer
-          decodedVideoFrame.close();
+          grader.render(decodedFrame);
 
           let sourceForEncoder = grader.canvas;
           if (exportCanvas && exportCtx) {
@@ -507,28 +492,31 @@ async function tryWebCodecsDemuxDecodeExport({
             sourceForEncoder = exportCanvas;
           }
 
-          // 3. Encode graded frame and close VideoFrame immediately
+          // 2. Encode graded frame with strictly monotonic CFR timestamps and 1s GOP
+          const ts = Math.round(renderedFrameCount * (1_000_000 / fps));
+          const dur = frameDurationUs;
           const outFrame = new VideoFrame(sourceForEncoder, {
-            timestamp,
-            duration: frameDuration,
+            timestamp: ts,
+            duration: dur,
           });
           try {
             videoEncoder.encode(outFrame, {
-              keyFrame: decodedCount % keyFrameInterval === 0,
+              keyFrame: renderedFrameCount % keyFrameInterval === 0,
             });
           } finally {
             outFrame.close();
           }
 
-          decodedCount += 1;
+          renderedFrameCount += 1;
+          decodedCount = renderedFrameCount;
           onProgress?.(
-            Math.min(99, Math.round((decodedCount / totalSamples) * 100))
+            Math.min(99, Math.round((renderedFrameCount / totalSamples) * 100))
           );
         } catch (err) {
           decoderError = err instanceof Error ? err : new Error(String(err));
         } finally {
           try {
-            decodedVideoFrame.close();
+            decodedFrame.close();
           } catch {
             // already closed
           }
@@ -553,15 +541,15 @@ async function tryWebCodecsDemuxDecodeExport({
         if (encoderError) throw encoderError;
 
         while (
-          videoDecoder.decodeQueueSize > 4 ||
-          videoEncoder.encodeQueueSize > 4
+          videoDecoder.decodeQueueSize > 2 ||
+          videoEncoder.encodeQueueSize > 2
         ) {
           if (abortSignal?.aborted) {
             throw new DOMException("Export cancelled", "AbortError");
           }
           if (decoderError) throw decoderError;
           if (encoderError) throw encoderError;
-          await waitWithAbort(5, abortSignal);
+          await waitWithAbort(0, abortSignal);
         }
 
         const sample = pendingSamples.shift();
@@ -578,12 +566,12 @@ async function tryWebCodecsDemuxDecodeExport({
           duration: durationUs,
           data: sample.data,
         });
-        videoDecoder.decode(chunk);
         try {
           mp4boxfile.releaseUsedSamples(videoTrack.id, sample.number);
         } catch {
           // ignore sample release errors
         }
+        videoDecoder.decode(chunk);
       }
     };
 
