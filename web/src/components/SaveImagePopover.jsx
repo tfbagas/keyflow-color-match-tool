@@ -422,7 +422,7 @@ export default function SaveImagePopover({
 
                       {cloudQuotaError && !cloudBlockReason && (
                         <div className="px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-200 leading-snug">
-                          {cloudQuotaError} (Worker may be asleep; clicking export will wake it.)
+                          {cloudQuotaError}
                         </div>
                       )}
 

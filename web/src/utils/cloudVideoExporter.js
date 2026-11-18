@@ -3,15 +3,20 @@ import { getEngineCodename } from "./engineRegistry";
 import { scaleParamsByStrength } from "./gradeEngine";
 
 const CLOUD_CLIENT_ID_KEY = "kf_cloud_client_id";
+const DEFAULT_PROD_CLOUD_RENDER_URL = "https://color-match-tool-cloud-render.onrender.com";
 const DEFAULT_MAX_DURATION_SEC = 30;
 const DEFAULT_MAX_FILE_SIZE_MB = 80;
 const DEFAULT_DAILY_LIMIT = 3;
 const POLL_INTERVAL_MS = 2000;
+const WAKE_TIMEOUT_MS = 75_000;
+const WAKE_POLL_INTERVAL_MS = 3_000;
 
 export function getCloudRenderBaseUrl() {
   const raw = import.meta.env?.VITE_CLOUD_RENDER_URL;
-  if (typeof raw !== "string") return "";
-  return raw.trim().replace(/\/+$/, "");
+  const normalized = typeof raw === "string" ? raw.trim().replace(/\/+$/, "") : "";
+  if (normalized) return normalized;
+  if (import.meta.env?.PROD) return DEFAULT_PROD_CLOUD_RENDER_URL;
+  return "";
 }
 
 export function isCloudRenderConfigured() {
@@ -104,6 +109,15 @@ function probeVideoDurationSec(blob) {
   });
 }
 
+async function fetchWithDetail(url, options, contextLabel) {
+  try {
+    return await fetch(url, options);
+  } catch (err) {
+    if (err?.name === "AbortError") throw err;
+    throw new Error(`${contextLabel} failed (${err?.message || "network/CORS error"}).`);
+  }
+}
+
 function uploadViaPut(url, body, contentType, onProgress, abortSignal) {
   return new Promise((resolve, reject) => {
     throwIfAborted(abortSignal);
@@ -130,13 +144,18 @@ function uploadViaPut(url, body, contentType, onProgress, abortSignal) {
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve();
       } else {
-        reject(new Error(`Cloud storage upload failed (HTTP ${xhr.status}).`));
+        const detail = xhr.statusText ? ` ${xhr.statusText}` : "";
+        reject(new Error(`Cloud storage upload failed (HTTP ${xhr.status}${detail}).`));
       }
     };
 
     xhr.onerror = () => {
       abortSignal?.removeEventListener("abort", onAbort);
-      reject(new Error("Network error while uploading to cloud storage."));
+      reject(
+        new Error(
+          "Network/CORS error while uploading to cloud storage (R2 PUT blocked or unreachable)."
+        )
+      );
     };
 
     xhr.send(body);
@@ -144,30 +163,67 @@ function uploadViaPut(url, body, contentType, onProgress, abortSignal) {
 }
 
 async function wakeCloudWorker(baseUrl, onStatusChange, abortSignal) {
-  const maxAttempts = 12;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+  const deadline = Date.now() + WAKE_TIMEOUT_MS;
+  let attempt = 0;
+  let lastError = "";
+
+  while (Date.now() < deadline) {
     throwIfAborted(abortSignal);
     if (attempt === 0) {
       onStatusChange?.({ progress: 5, statusText: "Waking up cloud worker..." });
+    } else {
+      onStatusChange?.({
+        progress: 8,
+        statusText: "Waking up cloud worker (cold start)...",
+      });
     }
+
+    const remainingMs = Math.max(1000, deadline - Date.now());
+    const attemptController = new AbortController();
+    const onParentAbort = () => attemptController.abort();
+    abortSignal?.addEventListener("abort", onParentAbort, { once: true });
+    const attemptTimer = setTimeout(() => attemptController.abort(), remainingMs);
+
     try {
       const resp = await fetch(`${baseUrl}/health`, {
         method: "GET",
-        signal: abortSignal,
+        signal: attemptController.signal,
       });
       if (resp.ok) {
         return await resp.json();
       }
+      const errBody = await resp.json().catch(() => ({}));
+      lastError =
+        errBody.error || `HTTP ${resp.status}${resp.statusText ? ` ${resp.statusText}` : ""}`;
+      if (resp.status >= 400 && resp.status < 500) {
+        throw new Error(`Cloud worker health check failed (${lastError}).`);
+      }
     } catch (err) {
-      if (err?.name === "AbortError") throw err;
+      if (abortSignal?.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
+      if (err?.message?.startsWith("Cloud worker health check failed")) {
+        throw err;
+      }
+      lastError =
+        err?.name === "AbortError"
+          ? "request timed out"
+          : err?.message || "network/CORS error";
+    } finally {
+      clearTimeout(attemptTimer);
+      abortSignal?.removeEventListener("abort", onParentAbort);
     }
-    onStatusChange?.({
-      progress: 8,
-      statusText: "Waking up cloud worker (cold start)...",
-    });
-    await sleepWithAbort(4000, abortSignal);
+
+    attempt += 1;
+    const sleepMs = Math.min(WAKE_POLL_INTERVAL_MS, Math.max(0, deadline - Date.now()));
+    if (sleepMs <= 0) break;
+    await sleepWithAbort(sleepMs, abortSignal);
   }
-  throw new Error("Cloud worker did not respond in time. Please try again or use Local Render.");
+
+  const detail = lastError ? `: ${lastError}` : "";
+  throw new Error(
+    `Cloud worker did not respond within 75s${detail}. Please try again or use Local Render.`
+  );
 }
 
 export async function fetchCloudQuota(signal) {
@@ -184,12 +240,15 @@ export async function fetchCloudQuota(signal) {
     };
   }
   const clientId = getOrCreateClientId();
-  const resp = await fetch(
+  const resp = await fetchWithDetail(
     `${baseUrl}/api/quota?clientId=${encodeURIComponent(clientId)}`,
-    { method: "GET", signal }
+    { method: "GET", signal },
+    `Cloud quota check (${baseUrl})`
   );
   if (!resp.ok) {
-    throw new Error(`Failed to fetch cloud quota (HTTP ${resp.status})`);
+    const errBody = await resp.json().catch(() => ({}));
+    const statusLabel = `HTTP ${resp.status}${resp.statusText ? ` ${resp.statusText}` : ""}`;
+    throw new Error(errBody.error || `Failed to fetch cloud quota (${statusLabel}).`);
   }
   const data = await resp.json();
   return {
@@ -295,18 +354,22 @@ export async function exportVideoInCloud({
     (targetFile instanceof File && targetFile.name) || `${presetName || "video"}.mp4`;
   const contentType = videoBlob.type || "video/mp4";
 
-  const initResp = await fetch(`${baseUrl}/api/jobs/init`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      clientId,
-      fileName: rawFileName,
-      fileSizeBytes: videoBlob.size,
-      durationSec,
-      contentType,
-    }),
-    signal: abortSignal,
-  });
+  const initResp = await fetchWithDetail(
+    `${baseUrl}/api/jobs/init`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clientId,
+        fileName: rawFileName,
+        fileSizeBytes: videoBlob.size,
+        durationSec,
+        contentType,
+      }),
+      signal: abortSignal,
+    },
+    "Initialize cloud job"
+  );
   const initData = await initResp.json().catch(() => ({}));
   if (!initResp.ok) {
     throw new Error(initData.error || `Failed to initialize cloud job (HTTP ${initResp.status}).`);
@@ -338,12 +401,16 @@ export async function exportVideoInCloud({
 
   // 6. Enqueue FIFO render job
   report(50, "Enqueueing Cloud FFmpeg job...");
-  const startResp = await fetch(`${baseUrl}/api/jobs/${encodeURIComponent(jobId)}/start`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ clientId }),
-    signal: abortSignal,
-  });
+  const startResp = await fetchWithDetail(
+    `${baseUrl}/api/jobs/${encodeURIComponent(jobId)}/start`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientId }),
+      signal: abortSignal,
+    },
+    "Start cloud render"
+  );
   const startData = await startResp.json().catch(() => ({}));
   if (!startResp.ok) {
     throw new Error(startData.error || `Failed to start cloud render (HTTP ${startResp.status}).`);
@@ -355,10 +422,14 @@ export async function exportVideoInCloud({
     throwIfAborted(abortSignal);
     await sleepWithAbort(POLL_INTERVAL_MS, abortSignal);
 
-    const statusResp = await fetch(`${baseUrl}/api/jobs/${encodeURIComponent(jobId)}`, {
-      method: "GET",
-      signal: abortSignal,
-    });
+    const statusResp = await fetchWithDetail(
+      `${baseUrl}/api/jobs/${encodeURIComponent(jobId)}`,
+      {
+        method: "GET",
+        signal: abortSignal,
+      },
+      "Poll cloud job status"
+    );
     const job = await statusResp.json().catch(() => ({}));
     if (!statusResp.ok) {
       throw new Error(job.error || `Failed to poll job status (HTTP ${statusResp.status}).`);
@@ -394,7 +465,11 @@ export async function exportVideoInCloud({
   const engineSuffix = codename ? `_${codename}` : "";
   const fileName = `${cleanBase}${engineSuffix}_cloud_graded.mp4`;
 
-  const dlResp = await fetch(downloadUrl, { signal: abortSignal });
+  const dlResp = await fetchWithDetail(
+    downloadUrl,
+    { signal: abortSignal },
+    "Download rendered MP4"
+  );
   if (!dlResp.ok) {
     throw new Error(`Failed to download rendered MP4 (HTTP ${dlResp.status}).`);
   }

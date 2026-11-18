@@ -18,7 +18,6 @@ const {
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
 const PORT = Number(process.env.PORT) || 8080;
-const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "*";
 const R2_ACCOUNT_ID = (process.env.R2_ACCOUNT_ID || "").trim();
 const R2_ACCESS_KEY_ID = (process.env.R2_ACCESS_KEY_ID || "").trim();
 const R2_SECRET_ACCESS_KEY = (process.env.R2_SECRET_ACCESS_KEY || "").trim();
@@ -49,21 +48,14 @@ const s3Client = r2Configured
 const app = express();
 app.set("trust proxy", 1);
 
-const allowedOrigins = ALLOWED_ORIGIN.split(",")
-  .map((o) => o.trim())
-  .filter(Boolean);
+const corsOptions = {
+  origin: true,
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
-        callback(null, true);
-        return;
-      }
-      callback(new Error("Origin not allowed by CORS"));
-    },
-  })
-);
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(express.json({ limit: "64kb" }));
 
 // Strict FIFO queue (concurrency = 1)
