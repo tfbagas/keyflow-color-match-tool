@@ -36,6 +36,7 @@ const OUTPUT_CLEANUP_MS = 15 * 60 * 1000;
 const WORKER_OVERRIDE_KEY = "worker-override.json";
 const WORKER_OVERRIDE_CACHE_TTL_MS = 8_000;
 const WORKER_HEALTH_TIMEOUT_MS = 3000;
+const WORKER_PROXY_TIMEOUT_MS = 10_000;
 
 const r2Configured = Boolean(
   R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET_NAME
@@ -145,6 +146,70 @@ async function checkWorkerHealth(baseUrl) {
     const data = await resp.json().catch(() => null);
     return data ? data.ok !== false : true;
   } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function getActiveKaggleWorkerOverride() {
+  const override = await getWorkerOverrideFromR2();
+  if (!override || Date.now() >= override.expiresAt) return null;
+  if (override.mode !== "kaggle-gpu") return null;
+  return override;
+}
+
+async function proxyJsonToWorker(override, req, res, options = {}) {
+  const targetUrl = `${override.url}${req.originalUrl}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WORKER_PROXY_TIMEOUT_MS);
+  if (typeof timer.unref === "function") timer.unref();
+
+  try {
+    const headers = {
+      "x-forwarded-for": getClientIp(req),
+    };
+    const hasBody = req.method !== "GET" && req.method !== "HEAD";
+    if (hasBody) {
+      headers["content-type"] = "application/json";
+    }
+
+    const resp = await fetch(targetUrl, {
+      method: req.method,
+      headers,
+      body: hasBody ? JSON.stringify(req.body ?? {}) : undefined,
+      signal: controller.signal,
+    });
+
+    if (resp.status >= 502) {
+      throw new Error(`Worker tunnel returned HTTP ${resp.status}`);
+    }
+
+    const rawText = await resp.text();
+    let data;
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      throw new Error(`Worker returned non-JSON response (HTTP ${resp.status})`);
+    }
+
+    if (
+      options.injectWorkerMode &&
+      resp.ok &&
+      data &&
+      typeof data === "object" &&
+      !data.workerMode
+    ) {
+      data.workerMode = override.mode;
+    }
+
+    res.status(resp.status).json(data);
+    return true;
+  } catch (err) {
+    console.warn(
+      `[WorkerProxy] ${req.method} ${req.originalUrl} failed, falling back to local Render:`,
+      err.message
+    );
     return false;
   } finally {
     clearTimeout(timer);
@@ -600,12 +665,18 @@ app.get("/api/worker-target", async (_req, res) => {
   }
 });
 
-app.get("/api/quota", (req, res) => {
+app.get("/api/quota", async (req, res) => {
+  const override = await getActiveKaggleWorkerOverride();
+  if (override && (await proxyJsonToWorker(override, req, res, { injectWorkerMode: true }))) {
+    return;
+  }
+
   const clientId = normalizeClientId(req.query.clientId);
   const ip = getClientIp(req);
   const quota = getQuotaStatus(clientId, ip);
   res.json({
     ...quota,
+    workerMode: "render-cpu",
     queueLength: getQueueLength(),
     activeWorkers: activeJobs.size,
     maxConcurrency: RENDER_CONCURRENCY,
@@ -616,6 +687,11 @@ app.get("/api/quota", (req, res) => {
 });
 
 app.post("/api/jobs/init", async (req, res) => {
+  const override = await getActiveKaggleWorkerOverride();
+  if (override && (await proxyJsonToWorker(override, req, res))) {
+    return;
+  }
+
   if (!r2Configured || !s3Client) {
     res.status(503).json({ error: "Cloud storage (R2) is not configured on the server." });
     return;
@@ -725,7 +801,14 @@ app.post("/api/jobs/init", async (req, res) => {
   }
 });
 
-app.post("/api/jobs/:jobId/start", (req, res) => {
+app.post("/api/jobs/:jobId/start", async (req, res) => {
+  if (!jobs.has(req.params.jobId)) {
+    const override = await getActiveKaggleWorkerOverride();
+    if (override && (await proxyJsonToWorker(override, req, res))) {
+      return;
+    }
+  }
+
   const job = jobs.get(req.params.jobId);
   if (!job) {
     res.status(404).json({ error: "Job not found or worker restarted" });
@@ -776,7 +859,14 @@ app.post("/api/jobs/:jobId/start", (req, res) => {
   });
 });
 
-app.get("/api/jobs/:jobId", (req, res) => {
+app.get("/api/jobs/:jobId", async (req, res) => {
+  if (!jobs.has(req.params.jobId)) {
+    const override = await getActiveKaggleWorkerOverride();
+    if (override && (await proxyJsonToWorker(override, req, res))) {
+      return;
+    }
+  }
+
   const job = jobs.get(req.params.jobId);
   if (!job) {
     res.status(404).json({ error: "Job not found or worker restarted" });
@@ -798,6 +888,13 @@ app.get("/api/jobs/:jobId", (req, res) => {
 });
 
 app.post("/api/jobs/:jobId/cleanup", async (req, res) => {
+  if (!jobs.has(req.params.jobId)) {
+    const override = await getActiveKaggleWorkerOverride();
+    if (override && (await proxyJsonToWorker(override, req, res))) {
+      return;
+    }
+  }
+
   const job = jobs.get(req.params.jobId);
   if (!job) {
     res.json({ ok: true });

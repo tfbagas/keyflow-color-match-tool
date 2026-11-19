@@ -14,6 +14,10 @@ const WAKE_TIMEOUT_MS = 110_000;
 const WAKE_POLL_INTERVAL_MS = 3_000;
 const WORKER_TARGET_TIMEOUT_MS = 95_000;
 const WORKER_TARGET_WAKE_NOTICE_MS = 4_000;
+const WORKER_TARGET_CACHE_TTL_MS = 5_000;
+const DIRECT_TUNNEL_HEALTH_TIMEOUT_MS = 5_000;
+
+let workerTargetCache = { fetchedAt: 0, renderBaseUrl: "", value: null };
 
 export function getCloudRenderBaseUrl() {
   const raw = import.meta.env?.VITE_CLOUD_RENDER_URL;
@@ -148,6 +152,15 @@ async function resolveWorkerTarget(renderBaseUrl, abortSignal, onStatusChange) {
   };
   if (!renderBaseUrl) return fallback;
 
+  throwIfAborted(abortSignal);
+  if (
+    workerTargetCache.value &&
+    workerTargetCache.renderBaseUrl === renderBaseUrl &&
+    Date.now() - workerTargetCache.fetchedAt < WORKER_TARGET_CACHE_TTL_MS
+  ) {
+    return workerTargetCache.value;
+  }
+
   const controller = new AbortController();
   const onParentAbort = () => controller.abort();
   abortSignal?.addEventListener("abort", onParentAbort, { once: true });
@@ -167,8 +180,9 @@ async function resolveWorkerTarget(renderBaseUrl, abortSignal, onStatusChange) {
     const data = await resp.json().catch(() => null);
     const targetUrl =
       typeof data?.baseUrl === "string" ? data.baseUrl.trim().replace(/\/+$/, "") : "";
+    let resolved = fallback;
     if (data?.mode === "kaggle-gpu" && /^https?:\/\//i.test(targetUrl)) {
-      return {
+      resolved = {
         mode: "kaggle-gpu",
         baseUrl: targetUrl,
         renderBaseUrl,
@@ -178,9 +192,8 @@ async function resolveWorkerTarget(renderBaseUrl, abortSignal, onStatusChange) {
           maxFileSizeMb: Number(data?.limits?.maxFileSizeMb) || 300,
         },
       };
-    }
-    if (data?.limits) {
-      return {
+    } else if (data?.limits) {
+      resolved = {
         ...fallback,
         limits: {
           dailyLimit: Number(data.limits.dailyLimit) || DEFAULT_DAILY_LIMIT,
@@ -189,7 +202,12 @@ async function resolveWorkerTarget(renderBaseUrl, abortSignal, onStatusChange) {
         },
       };
     }
-    return fallback;
+    workerTargetCache = {
+      fetchedAt: Date.now(),
+      renderBaseUrl,
+      value: resolved,
+    };
+    return resolved;
   } catch {
     if (abortSignal?.aborted) {
       throw new DOMException("Aborted", "AbortError");
@@ -246,7 +264,39 @@ function uploadViaPut(url, body, contentType, onProgress, abortSignal) {
   });
 }
 
-async function wakeCloudWorker(baseUrl, onStatusChange, abortSignal) {
+async function wakeCloudWorker(baseUrl, onStatusChange, abortSignal, options = {}) {
+  if (options.fastCheck) {
+    throwIfAborted(abortSignal);
+    onStatusChange?.({ progress: 5, statusText: "Connecting to Kaggle GPU worker..." });
+    const controller = new AbortController();
+    const onParentAbort = () => controller.abort();
+    abortSignal?.addEventListener("abort", onParentAbort, { once: true });
+    const timer = setTimeout(() => controller.abort(), DIRECT_TUNNEL_HEALTH_TIMEOUT_MS);
+    try {
+      const resp = await fetch(`${baseUrl}/health`, {
+        method: "GET",
+        signal: controller.signal,
+      });
+      if (resp.ok) {
+        return await resp.json();
+      }
+      const err = new Error(`Direct tunnel health check failed (HTTP ${resp.status}).`);
+      err.isTunnelUnreachable = true;
+      throw err;
+    } catch (err) {
+      if (abortSignal?.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
+      if (!err.isTunnelUnreachable) {
+        err.isTunnelUnreachable = true;
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+      abortSignal?.removeEventListener("abort", onParentAbort);
+    }
+  }
+
   const deadline = Date.now() + WAKE_TIMEOUT_MS;
   let attempt = 0;
   let lastError = "";
@@ -326,7 +376,7 @@ async function fetchQuotaFromBase(baseUrl, clientId, workerMode, fallbackLimits,
   const data = await resp.json();
   return {
     configured: true,
-    workerMode,
+    workerMode: data.workerMode || workerMode,
     workerBaseUrl: baseUrl,
     used: Number(data.used ?? 0),
     remaining: Number(data.remaining ?? 0),
@@ -364,16 +414,16 @@ export async function fetchCloudQuota(signal) {
   try {
     return await fetchQuotaFromBase(target.baseUrl, clientId, target.mode, target.limits, signal);
   } catch (err) {
-    if (target.mode === "kaggle-gpu" && isTunnelUnreachableError(err)) {
+    if (
+      target.mode === "kaggle-gpu" &&
+      target.baseUrl !== renderBaseUrl &&
+      isTunnelUnreachableError(err)
+    ) {
       return await fetchQuotaFromBase(
         renderBaseUrl,
         clientId,
-        "render-cpu",
-        {
-          dailyLimit: DEFAULT_DAILY_LIMIT,
-          maxDurationSec: DEFAULT_MAX_DURATION_SEC,
-          maxFileSizeMb: DEFAULT_MAX_FILE_SIZE_MB,
-        },
+        "kaggle-gpu",
+        target.limits,
         signal
       );
     }
@@ -452,9 +502,11 @@ export async function exportVideoInCloud({
 
   const executePipeline = async (baseUrl, workerMode, limits) => {
     // Wake worker & check quota
-    await wakeCloudWorker(baseUrl, onStatusChange, abortSignal);
+    const isDirectTunnel = workerMode === "kaggle-gpu" && baseUrl !== renderBaseUrl;
+    await wakeCloudWorker(baseUrl, onStatusChange, abortSignal, { fastCheck: isDirectTunnel });
 
     const quota = await fetchQuotaFromBase(baseUrl, clientId, workerMode, limits, abortSignal);
+    const effectiveMode = quota.workerMode || workerMode;
     if (quota.remaining <= 0) {
       throw new Error(
         `Daily Cloud Render quota (${quota.limit}/day) reached. Switch to Local Render for unlimited exports.`
@@ -526,7 +578,7 @@ export async function exportVideoInCloud({
     // Enqueue FIFO render job
     report(
       50,
-      workerMode === "kaggle-gpu"
+      effectiveMode === "kaggle-gpu"
         ? "Enqueueing Kaggle GPU FFmpeg job..."
         : "Enqueueing Cloud FFmpeg job..."
     );
@@ -588,7 +640,7 @@ export async function exportVideoInCloud({
         const pos = job.queuePosition || 1;
         report(
           52,
-          workerMode === "kaggle-gpu"
+          effectiveMode === "kaggle-gpu"
             ? `Queue #${pos} — waiting for Kaggle GPU...`
             : `Queue #${pos} — waiting for Cloud FFmpeg...`
         );
@@ -641,20 +693,20 @@ export async function exportVideoInCloud({
     }
 
     report(100, "Exported Cloud Video!");
-    return { fileName, jobId, workerMode };
+    return { fileName, jobId, workerMode: effectiveMode };
   };
 
   const target = await resolveWorkerTarget(renderBaseUrl, abortSignal, onStatusChange);
   try {
     return await executePipeline(target.baseUrl, target.mode, target.limits);
   } catch (err) {
-    if (target.mode === "kaggle-gpu" && isTunnelUnreachableError(err)) {
-      report(5, "Kaggle GPU unreachable — falling back to Render.com...");
-      return await executePipeline(renderBaseUrl, "render-cpu", {
-        dailyLimit: DEFAULT_DAILY_LIMIT,
-        maxDurationSec: DEFAULT_MAX_DURATION_SEC,
-        maxFileSizeMb: DEFAULT_MAX_FILE_SIZE_MB,
-      });
+    if (
+      target.mode === "kaggle-gpu" &&
+      target.baseUrl !== renderBaseUrl &&
+      isTunnelUnreachableError(err)
+    ) {
+      report(5, "Direct tunnel unreachable — routing via Render.com...");
+      return await executePipeline(renderBaseUrl, "kaggle-gpu", target.limits);
     }
     throw err;
   }
