@@ -78,6 +78,7 @@ const ProScopes = memo(
       hasMedia,
       isDragging = false,
       isVideoPlaying = false,
+      isDesktopRealtime = false,
       isCollapsed: controlledCollapsed,
       onToggleCollapse,
     },
@@ -115,8 +116,15 @@ const ProScopes = memo(
       isCollapsed,
       isDragging,
       isVideoPlaying,
+      isDesktopRealtime,
     });
-    stateRef.current = { mode, isCollapsed, isDragging, isVideoPlaying };
+    stateRef.current = {
+      mode,
+      isCollapsed,
+      isDragging,
+      isVideoPlaying,
+      isDesktopRealtime,
+    };
     const prevStateRef = useRef({
       mode: "histogram",
       isCollapsed: false,
@@ -155,6 +163,7 @@ const ProScopes = memo(
         isCollapsed: collapsed,
         isDragging: dragging,
         isVideoPlaying: playing,
+        isDesktopRealtime: desktopRealtime,
       } = stateRef.current;
 
       const prev = prevStateRef.current;
@@ -167,13 +176,14 @@ const ProScopes = memo(
         isDragging: dragging,
       };
 
-      if (collapsed || dragging || document.hidden) {
+      if (collapsed || (dragging && !desktopRealtime) || document.hidden) {
         return;
       }
 
       const now = performance.now();
       if (
         !force &&
+        !desktopRealtime &&
         playing &&
         !modeChanged &&
         !justExpanded &&

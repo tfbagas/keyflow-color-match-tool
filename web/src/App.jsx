@@ -320,6 +320,11 @@ export default function App() {
   );
   const [isScopeFrozen, setIsScopeFrozen] = useState(false);
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+  const [isDesktopRealtime, setIsDesktopRealtime] = useState(() =>
+    typeof window !== "undefined" &&
+    window.innerWidth >= 1024 &&
+    !window.matchMedia?.("(pointer: coarse)")?.matches
+  );
   const [webglPhotoError, setWebglPhotoError] = useState(false);
   const [lastMatchedParams, setLastMatchedParams] = useState(null);
   const [reloadedFeedback, setReloadedFeedback] = useState(false);
@@ -330,10 +335,13 @@ export default function App() {
 
   const isScopesCollapsedRef = useRef(isScopesCollapsed);
   isScopesCollapsedRef.current = isScopesCollapsed;
+  const isDesktopRealtimeRef = useRef(isDesktopRealtime);
+  isDesktopRealtimeRef.current = isDesktopRealtime;
   const isControlDraggingRef = useRef(false);
   const isScopeFrozenRef = useRef(false);
   isScopeFrozenRef.current = isScopeFrozen;
   const scopeIdleTimerRef = useRef(null);
+  const scopeRafRef = useRef(0);
   const scopePhotoSrcRef = useRef(null);
   const refreshScopesOnceRef = useRef(() => {});
   const glPreviewRef = useRef(null);
@@ -403,6 +411,27 @@ export default function App() {
 
   const gradingParamsRef = useRef(effectiveParams);
   gradingParamsRef.current = effectiveParams;
+  const liveEffectiveParamsRef = useRef(effectiveParams);
+  if (!isControlDraggingRef.current) {
+    liveEffectiveParamsRef.current = effectiveParams;
+  }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const coarseMq = window.matchMedia?.("(pointer: coarse)");
+    const updateDesktopRealtime = () => {
+      const next =
+        window.innerWidth >= 1024 && !coarseMq?.matches;
+      isDesktopRealtimeRef.current = next;
+      setIsDesktopRealtime(next);
+    };
+    window.addEventListener("resize", updateDesktopRealtime);
+    coarseMq?.addEventListener?.("change", updateDesktopRealtime);
+    return () => {
+      window.removeEventListener("resize", updateDesktopRealtime);
+      coarseMq?.removeEventListener?.("change", updateDesktopRealtime);
+    };
+  }, []);
 
   const isNeutralGrade = useMemo(() => {
     for (const k of Object.keys(DEFAULT_PARAMS)) {
@@ -1019,9 +1048,9 @@ export default function App() {
     : null;
 
   const getScopeDims = useCallback((sw, sh) => {
-    const isMobile = typeof window !== "undefined" && window.innerWidth < 1024;
-    const maxW = isMobile ? 96 : 128;
-    const maxH = isMobile ? 54 : 72;
+    const desktop = isDesktopRealtimeRef.current;
+    const maxW = desktop ? 160 : 96;
+    const maxH = desktop ? 90 : 54;
     const scale = Math.min(1, maxW / Math.max(1, sw), maxH / Math.max(1, sh));
     return {
       w: Math.max(1, Math.round(sw * scale)),
@@ -1032,7 +1061,7 @@ export default function App() {
   const refreshPhotoScope = useCallback(() => {
     if (
       isScopesCollapsedRef.current ||
-      isScopeFrozenRef.current ||
+      (isScopeFrozenRef.current && !isDesktopRealtimeRef.current) ||
       document.hidden ||
       activeTabRef.current !== "home"
     ) {
@@ -1044,13 +1073,13 @@ export default function App() {
     simulateGradePixels(
       src.data,
       outBuf,
-      gradingParamsRef.current,
+      liveEffectiveParamsRef.current,
       simulateLogInputRef.current
     );
     scopeRef.current?.updateFrame({ data: outBuf, width: src.width, height: src.height });
   }, []);
 
-  // Build tiny <=96x54 (mobile) / <=128x72 (desktop) photo source buffer once per image.
+  // Build tiny <=96x54 (mobile) / <=160x90 (desktop) photo source buffer once per image.
   useEffect(() => {
     if (!activePreviewImgElement) {
       scopePhotoSrcRef.current = null;
@@ -1068,7 +1097,7 @@ export default function App() {
     scopePhotoSrcRef.current = octx.getImageData(0, 0, w, h);
     refreshPhotoScope();
     return undefined;
-  }, [activePreviewImgElement, videoEl, getScopeDims, refreshPhotoScope]);
+  }, [activePreviewImgElement, videoEl, isDesktopRealtime, getScopeDims, refreshPhotoScope]);
 
   // CPU 2D fallback ONLY when WebGL is unavailable for photo preview.
   const updatePreviewSimulation = useCallback(() => {
@@ -1160,7 +1189,8 @@ export default function App() {
     }
   }, [targetImage]);
 
-  // Live scope telemetry from the current video frame (throttled to <=6 FPS, 0ms when paused/hidden/collapsed/dragging).
+  // Live scope telemetry from the current video frame:
+  // 60fps requestAnimationFrame on desktop; throttled <=6 FPS on mobile/tablet; 0ms when paused/hidden/collapsed.
   useEffect(() => {
     if (!videoEl) {
       setIsVideoPlaying(false);
@@ -1172,13 +1202,14 @@ export default function App() {
     const sctx = small.getContext("2d", { willReadFrequently: true });
     let gradedBuf = null;
     let intervalId = 0;
+    let rafId = 0;
 
     const tick = (force = false) => {
       if (
         document.hidden ||
         activeTabRef.current !== "home" ||
         isScopesCollapsedRef.current ||
-        isScopeFrozenRef.current
+        (isScopeFrozenRef.current && !isDesktopRealtimeRef.current)
       ) {
         return;
       }
@@ -1196,7 +1227,7 @@ export default function App() {
         simulateGradePixels(
           src.data,
           gradedBuf,
-          gradingParamsRef.current,
+          liveEffectiveParamsRef.current,
           simulateLogInputRef.current
         );
         scopeRef.current?.updateFrame({ data: gradedBuf, width: w, height: h });
@@ -1207,39 +1238,74 @@ export default function App() {
 
     refreshScopesOnceRef.current = () => tick(true);
 
-    const startInterval = () => {
-      if (intervalId || videoEl.paused || videoEl.ended) return;
-      intervalId = setInterval(() => tick(false), 165);
-    };
-    const stopInterval = () => {
+    const canRunLoop = () =>
+      !document.hidden &&
+      activeTabRef.current === "home" &&
+      !isScopesCollapsedRef.current &&
+      !videoEl.paused &&
+      !videoEl.ended;
+
+    const stopLoop = () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
       if (intervalId) {
         clearInterval(intervalId);
         intervalId = 0;
       }
     };
 
+    const runRaf = () => {
+      rafId = 0;
+      if (!canRunLoop() || !isDesktopRealtimeRef.current) return;
+      tick(false);
+      rafId = requestAnimationFrame(runRaf);
+    };
+
+    const startLoop = () => {
+      if (!canRunLoop()) return;
+      if (isDesktopRealtimeRef.current) {
+        if (intervalId) {
+          clearInterval(intervalId);
+          intervalId = 0;
+        }
+        if (!rafId) {
+          rafId = requestAnimationFrame(runRaf);
+        }
+      } else {
+        if (rafId) {
+          cancelAnimationFrame(rafId);
+          rafId = 0;
+        }
+        if (!intervalId) {
+          intervalId = setInterval(() => tick(false), 165);
+        }
+      }
+    };
+
     const onPlay = () => {
       setIsVideoPlaying(true);
-      startInterval();
+      startLoop();
     };
     const onPauseOrEnd = () => {
       setIsVideoPlaying(false);
-      stopInterval();
+      stopLoop();
       tick(true);
     };
     const onSeekOrLoad = () => tick(true);
     const onVisibility = () => {
       if (document.hidden) {
-        stopInterval();
-      } else if (!videoEl.paused && !videoEl.ended) {
-        startInterval();
+        stopLoop();
+      } else if (canRunLoop()) {
+        startLoop();
         tick(true);
       }
     };
 
     setIsVideoPlaying(!videoEl.paused && !videoEl.ended);
     tick(true);
-    startInterval();
+    startLoop();
 
     videoEl.addEventListener("play", onPlay);
     videoEl.addEventListener("pause", onPauseOrEnd);
@@ -1249,7 +1315,7 @@ export default function App() {
     document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
-      stopInterval();
+      stopLoop();
       videoEl.removeEventListener("play", onPlay);
       videoEl.removeEventListener("pause", onPauseOrEnd);
       videoEl.removeEventListener("ended", onPauseOrEnd);
@@ -1257,7 +1323,7 @@ export default function App() {
       videoEl.removeEventListener("loadeddata", onSeekOrLoad);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [videoEl, activeTab, getScopeDims, refreshPhotoScope]);
+  }, [videoEl, activeTab, isScopesCollapsed, isDesktopRealtime, getScopeDims, refreshPhotoScope]);
 
   const flushParamCommit = useCallback(() => {
     if (commitTimerRef.current) {
@@ -1282,7 +1348,23 @@ export default function App() {
     }
   }, [flushParamCommit]);
 
-  // Freeze ProScopes while dragging sliders/wheels/split-bar; flush once on release or 120ms idle.
+  const scheduleDesktopScopeRefresh = useCallback(() => {
+    if (
+      !isDesktopRealtimeRef.current ||
+      isScopesCollapsedRef.current ||
+      document.hidden ||
+      activeTabRef.current !== "home"
+    ) {
+      return;
+    }
+    if (scopeRafRef.current) return;
+    scopeRafRef.current = requestAnimationFrame(() => {
+      scopeRafRef.current = 0;
+      refreshScopesOnceRef.current();
+    });
+  }, []);
+
+  // Freeze ProScopes while dragging sliders/wheels/split-bar on mobile/tablet; on desktop keep 60fps real-time updates.
   const handleControlDragChange = useCallback((dragging) => {
     if (scopeIdleTimerRef.current) {
       clearTimeout(scopeIdleTimerRef.current);
@@ -1290,24 +1372,33 @@ export default function App() {
     }
     if (dragging) {
       isControlDraggingRef.current = true;
-      isScopeFrozenRef.current = true;
-      setIsScopeFrozen(true);
+      if (!isDesktopRealtimeRef.current) {
+        isScopeFrozenRef.current = true;
+        setIsScopeFrozen(true);
+      }
     } else {
       isControlDraggingRef.current = false;
       flushParamCommit();
-      isScopeFrozenRef.current = false;
-      setIsScopeFrozen(false);
+      if (isScopeFrozenRef.current) {
+        isScopeFrozenRef.current = false;
+        setIsScopeFrozen(false);
+      }
       refreshScopesOnceRef.current();
     }
   }, [flushParamCommit]);
 
   useEffect(() => {
     if (isControlDraggingRef.current) {
+      if (isDesktopRealtimeRef.current) {
+        scheduleDesktopScopeRefresh();
+        return;
+      }
       if (!isScopeFrozenRef.current) {
         isScopeFrozenRef.current = true;
         setIsScopeFrozen(true);
       }
       if (scopeIdleTimerRef.current) clearTimeout(scopeIdleTimerRef.current);
+      if (scopeRafRef.current) cancelAnimationFrame(scopeRafRef.current);
       scopeIdleTimerRef.current = setTimeout(() => {
         scopeIdleTimerRef.current = null;
         isScopeFrozenRef.current = false;
@@ -1317,7 +1408,7 @@ export default function App() {
     } else {
       refreshScopesOnceRef.current();
     }
-  }, [effectiveParams, simulateLogInput]);
+  }, [effectiveParams, simulateLogInput, scheduleDesktopScopeRefresh]);
 
   useEffect(() => {
     if (!isScopesCollapsed) {
@@ -1329,6 +1420,7 @@ export default function App() {
   useEffect(
     () => () => {
       if (scopeIdleTimerRef.current) clearTimeout(scopeIdleTimerRef.current);
+      if (scopeRafRef.current) cancelAnimationFrame(scopeRafRef.current);
       if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
       if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
       if (reloadedTimerRef.current) clearTimeout(reloadedTimerRef.current);
@@ -1411,14 +1503,16 @@ export default function App() {
       const next = { ...liveParamsRef.current, [key]: value };
       liveParamsRef.current = next;
       const eff = scaleParamsByStrength(next, liveStrengthRef.current);
+      liveEffectiveParamsRef.current = eff;
       glPreviewRef.current?.setParams?.(eff);
       if (isControlDraggingRef.current) {
         scheduleParamCommit();
+        scheduleDesktopScopeRefresh();
       } else {
         setGradingParams(next);
       }
     },
-    [scheduleParamCommit]
+    [scheduleParamCommit, scheduleDesktopScopeRefresh]
   );
 
   const handleMatchStrengthChange = useCallback(
@@ -1426,15 +1520,17 @@ export default function App() {
       const nextStrength = Math.round(val);
       liveStrengthRef.current = nextStrength;
       const eff = scaleParamsByStrength(liveParamsRef.current, nextStrength);
+      liveEffectiveParamsRef.current = eff;
       glPreviewRef.current?.setParams?.(eff);
       glPreviewRef.current?.setLutMix?.(nextStrength / 100);
       if (isControlDraggingRef.current) {
         scheduleParamCommit();
+        scheduleDesktopScopeRefresh();
       } else {
         setMatchStrength(nextStrength);
       }
     },
-    [scheduleParamCommit]
+    [scheduleParamCommit, scheduleDesktopScopeRefresh]
   );
 
   const handleCalibrationChange = useCallback((key, value) => {
@@ -1496,14 +1592,16 @@ export default function App() {
       };
       liveParamsRef.current = next;
       const eff = scaleParamsByStrength(next, liveStrengthRef.current);
+      liveEffectiveParamsRef.current = eff;
       glPreviewRef.current?.setParams?.(eff);
       if (isControlDraggingRef.current) {
         scheduleParamCommit();
+        scheduleDesktopScopeRefresh();
       } else {
         setGradingParams(next);
       }
     },
-    [scheduleParamCommit]
+    [scheduleParamCommit, scheduleDesktopScopeRefresh]
   );
 
   const handleWheelReset = useCallback(
@@ -3245,6 +3343,7 @@ export default function App() {
                     hasMedia={hasPreviewImage}
                     isDragging={isScopeFrozen}
                     isVideoPlaying={isVideoPlaying}
+                    isDesktopRealtime={isDesktopRealtime}
                     isCollapsed={isScopesCollapsed}
                     onToggleCollapse={handleToggleScopesCollapse}
                   />
