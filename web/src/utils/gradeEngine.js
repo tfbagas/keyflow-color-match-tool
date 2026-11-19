@@ -1,8 +1,8 @@
-// Single source of truth for the Color Match Engine v1 / v2 / v3 (Cinema Hybrid Pro)
+// Single source of truth for the Color Match Engine (Sirius 2.5 / Polaris 3.5 PRO / Altair 4.0 ULTRA)
 // grading equation (CPU side).
 // The GLSL twin lives in gradeShader.js and must stay 1:1 with gradeRGB().
 import { DEFAULT_PARAMS, PARAM_LIMITS } from "./paramSchema.js";
-import { oklabSoftGamutCompressRGB } from "./colorMatcher.js";
+import { oklabSoftGamutCompressRGB, filmicLinearShoulderRGB } from "./colorMatcher.js";
 import { applyLogProfileRGB, isLogProfileActive } from "./logProfiles.js";
 
 export { DEFAULT_PARAMS, PARAM_LIMITS };
@@ -107,6 +107,11 @@ export function sanitizeParams(params) {
   out.autoGradeMix = Number.isFinite(rawAutoMix)
     ? round6(clamp(rawAutoMix, 0.0, 1.5))
     : 0.0;
+  const rawFilmic =
+    typeof src.filmicShoulder === "number" ? src.filmicShoulder : Number(src.filmicShoulder);
+  out.filmicShoulder = Number.isFinite(rawFilmic)
+    ? round6(clamp(rawFilmic, 0.0, 1.0))
+    : 0.0;
   out.polyR = sanitizeArray(src.polyR, IDENTITY_POLY_R, -4.0, 4.0);
   out.polyG = sanitizeArray(src.polyG, IDENTITY_POLY_G, -4.0, 4.0);
   out.polyB = sanitizeArray(src.polyB, IDENTITY_POLY_B, -4.0, 4.0);
@@ -130,6 +135,7 @@ export function scaleParamsByStrength(params, strengthPct = 100) {
     ...san,
     gradeMix: san.gradeMix ?? 1.0,
     autoGradeMix: round6(clamp((san.autoGradeMix ?? 0.0) * f, 0.0, 1.5)),
+    filmicShoulder: san.filmicShoulder ?? 0.0,
   };
   for (const key of Object.keys(DEFAULT_PARAMS)) {
     if (key === "gradeMix") continue;
@@ -165,6 +171,7 @@ export function prepareGrade(params) {
     ],
     gain: [(p.gainR - 0.5) * 2.0, (p.gainG - 0.5) * 2.0, (p.gainB - 0.5) * 2.0],
     autoGradeMix: p.autoGradeMix,
+    filmicShoulder: p.filmicShoulder ?? 0.0,
     polyR: p.polyR,
     polyG: p.polyG,
     polyB: p.polyB,
@@ -246,9 +253,12 @@ export function applyHybridLayerRGB(G, baseR, baseG, baseB, out) {
   const b3 = [b2 * b, r2 * g, r2 * b, g2 * r];
   const b4 = [g2 * b, b2 * r, b2 * g, r * g * b];
 
-  let pr = clamp(evalPoly20(G.polyR, b0, b1, b2v, b3, b4), 0.0, 1.15);
-  let pg = clamp(evalPoly20(G.polyG, b0, b1, b2v, b3, b4), 0.0, 1.15);
-  let pb = clamp(evalPoly20(G.polyB, b0, b1, b2v, b3, b4), 0.0, 1.15);
+  const useFilmicLinear = (G.filmicShoulder ?? 0.0) > 0.5;
+  const polyMax = useFilmicLinear ? 1.35 : 1.15;
+
+  let pr = clamp(evalPoly20(G.polyR, b0, b1, b2v, b3, b4), 0.0, polyMax);
+  let pg = clamp(evalPoly20(G.polyG, b0, b1, b2v, b3, b4), 0.0, polyMax);
+  let pb = clamp(evalPoly20(G.polyB, b0, b1, b2v, b3, b4), 0.0, polyMax);
 
   // 6-sector Hue curves (Hue-vs-Hue, Hue-vs-Sat, Hue-vs-Luma) in opponent chroma space.
   const y0 = 0.2126 * pr + 0.7152 * pg + 0.0722 * pb;
@@ -281,7 +291,7 @@ export function applyHybridLayerRGB(G, baseR, baseG, baseB, out) {
   const satScale = clamp(1.0 + dSat, 0.25, 1.85);
   const nc1 = rc1 * satScale;
   const nc2 = rc2 * satScale;
-  const ny = clamp(y0 + dLum * 0.24, 0.0, 1.15);
+  const ny = clamp(y0 + dLum * 0.24, 0.0, polyMax);
   const ng = ny - (0.2126 * nc1 + 0.0722 * nc2) / 0.7152;
   pr = ny + nc1;
   pg = ng;
@@ -304,35 +314,49 @@ export function applyHybridLayerRGB(G, baseR, baseG, baseB, out) {
   pg *= density;
   pb *= density;
 
-  // Soft Rec.709 Gamut Clamp + Analytical AgX Filmic Highlight Roll-Off.
-  const y2 = clamp(0.2126 * pr + 0.7152 * pg + 0.0722 * pb, 0.0, 1.0);
-  const dr = pr - y2;
-  const dg = pg - y2;
-  const db = pb - y2;
-  const maxSpan = Math.max(Math.abs(dr), Math.abs(dg), Math.abs(db), 1e-4);
-  const softSpan = Math.tanh(maxSpan * 1.35) / 1.35;
-  const gScale = softSpan / maxSpan;
-  pr = Math.max(y2 + dr * gScale, 0.0);
-  pg = Math.max(y2 + dg * gScale, 0.0);
-  pb = Math.max(y2 + db * gScale, 0.0);
+  let or = 0.0;
+  let og = 0.0;
+  let ob = 0.0;
 
-  // Perceptual OKLab Soft Gamut Compression (smooth shoulder roll-off above C > 0.22)
-  const gamutOut = [0, 0, 0];
-  oklabSoftGamutCompressRGB(pr, pg, pb, gamutOut);
-  pr = gamutOut[0];
-  pg = gamutOut[1];
-  pb = gamutOut[2];
+  if (useFilmicLinear) {
+    // Altair 4.0 ULTRA: Scene-Linear Filmic Soft-Shoulder Roll-Off (> 0.80 linear)
+    // followed by Perceptual OKLab Soft Gamut Compression (C > 0.22).
+    const filmicOut = [0, 0, 0];
+    filmicLinearShoulderRGB(pr, pg, pb, filmicOut);
+    const gamutOut = [0, 0, 0];
+    oklabSoftGamutCompressRGB(filmicOut[0], filmicOut[1], filmicOut[2], gamutOut);
+    or = clamp(gamutOut[0], 0.0, 1.0);
+    og = clamp(gamutOut[1], 0.0, 1.0);
+    ob = clamp(gamutOut[2], 0.0, 1.0);
+  } else {
+    // Polaris 3.5 PRO: Soft Rec.709 Gamut Clamp + OKLab Gamut Compression + AgX Roll-Off.
+    const y2 = clamp(0.2126 * pr + 0.7152 * pg + 0.0722 * pb, 0.0, 1.0);
+    const dr = pr - y2;
+    const dg = pg - y2;
+    const db = pb - y2;
+    const maxSpan = Math.max(Math.abs(dr), Math.abs(dg), Math.abs(db), 1e-4);
+    const softSpan = Math.tanh(maxSpan * 1.35) / 1.35;
+    const gScale = softSpan / maxSpan;
+    pr = Math.max(y2 + dr * gScale, 0.0);
+    pg = Math.max(y2 + dg * gScale, 0.0);
+    pb = Math.max(y2 + db * gScale, 0.0);
 
-  // Analytical AgX inset -> sigmoid shoulder -> outset.
-  const ir = 0.856 * pr + 0.095 * pg + 0.049 * pb;
-  const ig = 0.070 * pr + 0.875 * pg + 0.055 * pb;
-  const ib = 0.048 * pr + 0.102 * pg + 0.850 * pb;
-  const ar = agxChannel(ir);
-  const ag = agxChannel(ig);
-  const ab = agxChannel(ib);
-  const or = clamp(1.182 * ar - 0.128 * ag - 0.054 * ab, 0.0, 1.0);
-  const og = clamp(-0.094 * ar + 1.158 * ag - 0.064 * ab, 0.0, 1.0);
-  const ob = clamp(-0.055 * ar - 0.125 * ag + 1.180 * ab, 0.0, 1.0);
+    const gamutOut = [0, 0, 0];
+    oklabSoftGamutCompressRGB(pr, pg, pb, gamutOut);
+    pr = gamutOut[0];
+    pg = gamutOut[1];
+    pb = gamutOut[2];
+
+    const ir = 0.856 * pr + 0.095 * pg + 0.049 * pb;
+    const ig = 0.070 * pr + 0.875 * pg + 0.055 * pb;
+    const ib = 0.048 * pr + 0.102 * pg + 0.850 * pb;
+    const ar = agxChannel(ir);
+    const ag = agxChannel(ig);
+    const ab = agxChannel(ib);
+    or = clamp(1.182 * ar - 0.128 * ag - 0.054 * ab, 0.0, 1.0);
+    og = clamp(-0.094 * ar + 1.158 * ag - 0.064 * ab, 0.0, 1.0);
+    ob = clamp(-0.055 * ar - 0.125 * ag + 1.180 * ab, 0.0, 1.0);
+  }
 
   const hybridDeltaR = (or - baseR) * autoMix;
   const hybridDeltaG = (og - baseG) * autoMix;

@@ -63,6 +63,7 @@ import {
   getEngine,
   getEngineCodename,
   listEngines,
+  resolveEngineId,
 } from "./utils/engineRegistry";
 import { scaleParamsByStrength } from "./utils/gradeEngine";
 import {
@@ -142,7 +143,7 @@ function withEngineSuffix(base, engineId) {
   const clean = String(base || "").trim() || "Custom Look";
   const codename = getEngineCodename(engineId);
   const suffix = codename ? `_${codename}` : "";
-  if (!suffix || /_(altair|vega|polaris|v[123])$/i.test(clean)) return clean;
+  if (!suffix || /_(altair|vega|sirius|polaris|v[1234])$/i.test(clean)) return clean;
   return `${clean}${suffix}`;
 }
 
@@ -155,6 +156,7 @@ function areSnapshotsEqual(a, b) {
     if (Math.abs((pa[k] ?? 0) - (pb[k] ?? 0)) > 1e-5) return false;
   }
   if (Math.abs((pa.autoGradeMix ?? 0) - (pb.autoGradeMix ?? 0)) > 1e-5) return false;
+  if (Math.abs((pa.filmicShoulder ?? 0) - (pb.filmicShoulder ?? 0)) > 1e-5) return false;
   return true;
 }
 
@@ -738,8 +740,10 @@ export default function App() {
   );
 
   const handleEngineChange = useCallback(
-    (nextEngineId) => {
-      if (!nextEngineId || nextEngineId === activeEngineIdRef.current) return;
+    (rawNextEngineId) => {
+      if (!rawNextEngineId) return;
+      const nextEngineId = resolveEngineId(rawNextEngineId);
+      if (nextEngineId === activeEngineIdRef.current) return;
 
       // Auto-backup previous grade to Slot B on engine switch if Slot B is empty.
       if (!slotSnapshotsRef.current.B?.isFilled && !isNeutralGrade) {
@@ -1652,9 +1656,12 @@ export default function App() {
       setSlotSnapshots(updated);
       setGradingParams({ ...(loaded.params || DEFAULT_PARAMS) });
       setMatchStrength(loaded.matchStrength ?? 100);
-      if (loaded.engineId && loaded.engineId !== activeEngineId) {
-        activeEngineIdRef.current = loaded.engineId;
-        setActiveEngineId(loaded.engineId);
+      if (loaded.engineId) {
+        const resolvedLoadedEngine = resolveEngineId(loaded.engineId);
+        if (resolvedLoadedEngine !== activeEngineId) {
+          activeEngineIdRef.current = resolvedLoadedEngine;
+          setActiveEngineId(resolvedLoadedEngine);
+        }
       }
       setActiveSlot(nextSlot);
       setStatusText(`Slot ${nextSlot}`);
@@ -1873,11 +1880,11 @@ export default function App() {
         e.preventDefault();
         setIsShortcutsOpen((v) => !v);
       } else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "1") {
-        handleEngineChange("v1");
-      } else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "2") {
         handleEngineChange("v2");
-      } else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "3") {
+      } else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "2") {
         handleEngineChange("v3");
+      } else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "3") {
+        handleEngineChange("altair");
       } else if (e.code === "Space" && videoEl) {
         e.preventDefault();
         if (videoEl.paused) {
@@ -2163,8 +2170,8 @@ export default function App() {
     (look) => {
       if (!look || !look.params) return;
       setActiveLut(null);
-      if (look.engineId && ["v1", "v2", "v3"].includes(look.engineId)) {
-        setActiveEngineId(look.engineId);
+      if (look.engineId) {
+        setActiveEngineId(resolveEngineId(look.engineId));
       }
       if (look.logProfile) {
         setSimulateLogInput(resolveLogProfileId(look.logProfile));
@@ -2206,7 +2213,7 @@ export default function App() {
   const handleRestoreSession = useCallback(() => {
     if (!restorableSession) return;
     setActiveLut(null);
-    if (restorableSession.engineId) setActiveEngineId(restorableSession.engineId);
+    if (restorableSession.engineId) setActiveEngineId(resolveEngineId(restorableSession.engineId));
     if (restorableSession.logProfile) setSimulateLogInput(resolveLogProfileId(restorableSession.logProfile));
     if (typeof restorableSession.matchStrength === "number") {
       setMatchStrength(restorableSession.matchStrength);
@@ -3065,7 +3072,7 @@ export default function App() {
                   {engineOptions.map((eng) => {
                     const isActive = activeEngineId === eng.id;
                     const EngIcon =
-                      eng.id === "v1" ? Zap : eng.id === "v2" ? Scale : Sparkles;
+                      eng.id === "v2" ? Scale : eng.id === "v3" ? Sparkles : Zap;
                     return (
                       <button
                         key={eng.id}
@@ -3083,14 +3090,20 @@ export default function App() {
                         <div className="w-full flex items-center justify-between gap-1 mb-0.5">
                           <EngIcon
                             className={`w-3.5 h-3.5 shrink-0 ${
-                              isActive ? "text-[#6EE7B7]" : "text-[#9CA3AF]"
+                              isActive
+                                ? "text-[#6EE7B7]"
+                                : eng.isFlagship
+                                ? "text-[#6EE7B7]/75"
+                                : "text-[#9CA3AF]"
                             }`}
                           />
                           {eng.badge && (
                             <span
-                              className={`text-[8px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.2 rounded-full ${
+                              className={`text-[8px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.2 rounded-full whitespace-nowrap shrink-0 ${
                                 isActive
                                   ? "liquid-droplet-badge bg-[#6EE7B7]/18 text-[#6EE7B7] border border-[#6EE7B7]/35"
+                                  : eng.isFlagship
+                                  ? "bg-[#6EE7B7]/10 text-[#6EE7B7]/90 border border-[#6EE7B7]/25"
                                   : "bg-white/[0.06] text-[#E2E4E9] border border-white/[0.10]"
                               }`}
                             >

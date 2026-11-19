@@ -13,7 +13,11 @@ import {
   Package,
 } from "lucide-react";
 import { BUILT_IN_LOOKS } from "../utils/builtInLooks";
-import { getEngineCodename } from "../utils/engineRegistry";
+import {
+  DEFAULT_ENGINE_ID,
+  formatEngineLabel,
+  resolveEngineId,
+} from "../utils/engineRegistry";
 import { getLogProfile } from "../utils/logProfiles";
 import { generateKfplug, downloadBlob } from "../utils/kfplugPackager";
 import { generateLutFile } from "../utils/lutExporter";
@@ -44,11 +48,7 @@ function persistSavedLooks(looks) {
 }
 
 function formatEngineTag(engineId) {
-  const c = getEngineCodename(engineId);
-  if (engineId === "v1") return "Vega 1.0";
-  if (engineId === "v2") return "Sirius 2.5";
-  if (c === "polaris" || engineId === "v3") return "Polaris 3.5 Pro";
-  return "Polaris 3.5 Pro";
+  return formatEngineLabel(engineId);
 }
 
 export default function LooksDrawer({
@@ -101,7 +101,7 @@ export default function LooksDrawer({
       id: `look_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       name,
       timestamp: Date.now(),
-      engineId: currentGrade.engineId || "v3",
+      engineId: resolveEngineId(currentGrade.engineId || DEFAULT_ENGINE_ID),
       logProfile: currentGrade.logProfile || "rec709",
       matchStrength: currentGrade.matchStrength ?? 100,
       params: { ...currentGrade.params },

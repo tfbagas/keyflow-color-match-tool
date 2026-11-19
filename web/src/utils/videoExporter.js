@@ -5,7 +5,7 @@ import {
   Endianness as MP4BoxEndianness,
 } from "mp4box";
 import { scaleParamsByStrength, sanitizeParams } from "./gradeEngine";
-import { getEngineCodename } from "./engineRegistry";
+import { DEFAULT_ENGINE_ID, getEngineCodename } from "./engineRegistry";
 import { createWebGLFrameGrader } from "./imageExporter";
 
 const H264_CODEC_CANDIDATES = [
@@ -871,7 +871,7 @@ export async function exportGradedVideo({
   params,
   activeLut = null,
   lutMix = 1.0,
-  engine = "v3",
+  engine = DEFAULT_ENGINE_ID,
   matchStrength = 100,
   logProfile = "rec709",
   layout = "graded",
@@ -1182,7 +1182,7 @@ export async function exportGradedVideo({
       }
     }
 
-    const codename = getEngineCodename(engine) || "polaris";
+    const codename = getEngineCodename(engine) || "altair";
     const cleanBase =
       String(presetName || "Target")
         .trim()

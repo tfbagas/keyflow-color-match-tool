@@ -1,9 +1,12 @@
-// Polaris (v3 PRO) Perceptual OKLab Soft Gamut Compression &
+// Altair 4.0 ULTRA & Polaris 3.5 PRO Perceptual OKLab Soft Gamut Compression,
+// Scene-Linear Filmic Soft-Shoulder Roll-Off (> 0.80 linear luminance), and
 // Pre-Match Target Auto-Normalization (Exposure + White Balance Neutralization).
 
 export const OKLAB_CHROMA_THRESHOLD = 0.22;
 export const OKLAB_CHROMA_ROOM = 0.09;
 export const OKLAB_CHROMA_MAX = OKLAB_CHROMA_THRESHOLD + OKLAB_CHROMA_ROOM; // 0.31
+export const FILMIC_SHOULDER_KNEE = 0.80;
+export const FILMIC_SHOULDER_ROOM = 1.0 - FILMIC_SHOULDER_KNEE; // 0.20
 export const REC709_MID_GRAY = 0.44;
 
 function clamp(val, min, max) {
@@ -25,9 +28,51 @@ export function srgbToLinearChannel(c) {
   return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
 }
 
+export function srgbToLinearExtended(c) {
+  const v = Math.max(0.0, Number.isFinite(c) ? c : 0.0);
+  return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+}
+
 export function linearToSrgbChannel(c) {
   const v = clamp(c, 0.0, 1.0);
   return v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1.0 / 2.4) - 0.055;
+}
+
+function filmicRollLinearChannel(v) {
+  const x = Math.max(0.0, Number.isFinite(v) ? v : 0.0);
+  if (x <= FILMIC_SHOULDER_KNEE) return x;
+  const over = x - FILMIC_SHOULDER_KNEE;
+  return FILMIC_SHOULDER_KNEE + FILMIC_SHOULDER_ROOM * fastTanh(over / FILMIC_SHOULDER_ROOM);
+}
+
+// 1:1 CPU twin of GLSL kfFilmicLinearShoulder(vec3 rgb) in gradeShader.js.
+// Applies a smooth C1 scene-linear highlight soft-shoulder above 0.80 linear
+// luminance so bright skies, neon lights, and anime glows compress cleanly.
+export function filmicLinearShoulderRGB(r, g, b, out) {
+  let lr = srgbToLinearExtended(r);
+  let lg = srgbToLinearExtended(g);
+  let lb = srgbToLinearExtended(b);
+
+  const linY = 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+  if (linY > FILMIC_SHOULDER_KNEE) {
+    const rolledY = filmicRollLinearChannel(linY);
+    const scaleY = rolledY / Math.max(linY, 1e-5);
+    lr *= scaleY;
+    lg *= scaleY;
+    lb *= scaleY;
+    const desatT = clamp((linY - FILMIC_SHOULDER_KNEE) / 0.65, 0.0, 1.0) * 0.28;
+    lr = lr + (rolledY - lr) * desatT;
+    lg = lg + (rolledY - lg) * desatT;
+    lb = lb + (rolledY - lb) * desatT;
+  }
+
+  lr = filmicRollLinearChannel(lr);
+  lg = filmicRollLinearChannel(lg);
+  lb = filmicRollLinearChannel(lb);
+
+  out[0] = linearToSrgbChannel(lr);
+  out[1] = linearToSrgbChannel(lg);
+  out[2] = linearToSrgbChannel(lb);
 }
 
 export function rgbLinearToOklab(lr, lg, lb, out) {
@@ -162,6 +207,51 @@ vec3 kfOklabGamutCompress(vec3 rgb) {
 }
 `;
 
+// Pure GLSL ES 1.00 Scene-Linear Filmic Soft-Shoulder Roll-Off (> 0.80 linear luminance).
+// 1:1 GPU twin of filmicLinearShoulderRGB() for WebGL preview and .kfplug shader exports.
+export const GLSL_FILMIC_LINEAR_SHOULDER_FUNCTIONS = `float kfSrgbToLinExt(float c) {
+    float v = max(c, 0.0);
+    if (v <= 0.04045) {
+        return v / 12.92;
+    }
+    return pow(max((v + 0.055) / 1.055, 1e-5), 2.4);
+}
+
+float kfFilmicRollLin(float v) {
+    float x = max(v, 0.0);
+    if (x <= 0.80) {
+        return x;
+    }
+    float over = x - 0.80;
+    return 0.80 + 0.20 * kfTanh(over / 0.20);
+}
+
+vec3 kfFilmicLinearShoulder(vec3 rgb) {
+    float lr = kfSrgbToLinExt(rgb.r);
+    float lg = kfSrgbToLinExt(rgb.g);
+    float lb = kfSrgbToLinExt(rgb.b);
+
+    float linY = 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+    if (linY > 0.80) {
+        float rolledY = kfFilmicRollLin(linY);
+        float scaleY = rolledY / max(linY, 1e-5);
+        lr *= scaleY;
+        lg *= scaleY;
+        lb *= scaleY;
+        float desatT = clamp((linY - 0.80) / 0.65, 0.0, 1.0) * 0.28;
+        lr = mix(lr, rolledY, desatT);
+        lg = mix(lg, rolledY, desatT);
+        lb = mix(lb, rolledY, desatT);
+    }
+
+    lr = kfFilmicRollLin(lr);
+    lg = kfFilmicRollLin(lg);
+    lb = kfFilmicRollLin(lb);
+
+    return vec3(kfLinToSrgb(lr), kfLinToSrgb(lg), kfLinToSrgb(lb));
+}
+`;
+
 // ---------------------------------------------------------------------------
 // Pre-Match Target Auto-Normalization (Exposure + White Balance Neutralization)
 // ---------------------------------------------------------------------------
@@ -274,7 +364,7 @@ export function computeTargetAutoNormalization(rgba, numPixels = 0) {
   };
 }
 
-// Produces a pre-normalized copy of the TARGET RGBA buffer so Altair, Vega, or Polaris
+// Produces a pre-normalized copy of the TARGET RGBA buffer so Sirius, Polaris, or Altair
 // runs color transfer on an exposure-centered, white-balance neutralized target.
 export function autoNormalizeTargetPixels(rgba, numPixels = 0) {
   const totalPixels = numPixels || (rgba ? Math.floor(rgba.length / 4) : 0);

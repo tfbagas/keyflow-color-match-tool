@@ -121,7 +121,7 @@ export default function ComparisonSlider({
   nativeWidth = 0,
   nativeHeight = 0,
   targetBaseName = "Target",
-  engineId = "v3",
+  engineId = "altair",
   simulateLogInput = false,
   onToggleSimulateLogInput,
   isTabActive = true,

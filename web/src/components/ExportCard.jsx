@@ -11,7 +11,7 @@ import {
   AlertTriangle,
   Share2,
 } from "lucide-react";
-import { getEngineCodename } from "../utils/engineRegistry";
+import { DEFAULT_ENGINE_ID, getEngineCodename } from "../utils/engineRegistry";
 import { useLanguage } from "../i18n/LanguageContext";
 
 const ExportCard = memo(function ExportCard({
@@ -31,7 +31,7 @@ const ExportCard = memo(function ExportCard({
   onExportCube,
   onExportLut,
   onExportZipPack,
-  engineId = "v3",
+  engineId = DEFAULT_ENGINE_ID,
   fallbackName = "Custom Look",
   isNeutralGrade = false,
 }) {
@@ -47,7 +47,7 @@ const ExportCard = memo(function ExportCard({
   const safeBase = rawBase.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "Custom_Look";
   const codename = getEngineCodename(engineId);
   const engineSuffix = codename ? `_${codename}` : "";
-  const previewFilename = /_(altair|vega|polaris|v[123])$/i.test(safeBase)
+  const previewFilename = /_(altair|vega|sirius|polaris|v[1234])$/i.test(safeBase)
     ? `${safeBase}.kfplug`
     : `${safeBase}${engineSuffix}.kfplug`;
 

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Download, Check, X, Film, Image as ImageIcon, AlertTriangle, QrCode, Cloud, Cpu } from "lucide-react";
-import { getEngineCodename } from "../utils/engineRegistry";
+import { DEFAULT_ENGINE_ID, getEngineCodename } from "../utils/engineRegistry";
 import { encodeGradeToHash } from "../utils/shareCodec";
 import { fetchCloudQuota, isCloudRenderConfigured } from "../utils/cloudVideoExporter";
 import { useLanguage } from "../i18n/LanguageContext";
@@ -34,7 +34,7 @@ export default function SaveImagePopover({
   nativeWidth = 0,
   nativeHeight = 0,
   targetBaseName = "Target",
-  engineId = "v3",
+  engineId = DEFAULT_ENGINE_ID,
   splitPos = 50,
   params = null,
   logProfile = "rec709",
@@ -125,7 +125,7 @@ export default function SaveImagePopover({
       .replace(/^-+|-+$/g, "") || "Target";
   const codename = getEngineCodename(engineId);
   const engineSuffix = codename ? `_${codename}` : "";
-  const baseWithEngine = /_(altair|vega|polaris|v[123])$/i.test(cleanExportBase)
+  const baseWithEngine = /_(altair|vega|sirius|polaris|v[1234])$/i.test(cleanExportBase)
     ? cleanExportBase
     : `${cleanExportBase}${engineSuffix}`;
 

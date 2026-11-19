@@ -2,13 +2,12 @@ import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, Copy, Check, Share2, QrCode } from "lucide-react";
 import { encodeGradeToHash, generateQrMatrix } from "../utils/shareCodec";
+import { formatEngineLabel } from "../utils/engineRegistry";
 import { getLogProfile } from "../utils/logProfiles";
 import { useLanguage } from "../i18n/LanguageContext";
 
 function formatEngineName(engineId) {
-  if (engineId === "v1") return "Vega 1.0";
-  if (engineId === "v2") return "Sirius 2.5";
-  return "Polaris 3.5 Pro";
+  return formatEngineLabel(engineId);
 }
 
 export default function ShareModal({

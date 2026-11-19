@@ -127,14 +127,14 @@ export const TRANSLATIONS = {
       step3: "3. Match & Export",
       tipReset: "Tips: Double-click slider to reset",
       tipFine: "Shift+Drag: 0.01 fine",
-      tipEngines: "1 / 2 / 3: Vega 1.0 / Sirius 2.5 / Polaris 3.5 Pro",
+      tipEngines: "1 / 2 / 3: Sirius 2.5 / Polaris 3.5 PRO / Altair 4.0 ULTRA",
       tipUndo: "Ctrl+Z: Undo",
     },
     engineCard: {
       title: "ENGINE & MATCH STRENGTH",
       compareAria: "Compare Color Match Engines",
-      compareTitle: "Compare Vega 1.0, Sirius 2.5, and Polaris 3.5 Pro side-by-side",
-      compareHeader: "Engine Comparison (Vega 1.0 / Sirius 2.5 / Polaris 3.5 Pro)",
+      compareTitle: "Compare Sirius 2.5, Polaris 3.5 PRO, and Altair 4.0 ULTRA side-by-side",
+      compareHeader: "Engine Comparison (Sirius 2.5 / Polaris 3.5 PRO / Altair 4.0 ULTRA)",
       selectorAria: "Color Match Engine Selector",
       bestForPrefix: "Best for:",
       shortcutPrefix: "Shortcut",
@@ -145,13 +145,6 @@ export const TRANSLATIONS = {
         "Pre-normalize Target exposure and white balance toward Rec.709 neutral before running color transfer",
     },
     engines: {
-      v1: {
-        subtitle: "Fast RGB",
-        bestFor: "Fast shot matching & simple color tweaks",
-        summary:
-          "Quickly matches overall brightness, contrast, and color tint. Ideal when both clips were shot in similar lighting.",
-        pipelineBadges: ["Fast Speed", "Punchy Contrast", "Simple Match"],
-      },
       v2: {
         subtitle: "Balanced",
         bestFor: "Clean everyday grades & natural lighting",
@@ -165,6 +158,19 @@ export const TRANSLATIONS = {
         summary:
           "Smartly transfers rich film colors while protecting skin tones, deep blacks, and bright skies from color bleed or muddiness.",
         pipelineBadges: ["Skin-Safe", "Deep Blacks", "Film Color", "Gamut Safe"],
+      },
+      altair: {
+        subtitle: "Scene-Linear Pro",
+        bestFor: "Flagship color accuracy, film/anime looks & skin-safe grading",
+        summary:
+          "Flagship scene-linear solver with 3D OKLab distribution transfer, multi-zone tonal curve fitting, skin-tone lock, and filmic highlight roll-off — 100% deterministic for Web, .kfplug, and After Effects.",
+        pipelineBadges: [
+          "Scene-Linear",
+          "3D OKLab Transfer",
+          "Skin-Safe",
+          "Filmic Roll-Off",
+          ".kfplug Ready",
+        ],
       },
     },
     logProfiles: {
@@ -418,7 +424,7 @@ export const TRANSLATIONS = {
     },
     commandPalette: {
       ariaLabel: "Spotlight Command Bar",
-      searchPlaceholder: "Search engines (Vega/Sirius/Polaris), Log profiles, Looks, or exports...",
+      searchPlaceholder: "Search engines (Sirius/Polaris/Altair), Log profiles, Looks, or exports...",
       closeAria: "Close Command Bar",
       noMatch: 'No matching studio commands for "{query}"',
       footerNavigate: "Up/Down to navigate - Enter to run",
@@ -536,8 +542,8 @@ export const TRANSLATIONS = {
           text: "Instant EN | ID studio language switcher in the top header and Settings with natural Indonesian editing terminology and localized 2400x1350 release poster.",
         },
         {
-          bold: "Polaris 3.5 Pro Perceptual Optical Engine + Auto-Normalize:",
-          text: "3D polynomial and OKLab color matching with optional target exposure and white-balance normalization.",
+          bold: "Altair 4.0 ULTRA Scene-Linear Pro & Polaris 3.5 PRO + Auto-Normalize:",
+          text: "Scene-linear 3D OKLab covariance transfer, 5-zone tonal curve fitting, skin-tone lock, and filmic highlight roll-off with optional target normalization.",
         },
         {
           bold: "Camera Log Profiles + Smart Video Sampler:",
@@ -588,7 +594,7 @@ export const TRANSLATIONS = {
       shortcuts: [
         { keys: "\\", desc: "Hold to preview original ungraded source" },
         { keys: "Space", desc: "Play or pause video preview" },
-        { keys: "1 / 2 / 3", desc: "Switch Vega 1.0, Sirius 2.5, or Polaris 3.5 Pro engine" },
+        { keys: "1 / 2 / 3", desc: "Switch Sirius 2.5, Polaris 3.5 PRO, or Altair 4.0 ULTRA engine" },
         { keys: "Ctrl + K", desc: "Open Spotlight Command Bar" },
         { keys: "Ctrl + Z", desc: "Undo last grading parameter change" },
         { keys: "Ctrl + Shift + Z", desc: "Redo grading parameter change" },
@@ -740,14 +746,14 @@ export const TRANSLATIONS = {
       step3: "3. Match & Ekspor",
       tipReset: "Tips: Klik 2x slider untuk reset",
       tipFine: "Shift+Geser: Presisi 0.01",
-      tipEngines: "1 / 2 / 3: Vega 1.0 / Sirius 2.5 / Polaris 3.5 Pro",
+      tipEngines: "1 / 2 / 3: Sirius 2.5 / Polaris 3.5 PRO / Altair 4.0 ULTRA",
       tipUndo: "Ctrl+Z: Undo",
     },
     engineCard: {
       title: "ENGINE & KEKUATAN MATCH",
       compareAria: "Bandingkan Engine Color Match",
-      compareTitle: "Bandingkan Vega 1.0, Sirius 2.5, dan Polaris 3.5 Pro berdampingan",
-      compareHeader: "Perbandingan Engine (Vega 1.0 / Sirius 2.5 / Polaris 3.5 Pro)",
+      compareTitle: "Bandingkan Sirius 2.5, Polaris 3.5 PRO, dan Altair 4.0 ULTRA berdampingan",
+      compareHeader: "Perbandingan Engine (Sirius 2.5 / Polaris 3.5 PRO / Altair 4.0 ULTRA)",
       selectorAria: "Pemilih Engine Color Match",
       bestForPrefix: "Cocok untuk:",
       shortcutPrefix: "Pintasan",
@@ -758,13 +764,6 @@ export const TRANSLATIONS = {
         "Normalisasi awal exposure dan white balance Target ke netral Rec.709 sebelum transfer warna",
     },
     engines: {
-      v1: {
-        subtitle: "Fast RGB",
-        bestFor: "Matching cepat antar shot & penyesuaian warna simpel",
-        summary:
-          "Menyamakan kecerahan, kontras, dan nuansa warna secara instan. Pas saat kedua klip direkam di kondisi cahaya serupa.",
-        pipelineBadges: ["Proses Cepat", "Kontras Tegas", "Match Simpel"],
-      },
       v2: {
         subtitle: "Balanced",
         bestFor: "Grading harian yang bersih & pencahayaan natural",
@@ -778,6 +777,19 @@ export const TRANSLATIONS = {
         summary:
           "Mentransfer karakter warna film secara kaya sambil menjaga warna kulit, area hitam pekat, dan langit terang tetap bersih tanpa bocor warna.",
         pipelineBadges: ["Aman di Kulit", "Hitam Pekat", "Warna Film", "Gamut Aman"],
+      },
+      altair: {
+        subtitle: "Scene-Linear Pro",
+        bestFor: "Akurasi warna flagship, look film/anime & grading aman di kulit",
+        summary:
+          "Solver scene-linear flagship dengan transfer distribusi 3D OKLab, kurva tonal multi-zona, pengunci warna kulit, dan filmic highlight roll-off — 100% deterministik untuk Web, .kfplug, dan After Effects.",
+        pipelineBadges: [
+          "Scene-Linear",
+          "3D OKLab Transfer",
+          "Skin-Safe",
+          "Filmic Roll-Off",
+          ".kfplug Ready",
+        ],
       },
     },
     logProfiles: {
@@ -1031,7 +1043,7 @@ export const TRANSLATIONS = {
     },
     commandPalette: {
       ariaLabel: "Spotlight Command Bar",
-      searchPlaceholder: "Cari engine (Vega/Sirius/Polaris), profil Log, Looks, atau menu ekspor...",
+      searchPlaceholder: "Cari engine (Sirius/Polaris/Altair), profil Log, Looks, atau menu ekspor...",
       closeAria: "Tutup Command Bar",
       noMatch: 'Tidak ada perintah studio untuk "{query}"',
       footerNavigate: "Atas/Bawah untuk pilih - Enter untuk jalankan",
@@ -1149,8 +1161,8 @@ export const TRANSLATIONS = {
           text: "Tombol ganti bahasa instan EN | ID di header atas dan Pengaturan dengan istilah editing Bahasa Indonesia yang natural serta poster rilis 2400x1350 dua bahasa.",
         },
         {
-          bold: "Polaris 3.5 Pro Perceptual Optical Engine + Auto-Normalize:",
-          text: "Color matching polinomial 3D dan OKLab dengan opsi normalisasi otomatis exposure serta white balance target.",
+          bold: "Altair 4.0 ULTRA Scene-Linear Pro & Polaris 3.5 PRO + Auto-Normalize:",
+          text: "Transfer kovarians 3D OKLab scene-linear, kurva tonal 5-zona, pengunci warna kulit, dan filmic highlight roll-off dengan opsi normalisasi otomatis target.",
         },
         {
           bold: "Profil Camera Log + Smart Video Sampler:",
@@ -1201,7 +1213,7 @@ export const TRANSLATIONS = {
       shortcuts: [
         { keys: "\\", desc: "Tahan untuk mengintip gambar asli sebelum di-grade" },
         { keys: "Space", desc: "Putar atau jeda pratinjau video" },
-        { keys: "1 / 2 / 3", desc: "Ganti engine Vega 1.0, Sirius 2.5, atau Polaris 3.5 Pro" },
+        { keys: "1 / 2 / 3", desc: "Ganti engine Sirius 2.5, Polaris 3.5 PRO, atau Altair 4.0 ULTRA" },
         { keys: "Ctrl + K", desc: "Buka Spotlight Command Bar" },
         { keys: "Ctrl + Z", desc: "Undo perubahan parameter grading terakhir" },
         { keys: "Ctrl + Shift + Z", desc: "Redo perubahan parameter grading" },

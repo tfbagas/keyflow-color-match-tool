@@ -1,5 +1,5 @@
 import { generateLutText, LUT_SIZE } from "./lutExporter";
-import { getEngineCodename } from "./engineRegistry";
+import { DEFAULT_ENGINE_ID, getEngineCodename } from "./engineRegistry";
 import { scaleParamsByStrength } from "./gradeEngine";
 
 const CLOUD_CLIENT_ID_KEY = "kf_cloud_client_id";
@@ -493,7 +493,7 @@ export async function exportVideoInCloud({
   params,
   activeLut = null,
   lutMix = 1.0,
-  engine = "v3",
+  engine = DEFAULT_ENGINE_ID,
   matchStrength = 100,
   logProfile = "rec709",
   presetName = "Target",

@@ -3,7 +3,10 @@
 // Pure GLSL ES 1.00: no sampler3D, no dynamic loops, no ES 3.00 syntax.
 // Every division / pow() is wrapped with max(..., 1e-5) and results clamped.
 import { UNIFORM_MAP } from "./paramSchema.js";
-import { GLSL_OKLAB_GAMUT_COMPRESS_FUNCTIONS } from "./colorMatcher.js";
+import {
+  GLSL_OKLAB_GAMUT_COMPRESS_FUNCTIONS,
+  GLSL_FILMIC_LINEAR_SHOULDER_FUNCTIONS,
+} from "./colorMatcher.js";
 import { GLSL_LOG_PROFILE_FUNCTIONS } from "./logProfiles.js";
 
 export { UNIFORM_MAP };
@@ -17,6 +20,7 @@ precision mediump float;
 
 export const GRADE_UNIFORMS = `uniform float uGradeMix;
 uniform float uAutoGradeMix;
+uniform float uFilmicShoulder;
 uniform float uExposure;
 uniform float uContrast;
 uniform float uPivot;
@@ -76,6 +80,7 @@ float kfAgxChannel(float x) {
 }
 
 ${GLSL_OKLAB_GAMUT_COMPRESS_FUNCTIONS}
+${GLSL_FILMIC_LINEAR_SHOULDER_FUNCTIONS}
 
 vec3 kfHybridLayer(vec3 baseColor) {
     float autoMix = clamp(uAutoGradeMix, 0.0, 1.5);
@@ -99,10 +104,11 @@ vec3 kfHybridLayer(vec3 baseColor) {
     vec4 b3 = vec4(b2 * b, r2 * g, r2 * b, g2 * r);
     vec4 b4 = vec4(g2 * b, b2 * r, b2 * g, r * g * b);
 
+    float polyMax = uFilmicShoulder > 0.5 ? 1.35 : 1.15;
     float pr = dot(uPolyR[0], b0) + dot(uPolyR[1], b1) + dot(uPolyR[2], b2v) + dot(uPolyR[3], b3) + dot(uPolyR[4], b4);
     float pg = dot(uPolyG[0], b0) + dot(uPolyG[1], b1) + dot(uPolyG[2], b2v) + dot(uPolyG[3], b3) + dot(uPolyG[4], b4);
     float pb = dot(uPolyB[0], b0) + dot(uPolyB[1], b1) + dot(uPolyB[2], b2v) + dot(uPolyB[3], b3) + dot(uPolyB[4], b4);
-    vec3 p = clamp(vec3(pr, pg, pb), 0.0, 1.15);
+    vec3 p = clamp(vec3(pr, pg, pb), 0.0, polyMax);
 
     float y0 = dot(p, vec3(0.2126, 0.7152, 0.0722));
     float c1 = p.r - y0;
@@ -132,7 +138,7 @@ vec3 kfHybridLayer(vec3 baseColor) {
     float satScale = clamp(1.0 + dSat, 0.25, 1.85);
     float nc1 = rc1 * satScale;
     float nc2 = rc2 * satScale;
-    float ny = clamp(y0 + dLum * 0.24, 0.0, 1.15);
+    float ny = clamp(y0 + dLum * 0.24, 0.0, polyMax);
     float ng = ny - (0.2126 * nc1 + 0.0722 * nc2) / 0.7152;
     p = vec3(ny + nc1, ng, ny + nc2);
 
@@ -147,26 +153,32 @@ vec3 kfHybridLayer(vec3 baseColor) {
     float density = 1.0 - satEst * midMask * 0.065;
     p *= density;
 
-    float y2 = clamp(dot(p, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
-    vec3 d = p - vec3(y2);
-    float maxSpan = max(abs(d.r), max(abs(d.g), max(abs(d.b), 1e-4)));
-    float softSpan = kfTanh(maxSpan * 1.35) / 1.35;
-    p = max(vec3(y2) + d * (softSpan / maxSpan), vec3(0.0));
-    p = kfOklabGamutCompress(p);
+    vec3 outLayer;
+    if (uFilmicShoulder > 0.5) {
+        vec3 filmic = kfFilmicLinearShoulder(p);
+        outLayer = clamp(kfOklabGamutCompress(filmic), 0.0, 1.0);
+    } else {
+        float y2 = clamp(dot(p, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
+        vec3 d = p - vec3(y2);
+        float maxSpan = max(abs(d.r), max(abs(d.g), max(abs(d.b), 1e-4)));
+        float softSpan = kfTanh(maxSpan * 1.35) / 1.35;
+        p = max(vec3(y2) + d * (softSpan / maxSpan), vec3(0.0));
+        p = kfOklabGamutCompress(p);
 
-    float ir = 0.856 * p.r + 0.095 * p.g + 0.049 * p.b;
-    float ig = 0.070 * p.r + 0.875 * p.g + 0.055 * p.b;
-    float ib = 0.048 * p.r + 0.102 * p.g + 0.850 * p.b;
-    float ar = kfAgxChannel(ir);
-    float ag = kfAgxChannel(ig);
-    float ab = kfAgxChannel(ib);
-    vec3 outAgx = clamp(vec3(
-        1.182 * ar - 0.128 * ag - 0.054 * ab,
-        -0.094 * ar + 1.158 * ag - 0.064 * ab,
-        -0.055 * ar - 0.125 * ag + 1.180 * ab
-    ), 0.0, 1.0);
+        float ir = 0.856 * p.r + 0.095 * p.g + 0.049 * p.b;
+        float ig = 0.070 * p.r + 0.875 * p.g + 0.055 * p.b;
+        float ib = 0.048 * p.r + 0.102 * p.g + 0.850 * p.b;
+        float ar = kfAgxChannel(ir);
+        float ag = kfAgxChannel(ig);
+        float ab = kfAgxChannel(ib);
+        outLayer = clamp(vec3(
+            1.182 * ar - 0.128 * ag - 0.054 * ab,
+            -0.094 * ar + 1.158 * ag - 0.064 * ab,
+            -0.055 * ar - 0.125 * ag + 1.180 * ab
+        ), 0.0, 1.0);
+    }
 
-    vec3 hybridDelta = (outAgx - baseColor) * autoMix;
+    vec3 hybridDelta = (outLayer - baseColor) * autoMix;
     return clamp(baseColor + shadowMask * hybridDelta, 0.0, 1.0);
 }
 
@@ -442,6 +454,7 @@ void main() {
 export function getHybridUniformLocations(gl, program) {
   return {
     uAutoGradeMix: gl.getUniformLocation(program, "uAutoGradeMix"),
+    uFilmicShoulder: gl.getUniformLocation(program, "uFilmicShoulder"),
     uPolyR: gl.getUniformLocation(program, "uPolyR[0]"),
     uPolyG: gl.getUniformLocation(program, "uPolyG[0]"),
     uPolyB: gl.getUniformLocation(program, "uPolyB[0]"),
@@ -454,11 +467,14 @@ export function getHybridUniformLocations(gl, program) {
   };
 }
 
-// Uploads packed vec4 hybrid uniforms to WebGL (identity when v1/v2 is active).
+// Uploads packed vec4 hybrid uniforms to WebGL (identity when Sirius v2 is active).
 export function bindHybridUniforms(gl, hybridLoc, safeParams) {
   if (!hybridLoc) return;
   if (hybridLoc.uAutoGradeMix !== null) {
     gl.uniform1f(hybridLoc.uAutoGradeMix, safeParams.autoGradeMix ?? 0.0);
+  }
+  if (hybridLoc.uFilmicShoulder !== null) {
+    gl.uniform1f(hybridLoc.uFilmicShoulder, safeParams.filmicShoulder ?? 0.0);
   }
   if (hybridLoc.uPolyR !== null) {
     gl.uniform4fv(hybridLoc.uPolyR, new Float32Array(safeParams.polyR));

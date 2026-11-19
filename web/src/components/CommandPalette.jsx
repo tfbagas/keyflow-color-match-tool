@@ -84,7 +84,7 @@ export default function CommandPalette({
       action: () => setLang(lang === "id" ? "en" : "id"),
     });
 
-    // 1. Color Match Engines (Altair, Vega, Polaris)
+    // 1. Color Match Engines (Sirius 2.5, Polaris 3.5 PRO, Altair 4.0 ULTRA)
     engines.forEach((eng) => {
       const sub = t(`engines.${eng.id}.subtitle`) || eng.subtitle;
       const best = t(`engines.${eng.id}.bestFor`) || eng.bestFor;
@@ -215,7 +215,7 @@ export default function CommandPalette({
         category: t("commandPalette.catSavedLooks"),
         title: t("commandPalette.applySavedLookTitle", { name: look.name }),
         subtitle: t("commandPalette.savedLookSub", {
-          engine: look.engineId || "v3",
+          engine: look.engineId || "altair",
         }),
         keywords: `saved look preset ${look.name}`,
         badge: "SAVED",

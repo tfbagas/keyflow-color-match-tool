@@ -1,7 +1,7 @@
 import qrcode from "qrcode-generator";
-import { DEFAULT_PARAMS, sanitizeParams } from "./gradeEngine";
-import { DEFAULT_ENGINE_ID } from "./engineRegistry";
-import { DEFAULT_LOG_PROFILE, resolveLogProfileId } from "./logProfiles";
+import { DEFAULT_PARAMS, sanitizeParams } from "./gradeEngine.js";
+import { DEFAULT_ENGINE_ID, resolveEngineId } from "./engineRegistry.js";
+import { DEFAULT_LOG_PROFILE, resolveLogProfileId } from "./logProfiles.js";
 
 const SCALAR_KEYS = [
   "gradeMix",
@@ -57,7 +57,7 @@ export function encodeGradeToHash({
   );
   const compactArray = [
     2,
-    engineId || DEFAULT_ENGINE_ID,
+    resolveEngineId(engineId || DEFAULT_ENGINE_ID),
     resolveLogProfileId(logProfile),
     strengthInt,
     ...SCALAR_KEYS.map((key) => Math.round((safe[key] ?? DEFAULT_PARAMS[key] ?? 0) * 1000) / 1000),
@@ -87,7 +87,7 @@ export function decodeGradeFromHash(hashStr) {
           merged[SCALAR_KEYS[i]] = val;
         }
       }
-      const engineId = ["v1", "v2", "v3"].includes(data[1]) ? data[1] : DEFAULT_ENGINE_ID;
+      const engineId = resolveEngineId(data[1]);
       const logProfile = resolveLogProfileId(data[2] || DEFAULT_LOG_PROFILE);
       const matchStrength =
         typeof data[3] === "number" && Number.isFinite(data[3])
@@ -109,7 +109,7 @@ export function decodeGradeFromHash(hashStr) {
         }
       }
     }
-    const engineId = ["v1", "v2", "v3"].includes(data.e) ? data.e : DEFAULT_ENGINE_ID;
+    const engineId = resolveEngineId(data.e);
     const logProfile = resolveLogProfileId(data.l || DEFAULT_LOG_PROFILE);
     const matchStrength =
       typeof data.s === "number" && Number.isFinite(data.s)

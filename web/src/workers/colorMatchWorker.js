@@ -1,6 +1,6 @@
-import { getEngine, DEFAULT_ENGINE_ID } from "../utils/engineRegistry.js";
+import { getEngine, resolveEngineId, DEFAULT_ENGINE_ID } from "../utils/engineRegistry.js";
 import { parseLutText } from "../utils/presetImporter.js";
-import { analyzeEngineV3, fitPolarisV3ToLut } from "../utils/polarisV3Engine.js";
+import { fitPolarisV3ToLut } from "../utils/polarisV3Engine.js";
 
 self.onmessage = function (e) {
   const data = e.data || {};
@@ -39,7 +39,7 @@ self.onmessage = function (e) {
         stage: "Analyzing colors & luminance...",
       });
 
-      const resolvedEngineId = engineId || DEFAULT_ENGINE_ID;
+      const resolvedEngineId = resolveEngineId(engineId || DEFAULT_ENGINE_ID);
       const stageOpts = {
         numPixels,
         targetNumPixels: targetNumPixels || 0,
@@ -51,10 +51,7 @@ self.onmessage = function (e) {
         },
       };
 
-      const params =
-        resolvedEngineId === "v3"
-          ? analyzeEngineV3(refView, tgtView, stageOpts)
-          : getEngine(resolvedEngineId).analyze(refView, tgtView, stageOpts);
+      const params = getEngine(resolvedEngineId).analyze(refView, tgtView, stageOpts);
 
       self.postMessage({
         type: "stage",

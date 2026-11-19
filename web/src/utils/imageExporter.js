@@ -13,6 +13,11 @@ import { DEFAULT_PARAMS, sanitizeParams } from "./gradeEngine";
 import { simulateGradePixels } from "./colorGrading";
 import { getLogProfileCode, getLogProfile } from "./logProfiles";
 import { encodeGradeToHash, generateQrMatrix } from "./shareCodec";
+import {
+  DEFAULT_ENGINE_ID,
+  formatEngineLabel,
+  resolveEngineId,
+} from "./engineRegistry";
 
 function compileShader(gl, type, source) {
   const shader = gl.createShader(type);
@@ -240,9 +245,7 @@ function renderViaCPU(source, width, height, params, layout, splitPos, simulateL
 }
 
 function formatEngineBadge(engineId) {
-  if (engineId === "v1") return "Vega 1.0";
-  if (engineId === "v2") return "Sirius 2.5";
-  return "Polaris 3.5 Pro";
+  return formatEngineLabel(engineId);
 }
 
 function rgbToHex(r, g, b) {
@@ -424,7 +427,7 @@ export function renderPromoCardCanvas({
   splitPos = 50,
   simulateLogInput = "rec709",
   presetTitle = "Custom Color Grade",
-  engineId = "v3",
+  engineId = DEFAULT_ENGINE_ID,
   aspectRatio = "16:9",
   includeQr = true,
   qrMode = "grade",
@@ -776,7 +779,8 @@ export function renderPromoCardCanvas({
     badgeCursorX += pillW + 10;
   };
 
-  drawDockBadge(engineBadge, engineId === "v3");
+  const resolvedEngine = resolveEngineId(engineId);
+  drawDockBadge(engineBadge, resolvedEngine === "altair" || resolvedEngine === "v3");
   drawDockBadge(logLabel, false);
 
   // Subtle horizontal divider in portrait mode between metadata row and swatches row
@@ -930,7 +934,7 @@ export async function exportPromoCardBlob({
   splitPos = 50,
   simulateLogInput = "rec709",
   presetTitle = "Custom Color Grade",
-  engineId = "v3",
+  engineId = DEFAULT_ENGINE_ID,
   aspectRatio = "16:9",
   format = "png",
   quality = 95,
@@ -985,7 +989,7 @@ export async function exportGradedImage({
   simulateLogInput = false,
   baseName = "Target",
   presetTitle = "Custom Color Grade",
-  engineId = "v3",
+  engineId = DEFAULT_ENGINE_ID,
   promoAspect = "16:9",
   includeQr = true,
   qrMode = "grade",

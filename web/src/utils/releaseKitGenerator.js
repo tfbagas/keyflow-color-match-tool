@@ -335,7 +335,7 @@ function drawCard01Polaris(ctx, x, y, w, h, isId) {
     y,
     w,
     pad,
-    isId ? "01  -  ENGINE V3 POLARIS & SAINS WARNA" : "01  -  ENGINE V3 POLARIS & COLOR SCIENCE"
+    isId ? "01  -  ALTAIR 4.0 ULTRA & SAINS WARNA" : "01  -  ALTAIR 4.0 ULTRA & COLOR SCIENCE"
   );
 
   const startY = y + 76;
@@ -345,30 +345,30 @@ function drawCard01Polaris(ctx, x, y, w, h, isId) {
 
   const engines = [
     {
-      name: "Altair v1",
-      tag: "FAST RGB",
-      sub: isId ? "Kurva Kanal 1D" : "1D Channel Curves",
-      bullets: isId
-        ? ["Gain RGB Instan", "Shader GLSL Ringan", "Mode Klasik Cepat"]
-        : ["Instant RGB Gain", "Lightweight GLSL", "Legacy Mode"],
-      pro: false,
-    },
-    {
-      name: "Vega v2",
+      name: "Sirius 2.5",
       tag: "BALANCED",
-      sub: isId ? "Matriks + Split Tone" : "Matrix + Split Tone",
+      sub: isId ? "Tonal + Split Tone" : "Tonal + Split Tone",
       bullets: isId
-        ? ["Toning 3-Arah", "Kurva Luma Halus", "Match Seimbang"]
-        : ["3-Way Toning", "Luma Curve Fit", "Balanced Match"],
+        ? ["Toning 3-Arah", "Putih Bersih", "Match Seimbang"]
+        : ["3-Way Toning", "Clean Whites", "Balanced Match"],
       pro: false,
     },
     {
-      name: "Polaris v3 PRO",
+      name: "Polaris 3.5 PRO",
       tag: "CINEMA PRO",
       sub: "3D Poly + OKLab",
       bullets: isId
         ? ["Kompresi Gamut OKLab", "Aman di Warna Kulit", "Hitam Pekat Bersih"]
         : ["OKLab Gamut Comp", "Skin-Safe Roll-Off", "Deep Blacks Toe"],
+      pro: false,
+    },
+    {
+      name: "Altair 4.0 ULTRA",
+      tag: "SCENE-LINEAR PRO",
+      sub: "3D OKLab + Filmic",
+      bullets: isId
+        ? ["Kovarians 3D OKLab", "Kurva Tonal 5-Zona", "Filmic Roll-Off & .kfplug"]
+        : ["3D OKLab Transfer", "5-Zone Tonal Curve", "Filmic Roll-Off & .kfplug"],
       pro: true,
     },
   ];
