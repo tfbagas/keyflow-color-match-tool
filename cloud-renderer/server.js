@@ -29,7 +29,7 @@ const MAX_FILE_SIZE_MB = Math.max(1, Number(process.env.MAX_FILE_SIZE_MB) || 100
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 const RENDER_CONCURRENCY = Math.min(2, Math.max(1, Number(process.env.RENDER_CONCURRENCY) || 2));
 const MIN_FREE_RAM_FOR_EXTRA_WORKER_BYTES = 210 * 1024 * 1024;
-const MEMORY_RECHECK_INTERVAL_MS = 1500;
+const MEMORY_RECHECK_INTERVAL_MS = 1000;
 const FFMPEG_TIMEOUT_MS = 360_000;
 const PRESIGN_TTL_SEC = 15 * 60;
 const OUTPUT_CLEANUP_MS = 15 * 60 * 1000;
@@ -244,12 +244,12 @@ function parseFfmpegTimeSec(line) {
 
 function runFfmpegPass(inputPath, lutPath, outputPath, durationSec, audioArgs, onProgressText) {
   return new Promise((resolve, reject) => {
-    // Escape colons/backslashes for FFmpeg filtergraph path safety
-    const escapedLut = lutPath.replace(/\\/g, "/").replace(/:/g, "\\:");
+    // Normalize path and escape single quotes for FFmpeg single-quoted filtergraph value
+    const escapedLut = lutPath.replace(/\\/g, "/").replace(/'/g, "'\\''");
     const vf =
-      `scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,` +
+      `scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease:flags=bilinear,` +
       `scale=trunc(iw/2)*2:trunc(ih/2)*2,` +
-      `lut3d=${escapedLut}:interp=trilinear`;
+      `lut3d=file='${escapedLut}':interp=trilinear`;
 
     const args = [
       "-y",
@@ -271,11 +271,11 @@ function runFfmpegPass(inputPath, lutPath, outputPath, durationSec, audioArgs, o
       "-preset",
       "ultrafast",
       "-crf",
-      "19",
+      "17",
       "-tune",
       "fastdecode",
       "-x264-params",
-      "rc-lookahead=5:sync-lookahead=0:bframes=0:ref=1",
+      "rc-lookahead=4:sync-lookahead=0:bframes=0:ref=1:aq-mode=2",
       "-pix_fmt",
       "yuv420p",
       "-movflags",
@@ -614,7 +614,7 @@ app.post("/api/jobs/init", async (req, res) => {
 app.post("/api/jobs/:jobId/start", (req, res) => {
   const job = jobs.get(req.params.jobId);
   if (!job) {
-    res.status(404).json({ error: "Job lost due to worker restart. Please retry." });
+    res.status(404).json({ error: "Job not found or worker restarted" });
     return;
   }
 
@@ -665,7 +665,7 @@ app.post("/api/jobs/:jobId/start", (req, res) => {
 app.get("/api/jobs/:jobId", (req, res) => {
   const job = jobs.get(req.params.jobId);
   if (!job) {
-    res.status(404).json({ error: "Job lost due to worker restart. Please retry." });
+    res.status(404).json({ error: "Job not found or worker restarted" });
     return;
   }
 

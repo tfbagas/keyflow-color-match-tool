@@ -421,8 +421,9 @@ export async function exportVideoInCloud({
   );
   const startData = await startResp.json().catch(() => ({}));
   if (startResp.status === 404) {
+    const reason = (startData.error || "Job not found or worker restarted").replace(/\.+$/, "");
     throw new Error(
-      startData.error || "Job lost due to worker restart. Please retry."
+      /retry/i.test(reason) ? `${reason}.` : `${reason}. Please retry.`
     );
   }
   if (!startResp.ok) {
@@ -451,8 +452,9 @@ export async function exportVideoInCloud({
     );
     const job = await statusResp.json().catch(() => ({}));
     if (statusResp.status === 404) {
+      const reason = (job.error || "Job not found or worker restarted").replace(/\.+$/, "");
       throw new Error(
-        job.error || "Job lost due to worker restart. Please retry."
+        /retry/i.test(reason) ? `${reason}.` : `${reason}. Please retry.`
       );
     }
     if (!statusResp.ok) {
