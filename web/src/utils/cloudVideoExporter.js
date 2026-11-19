@@ -10,9 +10,10 @@ const DEFAULT_DAILY_LIMIT = 5;
 const DEFAULT_MAX_CONCURRENCY = 2;
 const POLL_INTERVAL_MS = 2000;
 const RENDER_POLL_TIMEOUT_MS = 360_000;
-const WAKE_TIMEOUT_MS = 75_000;
+const WAKE_TIMEOUT_MS = 110_000;
 const WAKE_POLL_INTERVAL_MS = 3_000;
-const WORKER_TARGET_TIMEOUT_MS = 4_000;
+const WORKER_TARGET_TIMEOUT_MS = 95_000;
+const WORKER_TARGET_WAKE_NOTICE_MS = 4_000;
 
 export function getCloudRenderBaseUrl() {
   const raw = import.meta.env?.VITE_CLOUD_RENDER_URL;
@@ -134,7 +135,7 @@ function isTunnelUnreachableError(err) {
   );
 }
 
-async function resolveWorkerTarget(renderBaseUrl, abortSignal) {
+async function resolveWorkerTarget(renderBaseUrl, abortSignal, onStatusChange) {
   const fallback = {
     mode: "render-cpu",
     baseUrl: renderBaseUrl,
@@ -151,6 +152,11 @@ async function resolveWorkerTarget(renderBaseUrl, abortSignal) {
   const onParentAbort = () => controller.abort();
   abortSignal?.addEventListener("abort", onParentAbort, { once: true });
   const timer = setTimeout(() => controller.abort(), WORKER_TARGET_TIMEOUT_MS);
+  const wakeNoticeTimer = onStatusChange
+    ? setTimeout(() => {
+        onStatusChange({ progress: 14, statusText: "Waking up cloud worker..." });
+      }, WORKER_TARGET_WAKE_NOTICE_MS)
+    : null;
 
   try {
     const resp = await fetch(`${renderBaseUrl}/api/worker-target`, {
@@ -191,6 +197,7 @@ async function resolveWorkerTarget(renderBaseUrl, abortSignal) {
     return fallback;
   } finally {
     clearTimeout(timer);
+    if (wakeNoticeTimer) clearTimeout(wakeNoticeTimer);
     abortSignal?.removeEventListener("abort", onParentAbort);
   }
 }
@@ -299,7 +306,7 @@ async function wakeCloudWorker(baseUrl, onStatusChange, abortSignal) {
 
   const detail = lastError ? `: ${lastError}` : "";
   throw new Error(
-    `Cloud worker did not respond within 75s${detail}. Please try again or use Local Render.`
+    `Cloud worker did not respond within ${Math.round(WAKE_TIMEOUT_MS / 1000)}s${detail}. Please try again or use Local Render.`
   );
 }
 
@@ -637,7 +644,7 @@ export async function exportVideoInCloud({
     return { fileName, jobId, workerMode };
   };
 
-  const target = await resolveWorkerTarget(renderBaseUrl, abortSignal);
+  const target = await resolveWorkerTarget(renderBaseUrl, abortSignal, onStatusChange);
   try {
     return await executePipeline(target.baseUrl, target.mode, target.limits);
   } catch (err) {

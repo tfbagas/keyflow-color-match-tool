@@ -136,8 +136,9 @@ export default function SaveImagePopover({
       ? "split"
       : "graded";
   const isKaggleTurbo = cloudQuota?.workerMode === "kaggle-gpu";
-  const maxCloudDurationSec = cloudQuota?.maxDurationSec ?? 60;
-  const maxCloudFileSizeMb = cloudQuota?.maxFileSizeMb ?? 100;
+  const maxCloudDurationSec = cloudQuota?.maxDurationSec ?? (isKaggleTurbo ? 180 : 60);
+  const maxCloudFileSizeMb = cloudQuota?.maxFileSizeMb ?? (isKaggleTurbo ? 300 : 100);
+  const dailyCloudLimit = cloudQuota?.limit ?? (isKaggleTurbo ? 15 : 5);
   const activeCloudWorkers = cloudQuota?.activeWorkers ?? 0;
   const maxCloudConcurrency = cloudQuota?.maxConcurrency ?? 2;
   const queuedCloudJobs = cloudQuota?.queuedJobs ?? cloudQuota?.queueLength ?? 0;
@@ -402,9 +403,9 @@ export default function SaveImagePopover({
                     <div className="space-y-2">
                       {isKaggleTurbo && (
                         <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-amber-400/12 border border-amber-400/35 text-[10px] font-semibold text-amber-200">
-                          <span>⚡ Kaggle GPU Turbo</span>
+                          <span>⚡ Kaggle Turbo</span>
                           <span className="font-mono text-[9px] text-amber-300/90">
-                            NVENC • 180s • 300MB
+                            {dailyCloudLimit}/day • Max {maxCloudDurationSec}s · {maxCloudFileSizeMb}MB
                           </span>
                         </div>
                       )}

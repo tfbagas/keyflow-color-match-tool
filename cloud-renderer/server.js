@@ -34,8 +34,8 @@ const FFMPEG_TIMEOUT_MS = 360_000;
 const PRESIGN_TTL_SEC = 15 * 60;
 const OUTPUT_CLEANUP_MS = 15 * 60 * 1000;
 const WORKER_OVERRIDE_KEY = "worker-override.json";
-const WORKER_OVERRIDE_CACHE_TTL_MS = 10_000;
-const WORKER_HEALTH_TIMEOUT_MS = 2500;
+const WORKER_OVERRIDE_CACHE_TTL_MS = 8_000;
+const WORKER_HEALTH_TIMEOUT_MS = 3000;
 
 const r2Configured = Boolean(
   R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET_NAME
@@ -75,7 +75,7 @@ let memoryRecheckTimer = null;
 const clientDailyUsage = new Map();
 const ipDailyUsage = new Map();
 
-// In-memory cache for R2 worker-override.json (10s TTL)
+// In-memory cache for R2 worker-override.json (8s TTL)
 let workerOverrideCache = { fetchedAt: 0, value: null };
 
 async function readStreamToUtf8(body) {
