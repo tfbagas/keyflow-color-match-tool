@@ -97,18 +97,34 @@ r2_configured = bool(
     R2_ACCOUNT_ID and R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY and R2_BUCKET_NAME
 )
 
-s3_client = (
-    boto3.client(
+def _build_r2_client():
+    """Build a boto3 S3 client configured for Cloudflare R2 presigned URLs."""
+    if not r2_configured:
+        return None
+    try:
+        # Disable automatic CRC32 checksum query params on presigned PUT URLs (rejected by R2).
+        config = Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "path"},
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+        )
+    except TypeError:
+        config = Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "path"},
+        )
+    return boto3.client(
         "s3",
         region_name="auto",
         endpoint_url=f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com",
         aws_access_key_id=R2_ACCESS_KEY_ID,
         aws_secret_access_key=R2_SECRET_ACCESS_KEY,
-        config=Config(signature_version="s3v4"),
+        config=config,
     )
-    if r2_configured
-    else None
-)
+
+
+s3_client = _build_r2_client()
 
 
 def _detect_nvenc() -> bool:
