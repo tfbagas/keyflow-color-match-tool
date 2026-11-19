@@ -3,12 +3,12 @@
 // Deterministic 5-stage color-science pipeline:
 //   1. Scene-Linear (Rec.709) + Perceptual OKLab Dual-Space Analysis
 //      (luminance-weighted sampling ignoring pure black/white clipping extremes)
-//   2. Iterative 3D OKLab Covariance & Eigen-Aligned Cholesky/MKL Distribution Transfer
+//   2. 16-Direction 3D OKLab Sliced Optimal Transport + Eigen-Aligned Covariance Hybrid
 //   3. Multi-Zone Tonal Curve (5 control zones: Blacks, Shadows, Midtones,
 //      Highlights, Whites) with Fritsch-Carlson Monotone Cubic Hermite Spline
-//      + Scene-Linear Filmic Soft-Shoulder Roll-Off (> 0.80 linear luminance)
-//   4. Perceptual Skin-Tone Cluster Lock (OKLab hue in [25°, 65°], moderate chroma,
-//      adaptive skinProtect weight) + Neutral-Axis Black/White Anchor
+//      + Dark-Cinema Black Density Preservation & Scene-Linear Filmic Shoulder
+//   4. Narrow Natural Skin-Tone Cluster Lock (L in [0.35, 0.82], C in [0.03, 0.145],
+//      hue in [28°, 58°]) + Neutral Black/White Anchor
 //   5. Deterministic Parameter Decomposition (Primary Sliders + 3-Way Color Wheels +
 //      Zero-Intercept Cubic 3D Poly + 6-Sector HSL Residuals + Closed-Loop Trim)
 //      for 1:1 parity across WebGL preview, .cube LUT, After Effects .ffx, and .kfplug.
@@ -26,8 +26,6 @@ import {
   sanitizeParams,
 } from "./gradeEngine.js";
 import {
-  FILMIC_SHOULDER_KNEE,
-  FILMIC_SHOULDER_ROOM,
   srgbToLinearChannel,
   linearToSrgbChannel,
   rgbLinearToOklab,
@@ -42,8 +40,31 @@ import { applyLogProfileToRgba, isLogProfileActive } from "./logProfiles.js";
 const LATTICE_SIZE = 17;
 const LATTICE_COUNT = LATTICE_SIZE * LATTICE_SIZE * LATTICE_SIZE; // 4913
 const MAX_SAMPLES = 3072;
+const SOT_HIST_BINS = 256;
 const DEG_TO_RAD = Math.PI / 180.0;
 const RAD_TO_DEG = 180.0 / Math.PI;
+
+// 16 rotationally symmetric 3D OKLab unit directions for Sliced Optimal Transport:
+//   - 8 pure chromatic (a, b) axes every 22.5° for multi-modal hue cluster transfer
+//   - 8 L-coupled 45°-elevation axes every 45° azimuth for 3D shadow/mid/highlight split-toning
+const SOT_DIRS_16 = Object.freeze([
+  [0.0, 1.0, 0.0],
+  [0.0, 0.92387953, 0.38268343],
+  [0.0, 0.70710678, 0.70710678],
+  [0.0, 0.38268343, 0.92387953],
+  [0.0, 0.0, 1.0],
+  [0.0, -0.38268343, 0.92387953],
+  [0.0, -0.70710678, 0.70710678],
+  [0.0, -0.92387953, 0.38268343],
+  [0.70710678, 0.70710678, 0.0],
+  [0.70710678, 0.5, 0.5],
+  [0.70710678, 0.0, 0.70710678],
+  [0.70710678, -0.5, 0.5],
+  [0.70710678, -0.70710678, 0.0],
+  [0.70710678, -0.5, -0.5],
+  [0.70710678, 0.0, -0.70710678],
+  [0.70710678, 0.5, -0.5],
+]);
 
 const HUE_CENTERS = [
   0.0,
@@ -100,26 +121,31 @@ function oklabToSrgb(L, a, b, out) {
 }
 
 // ---------------------------------------------------------------------------
-// Perceptual Skin-Tone Cluster Detection in OKLab (hue in [25°, 65°], moderate C)
+// Narrow Natural Skin-Tone Cluster Detection in OKLab
+// Strictly bounded to natural human skin: L in [0.35, 0.82], C in [0.03, 0.145],
+// hue in [28°, 58°] with smooth falloff — leaves saturated pinks (C > 0.15 or
+// magenta hues), warm cinema ambers (> 65°), and cool shadows untouched.
 // ---------------------------------------------------------------------------
 export function computeSkinClusterMask(L, a, b) {
   const C = Math.hypot(a, b);
-  if (C < 0.015 || C > 0.175 || L < 0.16 || L > 0.95) return 0.0;
+  if (C < 0.022 || C > 0.148 || L < 0.28 || L > 0.91) return 0.0;
   let hueDeg = Math.atan2(b, a) * RAD_TO_DEG;
   if (hueDeg < 0.0) hueDeg += 360.0;
 
-  // Smooth plateau across [25°, 65°] with 10° feathering on both sides
-  const hueUp = smoothstep(15.0, 25.0, hueDeg);
-  const hueDown = 1.0 - smoothstep(65.0, 75.0, hueDeg);
+  // Narrow natural skin hue plateau [28°, 58°] with smooth 6°-7° feathering
+  const hueUp = smoothstep(22.0, 28.0, hueDeg);
+  const hueDown = 1.0 - smoothstep(58.0, 65.0, hueDeg);
   const hueBand = hueUp * hueDown;
   if (hueBand <= 1e-5) return 0.0;
 
-  // Moderate skin chroma band (excludes neutral greys and neon oranges)
+  // Low-to-moderate natural skin chroma [0.03, 0.145] (excludes grays and saturated pinks/reds)
   const chromaBand =
-    smoothstep(0.015, 0.032, C) * (1.0 - smoothstep(0.115, 0.168, C));
-  // Plausible human skin lightness range
+    smoothstep(0.022, 0.032, C) * (1.0 - smoothstep(0.118, 0.148, C));
+
+  // Natural skin lightness [0.35, 0.82] with smooth falloff at shadows and specular highlights
   const lumaBand =
-    smoothstep(0.16, 0.27, L) * (1.0 - smoothstep(0.85, 0.95, L));
+    smoothstep(0.28, 0.35, L) * (1.0 - smoothstep(0.82, 0.91, L));
+
   return clamp(hueBand * chromaBand * lumaBand, 0.0, 1.0);
 }
 
@@ -158,15 +184,17 @@ function extractDualSpaceSamples(rgbaView, totalPixels, maxSamples = MAX_SAMPLES
     const bLab = lab[2];
     const C = Math.hypot(a, bLab);
 
-    // Luminance-weighted sampling ignoring pure black / pure white clipping extremes
+    // Luminance-weighted sampling ignoring pure letterbox black / clipped white extremes
+    // while keeping dark cinema shadows (sRGB 20..60/255) accurately represented
     const clipGuard =
-      smoothstep(0.008, 0.045, linY) * (1.0 - smoothstep(0.92, 0.992, linY));
-    const chromaDamp = 1.0 / (1.0 + 4.5 * C * C);
-    const covW = Math.max(clipGuard * (0.40 + 0.60 * chromaDamp), 1e-5);
+      smoothstep(0.001, 0.012, linY) * (1.0 - smoothstep(0.93, 0.994, linY));
+    const chromaDamp = 1.0 / (1.0 + 2.5 * C * C);
+    const covW = Math.max(clipGuard * (0.50 + 0.50 * chromaDamp), 1e-5);
 
     const wbMid =
-      smoothstep(0.05, 0.16, linY) * (1.0 - smoothstep(0.65, 0.90, linY));
-    const wbW = Math.max((1.0 / (1.0 + 18.0 * C * C)) * (0.12 + 0.88 * wbMid), 1e-5);
+      smoothstep(0.025, 0.12, linY) * (1.0 - smoothstep(0.72, 0.93, linY));
+    // Gentle chroma damping preserves strong reference color moods (Barbie pink, amber, cool teal)
+    const wbW = Math.max((1.0 / (1.0 + 3.0 * C * C)) * (0.20 + 0.80 * wbMid), 1e-5);
 
     const skinMask = computeSkinClusterMask(L, a, bLab);
 
@@ -223,12 +251,12 @@ function buildNominalNeutralSamples() {
     const bLab = lab[2];
     const C = Math.hypot(a, bLab);
     const clipGuard =
-      smoothstep(0.008, 0.045, linY) * (1.0 - smoothstep(0.92, 0.992, linY));
-    const chromaDamp = 1.0 / (1.0 + 4.5 * C * C);
-    const covW = Math.max(clipGuard * (0.40 + 0.60 * chromaDamp) * weightMult, 1e-5);
+      smoothstep(0.001, 0.012, linY) * (1.0 - smoothstep(0.93, 0.994, linY));
+    const chromaDamp = 1.0 / (1.0 + 2.5 * C * C);
+    const covW = Math.max(clipGuard * (0.50 + 0.50 * chromaDamp) * weightMult, 1e-5);
     const wbMid =
-      smoothstep(0.05, 0.16, linY) * (1.0 - smoothstep(0.65, 0.90, linY));
-    const wbW = Math.max((1.0 / (1.0 + 18.0 * C * C)) * (0.12 + 0.88 * wbMid) * weightMult, 1e-5);
+      smoothstep(0.025, 0.12, linY) * (1.0 - smoothstep(0.72, 0.93, linY));
+    const wbW = Math.max((1.0 / (1.0 + 3.0 * C * C)) * (0.20 + 0.80 * wbMid) * weightMult, 1e-5);
 
     rArr.push(r);
     gArr.push(g);
@@ -407,6 +435,11 @@ function computeDualSpaceStats(samples) {
     [0.075, 0.25, 0.5, 0.75, 0.925]
   );
 
+  // Smooth Bayesian prior toward global chromatic mean [meanA, meanB] when a
+  // tonal zone has sparse pixels (e.g. bright references like Barbie with few
+  // deep shadows), preventing fallback-to-zero from inventing opposite-hue casts.
+  const zonePriorW = Math.max(sumW * 0.05, 1e-4);
+
   return {
     meanLogY,
     stdLogY: Math.sqrt(varLogY * invW),
@@ -419,9 +452,18 @@ function computeDualSpaceStats(samples) {
     shadowEnergy: shW > 1e-4 ? shY / shW : 0.07,
     highEnergy: hiW > 1e-4 ? hiY / hiW : 0.68,
     zoneQuantilesL,
-    shadowAB: shCW > 1e-4 ? [shA / shCW, shB / shCW] : [0.0, 0.0],
-    midAB: mdCW > 1e-4 ? [mdA / mdCW, mdB / mdCW] : [0.0, 0.0],
-    highAB: hiCW > 1e-4 ? [hiA / hiCW, hiB / hiCW] : [0.0, 0.0],
+    shadowAB: [
+      (shA + zonePriorW * meanA) / (shCW + zonePriorW),
+      (shB + zonePriorW * meanB) / (shCW + zonePriorW),
+    ],
+    midAB: [
+      (mdA + zonePriorW * meanA) / (mdCW + zonePriorW),
+      (mdB + zonePriorW * meanB) / (mdCW + zonePriorW),
+    ],
+    highAB: [
+      (hiA + zonePriorW * meanA) / (hiCW + zonePriorW),
+      (hiB + zonePriorW * meanB) / (hiCW + zonePriorW),
+    ],
     skinRatio: skinSum / Math.max(n, 1),
   };
 }
@@ -639,35 +681,385 @@ function computeEigenAlignedTransfer3x3(covSrc, covRef) {
     T[i] = Number.isFinite(v) ? v : i % 4 === 0 ? 1.0 : 0.0;
   }
 
-  T[0] = clamp(T[0], 0.72, 1.42);  // L -> L
-  T[1] = clamp(T[1], -0.16, 0.16); // a -> L (tightly bounded to avoid chroma-to-luma bleed)
-  T[2] = clamp(T[2], -0.16, 0.16); // b -> L
-  T[3] = clamp(T[3], -0.36, 0.36); // L -> a (cross-zone split toning)
-  T[4] = clamp(T[4], 0.58, 1.62);  // a -> a
-  T[5] = clamp(T[5], -0.40, 0.40); // b -> a
-  T[6] = clamp(T[6], -0.36, 0.36); // L -> b (cross-zone teal/amber transfer)
-  T[7] = clamp(T[7], -0.40, 0.40); // a -> b
-  T[8] = clamp(T[8], 0.58, 1.62);  // b -> b
+  T[0] = clamp(T[0], 0.72, 1.38);  // L -> L
+  T[1] = clamp(T[1], -0.15, 0.15); // a -> L (tightly bounded to avoid chroma-to-luma bleed)
+  T[2] = clamp(T[2], -0.15, 0.15); // b -> L
+  T[3] = clamp(T[3], -0.42, 0.42); // L -> a (cross-zone split toning)
+  T[4] = clamp(T[4], 0.50, 1.95);  // a -> a (allows vibrant expansion on desaturated targets)
+  T[5] = clamp(T[5], -0.52, 0.52); // b -> a
+  T[6] = clamp(T[6], -0.42, 0.42); // L -> b (cross-zone teal/amber transfer)
+  T[7] = clamp(T[7], -0.52, 0.52); // a -> b
+  T[8] = clamp(T[8], 0.50, 1.95);  // b -> b
 
   return T;
 }
 
 // ---------------------------------------------------------------------------
+// Stage 2B: Fast 16-Direction 3D OKLab Sliced Optimal Transport (O(N + B))
+// Uses 256-bin weighted histogram CDF matching across 16 rotationally symmetric
+// 3D OKLab directions (~2-4 ms on 3,072 samples) so multi-modal reference
+// palettes (e.g. Barbie pink + cyan sky, warm amber, cool teal) transfer cleanly
+// without collapsing toward neutral gray.
+// ---------------------------------------------------------------------------
+function runSlicedOptimalTransport16(srcL, srcA, srcB, srcW, refSamples) {
+  const nSrc = srcL.length;
+  const nRef = refSamples.count;
+  const curL = Float32Array.from(srcL);
+  const curA = Float32Array.from(srcA);
+  const curB = Float32Array.from(srcB);
+  if (nSrc < 8 || nRef < 8) {
+    return { sotL: curL, sotA: curA, sotB: curB };
+  }
+
+  const refL = refSamples.L;
+  const refA = refSamples.a;
+  const refB = refSamples.bLab;
+  const refW = refSamples.covW;
+
+  const B = SOT_HIST_BINS;
+  const B1 = B - 1;
+  const srcProj = new Float32Array(nSrc);
+  const refProj = new Float32Array(nRef);
+  const histSrc = new Float32Array(B);
+  const histRef = new Float32Array(B);
+  const cdfSrc = new Float32Array(B);
+  const cdfRef = new Float32Array(B);
+  const mapLut = new Float32Array(B);
+  const abComp = [0, 0];
+
+  const passGains = [0.38, 0.30, 0.22];
+  const lStepScale = 0.42; // Keep L gentle so scene-linear 5-zone spline leads luminance
+
+  for (let pass = 0; pass < passGains.length; pass++) {
+    const stepGain = passGains[pass];
+    for (let d = 0; d < SOT_DIRS_16.length; d++) {
+      const ux = SOT_DIRS_16[d][0];
+      const uy = SOT_DIRS_16[d][1];
+      const uz = SOT_DIRS_16[d][2];
+
+      let sMin = 1e9;
+      let sMax = -1e9;
+      for (let i = 0; i < nSrc; i++) {
+        const p = curL[i] * ux + curA[i] * uy + curB[i] * uz;
+        srcProj[i] = p;
+        if (p < sMin) sMin = p;
+        if (p > sMax) sMax = p;
+      }
+
+      let rMin = 1e9;
+      let rMax = -1e9;
+      let rSumW = 0.0;
+      let rSumP = 0.0;
+      for (let j = 0; j < nRef; j++) {
+        const p = refL[j] * ux + refA[j] * uy + refB[j] * uz;
+        refProj[j] = p;
+        if (p < rMin) rMin = p;
+        if (p > rMax) rMax = p;
+        const w = refW[j];
+        rSumW += w;
+        rSumP += w * p;
+      }
+      const rMean = rSumP / Math.max(rSumW, 1e-6);
+      const sSpan = sMax - sMin;
+      const rSpan = rMax - rMin;
+
+      // Degenerate constant projection along this axis -> direct mean shift
+      if (sSpan < 1e-6 || rSpan < 1e-6) {
+        const uL = ux * stepGain * lStepScale;
+        const uA = uy * stepGain;
+        const uB = uz * stepGain;
+        for (let i = 0; i < nSrc; i++) {
+          const delta = rMean - srcProj[i];
+          curL[i] += delta * uL;
+          curA[i] += delta * uA;
+          curB[i] += delta * uB;
+        }
+        continue;
+      }
+
+      histSrc.fill(0.0);
+      histRef.fill(0.0);
+      const invSSpan = B1 / sSpan;
+      const invRSpan = B1 / rSpan;
+
+      let totalSW = 0.0;
+      for (let i = 0; i < nSrc; i++) {
+        let bin = ((srcProj[i] - sMin) * invSSpan) | 0;
+        if (bin < 0) bin = 0;
+        else if (bin > B1) bin = B1;
+        const w = srcW[i];
+        histSrc[bin] += w;
+        totalSW += w;
+      }
+
+      let totalRW = 0.0;
+      for (let j = 0; j < nRef; j++) {
+        let bin = ((refProj[j] - rMin) * invRSpan) | 0;
+        if (bin < 0) bin = 0;
+        else if (bin > B1) bin = B1;
+        const w = refW[j];
+        histRef[bin] += w;
+        totalRW += w;
+      }
+
+      const invSW = 1.0 / Math.max(totalSW, 1e-6);
+      const invRW = 1.0 / Math.max(totalRW, 1e-6);
+      let accS = 0.0;
+      let accR = 0.0;
+      for (let k = 0; k < B; k++) {
+        const hs = histSrc[k];
+        accS += hs;
+        cdfSrc[k] = (accS - 0.5 * hs) * invSW;
+        accR += histRef[k];
+        cdfRef[k] = accR * invRW;
+      }
+
+      // Monotone two-pointer inverse-CDF lookup table
+      const binStepR = rSpan / B1;
+      let rPtr = 0;
+      for (let k = 0; k < B; k++) {
+        const u = cdfSrc[k];
+        while (rPtr < B1 && cdfRef[rPtr] < u) {
+          rPtr++;
+        }
+        if (rPtr === 0) {
+          mapLut[k] = rMin;
+        } else {
+          const c0 = cdfRef[rPtr - 1];
+          const c1 = cdfRef[rPtr];
+          const frac = clamp((u - c0) / Math.max(c1 - c0, 1e-6), 0.0, 1.0);
+          mapLut[k] = rMin + (rPtr - 1 + frac) * binStepR;
+        }
+      }
+
+      const uL = ux * stepGain * lStepScale;
+      const uA = uy * stepGain;
+      const uB = uz * stepGain;
+      for (let i = 0; i < nSrc; i++) {
+        const fBin = clamp((srcProj[i] - sMin) * invSSpan, 0.0, B1);
+        const b0 = fBin | 0;
+        const b1 = b0 < B1 ? b0 + 1 : B1;
+        const frac = fBin - b0;
+        const mapped = mapLut[b0] + (mapLut[b1] - mapLut[b0]) * frac;
+        const delta = mapped - srcProj[i];
+        curL[i] += delta * uL;
+        curA[i] += delta * uA;
+        curB[i] += delta * uB;
+      }
+    }
+
+    // Soft-bound OKLab state after each pass
+    for (let i = 0; i < nSrc; i++) {
+      curL[i] = clamp(curL[i], 0.0, 1.0);
+      compressOklabChroma(curA[i], curB[i], abComp);
+      curA[i] = abComp[0];
+      curB[i] = abComp[1];
+    }
+  }
+
+  return { sotL: curL, sotA: curA, sotB: curB };
+}
+
+// Projects 3D OKLab SOT sample transport (src -> sot) onto the 17^3 lattice
+// via regularized 3x3 affine regression + 12-bin C1 luminance-conditioned residual
+// so both global 3D hue/chroma cross-talk and multi-modal cluster shifts transfer
+// accurately even onto dark desaturated targets.
+function projectSotToLattice(srcL, srcA, srcB, srcW, sotL, sotA, sotB, baseL, baseA, baseBLab) {
+  const n = srcL.length;
+  const outL = Float32Array.from(baseL);
+  const outA = Float32Array.from(baseA);
+  const outB = Float32Array.from(baseBLab);
+  if (n < 8) return { sotLatL: outL, sotLatA: outA, sotLatB: outB };
+
+  let sumW = 0.0;
+  let mx0 = 0.0, mx1 = 0.0, mx2 = 0.0;
+  let my0 = 0.0, my1 = 0.0, my2 = 0.0;
+  for (let i = 0; i < n; i++) {
+    const w = srcW[i];
+    sumW += w;
+    mx0 += w * srcL[i];
+    mx1 += w * srcA[i];
+    mx2 += w * srcB[i];
+    my0 += w * sotL[i];
+    my1 += w * sotA[i];
+    my2 += w * sotB[i];
+  }
+  const invW = 1.0 / Math.max(sumW, 1e-6);
+  mx0 *= invW; mx1 *= invW; mx2 *= invW;
+  my0 *= invW; my1 *= invW; my2 *= invW;
+
+  // Weighted C_XX (3x3) and C_XY (3x3) for ridge-regularized 3x3 affine map
+  const cxx = new Float64Array(9);
+  const cxy0 = new Float64Array(3);
+  const cxy1 = new Float64Array(3);
+  const cxy2 = new Float64Array(3);
+
+  for (let i = 0; i < n; i++) {
+    const w = srcW[i];
+    const x0 = srcL[i] - mx0;
+    const x1 = srcA[i] - mx1;
+    const x2 = srcB[i] - mx2;
+    const y0 = sotL[i] - my0;
+    const y1 = sotA[i] - my1;
+    const y2 = sotB[i] - my2;
+
+    cxx[0] += w * x0 * x0; cxx[1] += w * x0 * x1; cxx[2] += w * x0 * x2;
+    cxx[4] += w * x1 * x1; cxx[5] += w * x1 * x2;
+    cxx[8] += w * x2 * x2;
+
+    cxy0[0] += w * x0 * y0; cxy0[1] += w * x1 * y0; cxy0[2] += w * x2 * y0;
+    cxy1[0] += w * x0 * y1; cxy1[1] += w * x1 * y1; cxy1[2] += w * x2 * y1;
+    cxy2[0] += w * x0 * y2; cxy2[1] += w * x1 * y2; cxy2[2] += w * x2 * y2;
+  }
+
+  for (let i = 0; i < 9; i++) cxx[i] *= invW;
+  cxx[3] = cxx[1]; cxx[6] = cxx[2]; cxx[7] = cxx[5];
+  for (let i = 0; i < 3; i++) {
+    cxy0[i] *= invW;
+    cxy1[i] *= invW;
+    cxy2[i] *= invW;
+  }
+
+  // Shrink toward identity I on low-variance axes (prevents noise blow-up on monochrome/desaturated targets)
+  const regL = 0.008;
+  const regC = 0.0022;
+  cxx[0] += regL;
+  cxx[4] += regC;
+  cxx[8] += regC;
+  cxy0[0] += regL;
+  cxy1[1] += regC;
+  cxy2[2] += regC;
+
+  const row0 = solveLinearSystem(cxx, cxy0, 3);
+  const row1 = solveLinearSystem(cxx, cxy1, 3);
+  const row2 = solveLinearSystem(cxx, cxy2, 3);
+
+  const a00 = clamp(Number.isFinite(row0[0]) ? row0[0] : 1.0, 0.65, 1.35);
+  const a01 = clamp(Number.isFinite(row0[1]) ? row0[1] : 0.0, -0.15, 0.15);
+  const a02 = clamp(Number.isFinite(row0[2]) ? row0[2] : 0.0, -0.15, 0.15);
+  const a10 = clamp(Number.isFinite(row1[0]) ? row1[0] : 0.0, -0.26, 0.26);
+  const a11 = clamp(Number.isFinite(row1[1]) ? row1[1] : 1.0, 0.45, 2.25);
+  const a12 = clamp(Number.isFinite(row1[2]) ? row1[2] : 0.0, -0.65, 0.65);
+  const a20 = clamp(Number.isFinite(row2[0]) ? row2[0] : 0.0, -0.26, 0.26);
+  const a21 = clamp(Number.isFinite(row2[1]) ? row2[1] : 0.0, -0.65, 0.65);
+  const a22 = clamp(Number.isFinite(row2[2]) ? row2[2] : 1.0, 0.45, 2.25);
+
+  // 12-bin luminance-conditioned residual (captures nonlinear split-toning & multi-modal zone shifts)
+  const NBINS = 12;
+  const binRL = new Float32Array(NBINS);
+  const binRA = new Float32Array(NBINS);
+  const binRB = new Float32Array(NBINS);
+  const binW = new Float32Array(NBINS);
+
+  for (let i = 0; i < n; i++) {
+    const x0 = srcL[i] - mx0;
+    const x1 = srcA[i] - mx1;
+    const x2 = srcB[i] - mx2;
+    const predL = my0 + a00 * x0 + a01 * x1 + a02 * x2;
+    const predA = my1 + a10 * x0 + a11 * x1 + a12 * x2;
+    const predB = my2 + a20 * x0 + a21 * x1 + a22 * x2;
+
+    const bIdx = clamp(Math.floor(srcL[i] * (NBINS - 1)), 0, NBINS - 1);
+    const w = srcW[i];
+    binRL[bIdx] += w * (sotL[i] - predL);
+    binRA[bIdx] += w * (sotA[i] - predA);
+    binRB[bIdx] += w * (sotB[i] - predB);
+    binW[bIdx] += w;
+  }
+
+  for (let b = 0; b < NBINS; b++) {
+    if (binW[b] > 1e-6) {
+      binRL[b] /= binW[b];
+      binRA[b] /= binW[b];
+      binRB[b] /= binW[b];
+    }
+  }
+  // Fill sparse/empty luminance bins from nearest populated neighbor
+  for (let b = 0; b < NBINS; b++) {
+    if (binW[b] > 1e-6) continue;
+    let best = -1;
+    let bestDist = 999;
+    for (let k = 0; k < NBINS; k++) {
+      if (binW[k] > 1e-6 && Math.abs(k - b) < bestDist) {
+        bestDist = Math.abs(k - b);
+        best = k;
+      }
+    }
+    if (best >= 0) {
+      binRL[b] = binRL[best] * 0.65;
+      binRA[b] = binRA[best] * 0.65;
+      binRB[b] = binRB[best] * 0.65;
+    }
+  }
+  // C1 binomial smoothing across luminance bins
+  const smRL = new Float32Array(NBINS);
+  const smRA = new Float32Array(NBINS);
+  const smRB = new Float32Array(NBINS);
+  for (let b = 0; b < NBINS; b++) {
+    const bPrev = Math.max(0, b - 1);
+    const bNext = Math.min(NBINS - 1, b + 1);
+    smRL[b] = 0.25 * binRL[bPrev] + 0.50 * binRL[b] + 0.25 * binRL[bNext];
+    smRA[b] = 0.25 * binRA[bPrev] + 0.50 * binRA[b] + 0.25 * binRA[bNext];
+    smRB[b] = 0.25 * binRB[bPrev] + 0.50 * binRB[b] + 0.25 * binRB[bNext];
+  }
+
+  const abComp = [0, 0];
+  for (let i = 0; i < LATTICE_COUNT; i++) {
+    const x0 = baseL[i] - mx0;
+    const x1 = baseA[i] - mx1;
+    const x2 = baseBLab[i] - mx2;
+    const fBin = clamp(baseL[i] * (NBINS - 1), 0.0, NBINS - 1);
+    const b0 = Math.floor(fBin);
+    const b1 = Math.min(b0 + 1, NBINS - 1);
+    const t = fBin - b0;
+    const rL = smRL[b0] + (smRL[b1] - smRL[b0]) * t;
+    const rA = smRA[b0] + (smRA[b1] - smRA[b0]) * t;
+    const rB = smRB[b0] + (smRB[b1] - smRB[b0]) * t;
+
+    outL[i] = clamp(my0 + a00 * x0 + a01 * x1 + a02 * x2 + rL, 0.0, 1.0);
+    compressOklabChroma(
+      my1 + a10 * x0 + a11 * x1 + a12 * x2 + rA,
+      my2 + a20 * x0 + a21 * x1 + a22 * x2 + rB,
+      abComp
+    );
+    outA[i] = abComp[0];
+    outB[i] = abComp[1];
+  }
+
+  return { sotLatL: outL, sotLatA: outA, sotLatB: outB };
+}
+
+// ---------------------------------------------------------------------------
 // Stage 3: 5-Zone Tonal Curve (Fritsch-Carlson Monotone Cubic Hermite Spline)
 // ---------------------------------------------------------------------------
-export function buildMonotoneHermite5Zone(srcQuantilesL, refQuantilesL, blend = 0.62) {
+export function buildMonotoneHermite5Zone(
+  srcQuantilesL,
+  refQuantilesL,
+  blend = 0.62,
+  darkTargetFactor = 0.0
+) {
   const xs = TONE_ZONE_KNOTS;
   const n = xs.length; // 7 knots
   const ys = new Float64Array(n);
 
-  // Per-zone delta bounds: [Blacks, Shadows, Midtones, Highlights, Whites]
-  const maxZoneDelta = [0.055, 0.085, 0.09, 0.085, 0.065];
-  const zoneBlend = [0.48, 0.64, 0.68, 0.64, 0.52];
+  // Asymmetric per-zone delta bounds: [Blacks, Shadows, Midtones, Highlights, Whites]
+  // Tightly suppresses positive black/shadow lift on dark cinema targets so deep shadows
+  // retain rich density instead of washing out into milky gray.
+  const dtf = clamp(darkTargetFactor, 0.0, 1.0);
+  const maxPosDelta = [
+    0.020 * (1.0 - 0.80 * dtf),
+    0.042 * (1.0 - 0.65 * dtf),
+    0.058 * (1.0 - 0.35 * dtf),
+    0.048 * (1.0 - 0.25 * dtf),
+    0.032,
+  ];
+  const maxNegDelta = [0.045, 0.072, 0.080, 0.075, 0.055];
+  const zoneBlend = [0.42, 0.56, 0.60, 0.56, 0.45];
 
   ys[0] = 0.0; // Anchor deep black floor strictly at 0.0
   for (let z = 0; z < 5; z++) {
     const rawDelta = (refQuantilesL[z] - srcQuantilesL[z]) * zoneBlend[z] * blend;
-    const clampedDelta = clamp(rawDelta, -maxZoneDelta[z], maxZoneDelta[z]);
+    const clampedDelta = clamp(rawDelta, -maxNegDelta[z], maxPosDelta[z]);
     ys[z + 1] = clamp(xs[z + 1] + clampedDelta, 0.015, 0.985);
   }
   ys[n - 1] = 1.0; // White ceiling anchor
@@ -745,42 +1137,24 @@ export function evalMonotoneHermite(spline, x) {
   return clamp(h00 * ys[seg] + h10 * h * m[seg] + h01 * ys[seg + 1] + h11 * h * m[seg + 1], 0.0, 1.0);
 }
 
-// Analytical pre-compensation inverse of single-pass ratio-preserving
-// filmicLinearShoulderRGB (> 0.80 linear) so fitting poly3 before runtime
-// kfFilmicLinearShoulder avoids double highlight compression and preserves
-// crisp >= 0.995 sRGB specular whites.
-function invFilmicRollLinearChannel(y) {
-  if (y <= FILMIC_SHOULDER_KNEE) return Math.max(0.0, y);
-  const u = clamp((y - FILMIC_SHOULDER_KNEE) / FILMIC_SHOULDER_ROOM, 0.0, 0.994);
-  const atanhU = 0.5 * Math.log((1.0 + u) / Math.max(1.0 - u, 1e-5));
-  return FILMIC_SHOULDER_KNEE + FILMIC_SHOULDER_ROOM * atanhU;
-}
-
-function preCompensateFilmicTargetRGB(r, g, b, out) {
-  let lr = srgbToLinearChannel(r);
-  let lg = srgbToLinearChannel(g);
-  let lb = srgbToLinearChannel(b);
-  const maxLin = Math.max(lr, lg, lb);
-  if (maxLin > FILMIC_SHOULDER_KNEE) {
-    const invMax = invFilmicRollLinearChannel(maxLin);
-    const invScale = invMax / Math.max(maxLin, 1e-5);
-    lr *= invScale;
-    lg *= invScale;
-    lb *= invScale;
-  }
-  const encodeExt = (lin) => {
-    const v = Math.max(0.0, lin);
-    if (v <= 0.0031308) return v * 12.92;
-    return clamp(1.055 * Math.pow(v, 1.0 / 2.4) - 0.055, 0.0, 1.32);
-  };
-  out[0] = encodeExt(lr);
-  out[1] = encodeExt(lg);
-  out[2] = encodeExt(lb);
-}
-
 // ---------------------------------------------------------------------------
 // Primary Deterministic Slider + 3-Way Color Wheel Decomposition
 // ---------------------------------------------------------------------------
+function computeDarkTargetFactor(srcStats) {
+  const darkShadowDepth = 1.0 - smoothstep(0.18, 0.36, srcStats.zoneQuantilesL[1]);
+  const darkMeanDepth = 1.0 - smoothstep(0.32, 0.48, srcStats.meanL);
+  return clamp(0.60 * darkShadowDepth + 0.40 * darkMeanDepth, 0.0, 1.0);
+}
+
+// Measures how close the target's upper highlights already are to display clipping
+// (purely luminance-based — protects bright skin/sky highlights from clipping
+// without ever suppressing temp, tint, or chromatic transfer).
+function computeHighlightHeadroomUsed(srcStats) {
+  const whiteNearClip = smoothstep(0.67, 0.80, srcStats.zoneQuantilesL[4]);
+  const hiNearClip = smoothstep(0.56, 0.70, srcStats.zoneQuantilesL[3]);
+  return clamp(0.65 * whiteNearClip + 0.35 * hiNearClip, 0.0, 1.0);
+}
+
 function oklabABToZeroMeanWheelDelta(da, db, gain = 1.0, maxOffset = 0.07) {
   // Approximate opponent OKLab (a, b) -> zero-mean RGB wheel tint offsets
   const dr = (1.65 * da + 0.72 * db) * gain;
@@ -788,86 +1162,85 @@ function oklabABToZeroMeanWheelDelta(da, db, gain = 1.0, maxOffset = 0.07) {
   const dbC = (-0.42 * da - 1.55 * db) * gain;
   const avg = (dr + dg + dbC) / 3.0;
   return [
-    round2(clamp(0.5 + clamp(dr - avg, -maxOffset, maxOffset), 0.40, 0.60)),
-    round2(clamp(0.5 + clamp(dg - avg, -maxOffset, maxOffset), 0.40, 0.60)),
-    round2(clamp(0.5 + clamp(dbC - avg, -maxOffset, maxOffset), 0.40, 0.60)),
+    round2(clamp(0.5 + clamp(dr - avg, -maxOffset, maxOffset), 0.38, 0.62)),
+    round2(clamp(0.5 + clamp(dg - avg, -maxOffset, maxOffset), 0.38, 0.62)),
+    round2(clamp(0.5 + clamp(dbC - avg, -maxOffset, maxOffset), 0.38, 0.62)),
   ];
 }
 
-function computePrimarySlidersAltair(refStats, srcStats, tgtSkinRatio = 0.0) {
-  // Skin-safe pre-clip guard: when skin clusters are present (> 8% of target),
-  // cap primary highlight/warmth/saturation push so Fair Skin highlights never
-  // clip baseR inside kfGrade prior to kfHybridLayer.
-  const skinPresence = smoothstep(0.08, 0.25, tgtSkinRatio);
+function computePrimarySlidersAltair(refStats, srcStats) {
+  const darkTargetFactor = computeDarkTargetFactor(srcStats);
+  const headroomUsed = computeHighlightHeadroomUsed(srcStats);
 
-  // 1. Scene-Linear Exposure (EV) from log2 linear luminance energy
-  const rawEv = (refStats.meanLogY - srcStats.meanLogY) * 0.52;
-  const maxEv = 0.44 - 0.41 * skinPresence;
-  const exposure = clamp(0.46 * fastTanh(rawEv / 0.46), -0.48, maxEv);
+  // 1. Scene-Linear Exposure (EV) from log2 linear luminance energy.
+  // Tightened upper ceiling prevents blown-out midtones/highlights on bright targets
+  // and preserves rich black density when matching dark cinema targets against bright refs.
+  const rawEv = (refStats.meanLogY - srcStats.meanLogY) * 0.34;
+  const evCapDark = 0.22 - 0.12 * darkTargetFactor;
+  const evCapHighlight = 0.22 * (1.0 - 0.92 * headroomUsed);
+  const maxEv = Math.min(evCapDark, evCapHighlight);
+  const exposure = clamp(0.30 * fastTanh(rawEv / 0.30), -0.36, maxEv);
 
   // 2. Scene-Linear Geometric Mid-Gray Pivot & Dynamic-Range Contrast
   const refMidLin = Math.pow(2.0, clamp(refStats.meanLogY, -4.5, -0.4));
   const pivotSrgb = linearToSrgbChannel(refMidLin);
-  const pivot = clamp(0.55 * 0.435 + 0.45 * pivotSrgb, 0.34, 0.56);
+  const pivot = clamp(0.72 * 0.435 + 0.28 * pivotSrgb, 0.38, 0.49);
 
-  // Symmetric ratio floor prevents contrast collapse on flat/monochrome self-matches
+  // Symmetric ratio floor prevents contrast collapse on flat/monochrome self-matches;
+  // prevent low contrast from lifting blacks into milky gray on dark targets.
   const spreadRatio =
     Math.max(refStats.stdLogY, 0.42) / Math.max(srcStats.stdLogY, 0.42);
   const iqrRef = Math.max(refStats.zoneQuantilesL[3] - refStats.zoneQuantilesL[1], 0.14);
   const iqrSrc = Math.max(srcStats.zoneQuantilesL[3] - srcStats.zoneQuantilesL[1], 0.14);
   const combinedRatio = 0.55 * spreadRatio + 0.45 * (iqrRef / iqrSrc);
-  const maxContrast = 1.32 - 0.25 * skinPresence;
-  const contrast = clamp(1.0 + (combinedRatio - 1.0) * 0.48, 0.86, maxContrast);
+  const minContrast = 0.88 + 0.08 * darkTargetFactor;
+  const maxContrast = 1.22 - 0.14 * headroomUsed;
+  const contrast = clamp(1.0 + (combinedRatio - 1.0) * 0.40, minContrast, maxContrast);
 
   // 3. Multi-Zone Shadow & Highlight primary energy offsets
+  // Tight positive caps keep deep blacks dense and bright highlights unclipped.
   const shDeltaL = refStats.zoneQuantilesL[1] - srcStats.zoneQuantilesL[1];
   const hiDeltaL = refStats.zoneQuantilesL[3] - srcStats.zoneQuantilesL[3];
-  const shadows = clamp(shDeltaL * 0.85, -0.24, 0.22);
-  const maxHighlights = 0.22 - 0.22 * skinPresence;
-  const highlights = clamp(hiDeltaL * 0.90, -0.26, maxHighlights);
+  const maxPosShadows = 0.06 * (1.0 - 0.85 * darkTargetFactor);
+  const maxPosHighlights = 0.06 * (1.0 - 0.45 * darkTargetFactor) * (1.0 - headroomUsed);
+  const shadows = clamp(shDeltaL * 0.50, -0.22, maxPosShadows);
+  const highlights = clamp(hiDeltaL * 0.50, -0.24, maxPosHighlights);
 
-  // 4. Illuminant-weighted OKLab White Balance
+  // 4. Illuminant-weighted OKLab White Balance (unblocked by skin ratio so pinks,
+  // warm cinema ambers, and cool teals transfer freely at full intensity)
   const dA = refStats.meanA - srcStats.meanA;
   const dB = refStats.meanB - srcStats.meanB;
-  const maxWarmTemp = 0.48 - 0.40 * skinPresence;
-  const maxCoolTemp = 0.48 - 0.34 * skinPresence;
-  const maxTint = 0.32 - 0.22 * skinPresence;
-  const temp = clamp((dB * 2.35 + dA * 0.45) * 0.52, -maxCoolTemp, maxWarmTemp);
-  const tint = clamp((dA * 2.15 - dB * 0.25) * 0.46, -maxTint, maxTint);
+  const temp = clamp((dB * 2.55 + dA * 0.45) * 0.60, -0.50, 0.50);
+  const tint = clamp((dA * 2.95 - dB * 0.25) * 0.68, -0.46, 0.46);
 
   // 5. Saturation & Smart Vibrance (symmetric chroma floor for flat/monochrome inputs)
   const chromaRatio =
     Math.max(refStats.meanChroma, 0.032) / Math.max(srcStats.meanChroma, 0.032);
-  const maxSat = 1.24 - 0.20 * skinPresence;
-  const maxVib = 0.34 - 0.29 * skinPresence;
-  const sat = clamp(1.0 + (chromaRatio - 1.0) * 0.36, 0.80, maxSat);
+  const maxSat = 1.24 - 0.14 * headroomUsed;
+  const maxVib = 0.34 - 0.22 * headroomUsed;
+  const sat = clamp(1.0 + (chromaRatio - 1.0) * 0.34, 0.80, maxSat);
   const vib = clamp(
-    (chromaRatio - 1.0) * 0.32 + (srcStats.lowChromaRatio - refStats.lowChromaRatio) * 0.18,
+    (chromaRatio - 1.0) * 0.30 + (srcStats.lowChromaRatio - refStats.lowChromaRatio) * 0.16,
     -0.18,
     maxVib
   );
 
   // 6. 3-Way Split-Toning Wheel Decomposition (residual zone color minus global WB)
-  const shDA = (refStats.shadowAB[0] - srcStats.shadowAB[0]) - dA * 0.55;
-  const shDB = (refStats.shadowAB[1] - srcStats.shadowAB[1]) - dB * 0.55;
-  const mdDA = (refStats.midAB[0] - srcStats.midAB[0]) - dA * 0.70;
-  const mdDB = (refStats.midAB[1] - srcStats.midAB[1]) - dB * 0.70;
-  const hiDA = (refStats.highAB[0] - srcStats.highAB[0]) - dA * 0.55;
-  const hiDB = (refStats.highAB[1] - srcStats.highAB[1]) - dB * 0.55;
+  const shDA = (refStats.shadowAB[0] - srcStats.shadowAB[0]) - dA * 0.42;
+  const shDB = (refStats.shadowAB[1] - srcStats.shadowAB[1]) - dB * 0.42;
+  const mdDA = (refStats.midAB[0] - srcStats.midAB[0]) - dA * 0.52;
+  const mdDB = (refStats.midAB[1] - srcStats.midAB[1]) - dB * 0.52;
+  const hiDA = (refStats.highAB[0] - srcStats.highAB[0]) - dA * 0.45;
+  const hiDB = (refStats.highAB[1] - srcStats.highAB[1]) - dB * 0.45;
 
-  const skinWheelDamp = 1.0 - 0.75 * skinPresence;
-  const lift = oklabABToZeroMeanWheelDelta(shDA, shDB, 0.55, 0.065);
-  const gamma = oklabABToZeroMeanWheelDelta(
-    mdDA,
-    mdDB,
-    0.42 * skinWheelDamp,
-    0.055 * skinWheelDamp
-  );
+  const gainHeadroomDamp = 1.0 - 0.55 * headroomUsed;
+  const lift = oklabABToZeroMeanWheelDelta(shDA, shDB, 0.66, 0.080);
+  const gamma = oklabABToZeroMeanWheelDelta(mdDA, mdDB, 0.66, 0.082);
   const gain = oklabABToZeroMeanWheelDelta(
     hiDA,
     hiDB,
-    0.50 * skinWheelDamp,
-    0.065 * skinWheelDamp
+    0.58 * gainHeadroomDamp,
+    0.072 * gainHeadroomDamp
   );
 
   return {
@@ -897,16 +1270,25 @@ function computePrimarySlidersAltair(refStats, srcStats, tgtSkinRatio = 0.0) {
 }
 
 // ---------------------------------------------------------------------------
-// Lattice Solver: Iterative 3D OKLab Covariance Transfer + 5-Zone Spline +
-// Skin-Tone Cluster Lock + Neutral-Axis Anchor + Scene-Linear Filmic Shoulder
+// Lattice Solver: 16-Direction 3D OKLab Sliced Optimal Transport + Covariance
+// Hybrid + 5-Zone Monotone Hermite Spline + Narrow Natural Skin-Tone Lock
 // ---------------------------------------------------------------------------
-function buildAltairLatticeTargets(G_sliders, refSamples, srcSamples, refStats, tgtSkinRatio) {
+function buildAltairLatticeTargets(
+  G_sliders,
+  refSamples,
+  srcSamples,
+  refStats,
+  srcStats,
+  tgtSkinRatio
+) {
+  const darkTargetFactor = computeDarkTargetFactor(srcStats);
   const baseR = new Float32Array(LATTICE_COUNT);
   const baseG = new Float32Array(LATTICE_COUNT);
   const baseB = new Float32Array(LATTICE_COUNT);
   const baseL = new Float32Array(LATTICE_COUNT);
   const baseA = new Float32Array(LATTICE_COUNT);
   const baseBLab = new Float32Array(LATTICE_COUNT);
+  const origL = new Float32Array(LATTICE_COUNT);
   const origA = new Float32Array(LATTICE_COUNT);
   const origBLab = new Float32Array(LATTICE_COUNT);
   const origSkinMask = new Float32Array(LATTICE_COUNT);
@@ -923,6 +1305,7 @@ function buildAltairLatticeTargets(G_sliders, refSamples, srcSamples, refStats, 
       for (let ir = 0; ir < LATTICE_SIZE; ir++) {
         const r0 = ir / (LATTICE_SIZE - 1);
         srgbToOklab(r0, g0, b0, rawLab);
+        origL[idx] = rawLab[0];
         origA[idx] = rawLab[1];
         origBLab[idx] = rawLab[2];
         origSkinMask[idx] = computeSkinClusterMask(rawLab[0], rawLab[1], rawLab[2]);
@@ -940,30 +1323,64 @@ function buildAltairLatticeTargets(G_sliders, refSamples, srcSamples, refStats, 
     }
   }
 
-  // Evaluate primary grade on source samples to measure residual OKLab distribution
+  // Evaluate primary grade on source samples to measure post-slider OKLab distribution
   const nSrc = srcSamples.count;
-  const curL = new Float32Array(nSrc);
-  const curA = new Float32Array(nSrc);
-  const curB = new Float32Array(nSrc);
+  const postSrcR = new Float32Array(nSrc);
+  const postSrcG = new Float32Array(nSrc);
+  const postSrcB = new Float32Array(nSrc);
+  const postSrcL = new Float32Array(nSrc);
+  const postSrcA = new Float32Array(nSrc);
+  const postSrcB_lab = new Float32Array(nSrc);
   const curW = srcSamples.covW;
 
   for (let i = 0; i < nSrc; i++) {
     gradeRGB(G_sliders, srcSamples.r[i], srcSamples.g[i], srcSamples.b[i], tmpRgb);
+    postSrcR[i] = tmpRgb[0];
+    postSrcG[i] = tmpRgb[1];
+    postSrcB[i] = tmpRgb[2];
     srgbToOklab(tmpRgb[0], tmpRgb[1], tmpRgb[2], tmpLab);
-    curL[i] = tmpLab[0];
-    curA[i] = tmpLab[1];
-    curB[i] = tmpLab[2];
+    postSrcL[i] = tmpLab[0];
+    postSrcA[i] = tmpLab[1];
+    postSrcB_lab[i] = tmpLab[2];
   }
 
   // 5-Zone Monotone Hermite Tonal Curve solved on post-slider source vs reference
+  // with dark-cinema density guard so deep shadows never wash out to milky gray.
   const postSrcQuantilesL = computeWeightedQuantiles(
-    curL,
+    postSrcL,
     curW,
     [0.075, 0.25, 0.5, 0.75, 0.925]
   );
-  const toneSpline = buildMonotoneHermite5Zone(postSrcQuantilesL, refStats.zoneQuantilesL, 0.65);
+  const toneSpline = buildMonotoneHermite5Zone(
+    postSrcQuantilesL,
+    refStats.zoneQuantilesL,
+    0.58,
+    darkTargetFactor
+  );
 
-  // Reference 3x3 OKLab covariance & mean
+  // Stage 2A: Fast 16-Direction 3D OKLab Sliced Optimal Transport on strided samples
+  const { sotL, sotA, sotB } = runSlicedOptimalTransport16(
+    postSrcL,
+    postSrcA,
+    postSrcB_lab,
+    curW,
+    refSamples
+  );
+  const { sotLatL, sotLatA, sotLatB } = projectSotToLattice(
+    postSrcL,
+    postSrcA,
+    postSrcB_lab,
+    curW,
+    sotL,
+    sotA,
+    sotB,
+    baseL,
+    baseA,
+    baseBLab
+  );
+
+  // Stage 2B: Iterative 3D OKLab Covariance & Eigen-Aligned MKL/Cholesky Transfer
+  // Stabilizes out-of-distribution gamut corners and blends smoothly with 16-dir SOT.
   const refCovStats = computeOklabCovariance3x3(
     refSamples.L,
     refSamples.a,
@@ -973,10 +1390,12 @@ function buildAltairLatticeTargets(G_sliders, refSamples, srcSamples, refStats, 
   const refMean = refCovStats.mean;
   const refCov = refCovStats.cov;
 
-  // Iterative 3D OKLab Covariance & Cholesky/MKL Distribution Transfer (3 damped passes)
-  const latL = Float32Array.from(baseL);
-  const latA = Float32Array.from(baseA);
-  const latB = Float32Array.from(baseBLab);
+  const curL = Float32Array.from(postSrcL);
+  const curA = Float32Array.from(postSrcA);
+  const curB = Float32Array.from(postSrcB_lab);
+  const covLatL = Float32Array.from(baseL);
+  const covLatA = Float32Array.from(baseA);
+  const covLatB = Float32Array.from(baseBLab);
 
   const iterSteps = [0.46, 0.32, 0.22];
   const abComp = [0, 0];
@@ -1002,7 +1421,6 @@ function buildAltairLatticeTargets(G_sliders, refSamples, srcSamples, refStats, 
     const dM1 = step * (refMean[1] - curMean[1]);
     const dM2 = step * (refMean[2] - curMean[2]);
 
-    // Advance source samples
     for (let i = 0; i < nSrc; i++) {
       const x0 = curL[i] - curMean[0];
       const x1 = curA[i] - curMean[1];
@@ -1016,123 +1434,186 @@ function buildAltairLatticeTargets(G_sliders, refSamples, srcSamples, refStats, 
       curB[i] = abComp[1];
     }
 
-    // Apply identical step to 17^3 lattice nodes
     for (let i = 0; i < LATTICE_COUNT; i++) {
-      const x0 = latL[i] - curMean[0];
-      const x1 = latA[i] - curMean[1];
-      const x2 = latB[i] - curMean[2];
+      const x0 = covLatL[i] - curMean[0];
+      const x1 = covLatA[i] - curMean[1];
+      const x2 = covLatB[i] - curMean[2];
       const nL = clamp(curMean[0] + dM0 + a00 * x0 + a01 * x1 + a02 * x2, 0.0, 1.0);
       const nA = curMean[1] + dM1 + a10 * x0 + a11 * x1 + a12 * x2;
       const nB = curMean[2] + dM2 + a20 * x0 + a21 * x1 + a22 * x2;
       compressOklabChroma(nA, nB, abComp);
-      latL[i] = nL;
-      latA[i] = abComp[0];
-      latB[i] = abComp[1];
+      covLatL[i] = nL;
+      covLatA[i] = abComp[0];
+      covLatB[i] = abComp[1];
     }
   }
 
-  // Adaptive skinProtect retention weight (stronger when real skin clusters exist)
-  const adaptiveSkinProtect = clamp(0.58 + 0.30 * Math.min(1.0, tgtSkinRatio * 4.0), 0.58, 0.88);
+  // Adaptive skinProtect retention weight strictly inside the narrow natural skin locus
+  const adaptiveSkinProtect = clamp(0.65 + 0.30 * Math.min(1.0, tgtSkinRatio * 4.5), 0.65, 0.95);
+  const maxPosLDelta = 0.055 * (1.0 - 0.38 * darkTargetFactor);
 
-  const targetR = new Float32Array(LATTICE_COUNT);
-  const targetG = new Float32Array(LATTICE_COUNT);
-  const targetB = new Float32Array(LATTICE_COUNT);
-  const compRgb = [0, 0, 0];
-
-  for (let i = 0; i < LATTICE_COUNT; i++) {
-    const L0 = baseL[i];
-    const a0 = baseA[i];
-    const b0 = baseBLab[i];
+  // Shared per-point OKLab target synthesizer (used identically on both the 17^3
+  // lattice and the actual target image samples so poly3 fits the real scene
+  // distribution with maximum fidelity while preserving global gamut smoothness).
+  const synthesizePoint = (
+    bR,
+    bG,
+    bB,
+    L0,
+    a0,
+    b0,
+    rawOrigL,
+    rawOrigA,
+    rawOrigB,
+    skinM,
+    sL,
+    sA,
+    sB,
+    cL,
+    cA,
+    cB,
+    outRgb
+  ) => {
     const origC = Math.hypot(a0, b0);
 
-    // 1. Combine 5-Zone Monotone Hermite Tonal Curve with 3D covariance L
+    // 1. Combine 5-Zone Monotone Hermite Tonal Curve with SOT + Covariance hybrid L
     const splineL = evalMonotoneHermite(toneSpline, L0);
-    const covL = latL[i];
-    const rawTargetL = 0.65 * splineL + 0.35 * covL;
+    const rawTargetL = 0.65 * splineL + 0.25 * sL + 0.10 * cL;
 
-    // 2. Neutral-axis black & white guards
-    const shadowToeMask = smoothstep(0.02, 0.16, L0);
+    // 2. Neutral-axis deep-black & specular-white guards
+    const shadowToeMask = smoothstep(0.018, 0.11, L0);
     const darkNeutralMask =
-      (1.0 - smoothstep(0.06, 0.22, L0)) * (1.0 - smoothstep(0.015, 0.055, origC));
+      (1.0 - smoothstep(0.02, 0.08, L0)) * (1.0 - smoothstep(0.015, 0.045, origC));
     const brightNeutralMask =
-      smoothstep(0.72, 0.84, L0) * (1.0 - smoothstep(0.015, 0.060, origC));
-    const neutralGuard = (1.0 - 0.88 * darkNeutralMask) * (1.0 - 0.88 * brightNeutralMask);
+      smoothstep(0.90, 0.98, L0) * (1.0 - smoothstep(0.010, 0.040, origC));
+    const neutralGuard = (1.0 - 0.70 * darkNeutralMask) * (1.0 - 0.72 * brightNeutralMask);
 
-    // 3. Blend transferred chromaticity with neutral guards
-    const dA = (latA[i] - a0) * neutralGuard * shadowToeMask;
-    const dB = (latB[i] - b0) * neutralGuard * shadowToeMask;
-    let candA = a0 + dA;
-    let candB = b0 + dB;
+    // 3. Blend 16-direction SOT (84%) + 3x3 Covariance (16%) chromaticity
+    const hybridA = 0.84 * sA + 0.16 * cA;
+    const hybridB = 0.84 * sB + 0.16 * cB;
+    let candA = a0 + (hybridA - a0) * neutralGuard * shadowToeMask;
+    let candB = b0 + (hybridB - b0) * neutralGuard * shadowToeMask;
 
-    // 4. Perceptual Skin-Tone Cluster Lock (anchored to original ungraded OKLab skin hue in [25°, 65°])
-    // Uses a smooth wide transition halo around the skin corridor when real skin is present
-    // so the global cubic polynomial can preserve skin cleanly without sharp discontinuities.
-    const rawHueDeg = ((Math.atan2(origBLab[i], origA[i]) * RAD_TO_DEG) + 360.0) % 360.0;
-    const rawC = Math.hypot(origA[i], origBLab[i]);
-    const skinHalo =
-      tgtSkinRatio > 0.08
-        ? smoothstep(5.0, 24.0, rawHueDeg) *
-          (1.0 - smoothstep(66.0, 88.0, rawHueDeg)) *
-          smoothstep(0.012, 0.032, rawC) *
-          (1.0 - smoothstep(0.135, 0.21, rawC)) *
-          smoothstep(0.14, 0.25, baseL[i]) *
-          (1.0 - smoothstep(0.88, 0.98, baseL[i])) *
-          smoothstep(0.08, 0.22, tgtSkinRatio) *
-          0.55
-        : 0.0;
-    const skinM = Math.max(origSkinMask[i], skinHalo);
+    // 4. Narrow Natural Skin-Tone Cluster Lock: strictly L in [0.35, 0.82],
+    // C in [0.03, 0.145], hue in [28°, 58°] with smooth falloff.
+    let skinTargetL = rawTargetL;
     if (skinM > 1e-4) {
-      const skinAnchorC = Math.hypot(origA[i], origBLab[i]);
-      const skinAnchorHue = Math.atan2(origBLab[i], origA[i]);
+      const skinAnchorC = Math.hypot(rawOrigA, rawOrigB);
+      const skinAnchorHue = Math.atan2(rawOrigB, rawOrigA);
       const candC = Math.hypot(candA, candB);
       const candHue = Math.atan2(candB, candA);
       const dHue = wrapAngleRad(candHue - skinAnchorHue);
 
       let candDeg = candHue * RAD_TO_DEG;
       if (candDeg < 0.0) candDeg += 360.0;
-      const outsideSkinCorridor = candDeg < 24.0 || candDeg > 66.0 ? 1.0 : 0.0;
+      const outsideSkinCorridor = candDeg < 28.0 || candDeg > 58.0 ? 1.0 : 0.0;
       const effProtect = clamp(
-        adaptiveSkinProtect + 0.22 * outsideSkinCorridor,
-        0.58,
-        0.95
+        adaptiveSkinProtect + 0.16 * outsideSkinCorridor,
+        0.65,
+        0.97
       );
 
       let safeHue = skinAnchorHue + dHue * (1.0 - effProtect * skinM);
       let safeDeg = safeHue * RAD_TO_DEG;
       if (safeDeg < 0.0) safeDeg += 360.0;
-      if (safeDeg < 24.0 || safeDeg > 66.0) {
-        const clampedDeg = clamp(safeDeg > 180.0 ? 24.0 : safeDeg, 24.0, 66.0);
+      if (safeDeg < 28.0 || safeDeg > 58.0) {
+        const clampedDeg = clamp(safeDeg > 180.0 ? 28.0 : safeDeg, 28.0, 58.0);
         const pullRad = wrapAngleRad(clampedDeg * DEG_TO_RAD - safeHue);
-        safeHue += pullRad * skinM * 0.90;
+        safeHue += pullRad * skinM * 0.92;
       }
 
       const safeC = clamp(
-        skinAnchorC + (candC - skinAnchorC) * (1.0 - effProtect * skinM * 0.85),
-        skinAnchorC * 0.82,
-        Math.min(skinAnchorC * 1.16, 0.135)
+        skinAnchorC + (candC - skinAnchorC) * (1.0 - effProtect * skinM * 0.82),
+        skinAnchorC * 0.84,
+        Math.min(skinAnchorC * 1.15, 0.135)
       );
       candA = safeC * Math.cos(safeHue);
       candB = safeC * Math.sin(safeHue);
+
+      if (skinTargetL > rawOrigL + 0.012 && rawOrigL > 0.72) {
+        skinTargetL = rawOrigL + 0.012 + (skinTargetL - (rawOrigL + 0.012)) * (1.0 - 0.82 * skinM);
+      }
     }
 
-    // 5. Final chroma soft-compression and luminance anchoring
+    // 5. Final chroma soft-compression and dark-safe luminance anchoring
     compressOklabChroma(candA, candB, abComp);
-    const hiLumaGuard = 1.0 - 0.65 * smoothstep(0.84, 0.99, L0);
+    const hiLumaGuard = 1.0 - 0.72 * smoothstep(0.80, 0.97, L0);
+    const darkLiftGuard = 1.0 - 0.78 * darkTargetFactor * (1.0 - smoothstep(0.05, 0.24, L0));
+    const rawDeltaL = skinTargetL - L0;
+    const boundedDeltaL =
+      rawDeltaL > 0.0
+        ? Math.min(rawDeltaL, maxPosLDelta) * darkLiftGuard
+        : Math.max(rawDeltaL, -0.080);
     const finalL = clamp(
-      L0 + clamp(rawTargetL - L0, -0.095, 0.095) * shadowToeMask * hiLumaGuard,
+      L0 + boundedDeltaL * shadowToeMask * hiLumaGuard,
       0.0,
       1.0
     );
 
     oklabToSrgb(finalL, abComp[0], abComp[1], tmpRgb);
+    outRgb[0] = bR + (tmpRgb[0] - bR) * shadowToeMask;
+    outRgb[1] = bG + (tmpRgb[1] - bG) * shadowToeMask;
+    outRgb[2] = bB + (tmpRgb[2] - bB) * shadowToeMask;
+  };
 
-    // 6. Pre-compensate cleanly for the single-pass runtime kfFilmicLinearShoulder
-    // (> 0.80 linear) so highlights match 1:1 without double compression.
-    preCompensateFilmicTargetRGB(tmpRgb[0], tmpRgb[1], tmpRgb[2], compRgb);
+  const targetR = new Float32Array(LATTICE_COUNT);
+  const targetG = new Float32Array(LATTICE_COUNT);
+  const targetB = new Float32Array(LATTICE_COUNT);
+  const synthRgb = [0, 0, 0];
 
-    targetR[i] = baseR[i] + (compRgb[0] - baseR[i]) * shadowToeMask;
-    targetG[i] = baseG[i] + (compRgb[1] - baseG[i]) * shadowToeMask;
-    targetB[i] = baseB[i] + (compRgb[2] - baseB[i]) * shadowToeMask;
+  for (let i = 0; i < LATTICE_COUNT; i++) {
+    synthesizePoint(
+      baseR[i],
+      baseG[i],
+      baseB[i],
+      baseL[i],
+      baseA[i],
+      baseBLab[i],
+      origL[i],
+      origA[i],
+      origBLab[i],
+      origSkinMask[i],
+      sotLatL[i],
+      sotLatA[i],
+      sotLatB[i],
+      covLatL[i],
+      covLatA[i],
+      covLatB[i],
+      synthRgb
+    );
+    targetR[i] = synthRgb[0];
+    targetG[i] = synthRgb[1];
+    targetB[i] = synthRgb[2];
+  }
+
+  // Synthesize exact targets on the real target image's strided samples (using
+  // direct 16-dir SOT output without 17^3 extrapolation loss) for joint poly3 fit.
+  const sampleTargetR = new Float32Array(nSrc);
+  const sampleTargetG = new Float32Array(nSrc);
+  const sampleTargetB = new Float32Array(nSrc);
+  for (let i = 0; i < nSrc; i++) {
+    synthesizePoint(
+      postSrcR[i],
+      postSrcG[i],
+      postSrcB[i],
+      postSrcL[i],
+      postSrcA[i],
+      postSrcB_lab[i],
+      srcSamples.L[i],
+      srcSamples.a[i],
+      srcSamples.bLab[i],
+      srcSamples.skinW[i],
+      sotL[i],
+      sotA[i],
+      sotB[i],
+      curL[i],
+      curA[i],
+      curB[i],
+      synthRgb
+    );
+    sampleTargetR[i] = synthRgb[0];
+    sampleTargetG[i] = synthRgb[1];
+    sampleTargetB[i] = synthRgb[2];
   }
 
   return {
@@ -1144,9 +1625,19 @@ function buildAltairLatticeTargets(G_sliders, refSamples, srcSamples, refStats, 
     baseBLab,
     baseSkinMask: origSkinMask,
     adaptiveSkinProtect,
+    tgtSkinRatio,
     targetR,
     targetG,
     targetB,
+    sampleCount: nSrc,
+    sampleBaseR: postSrcR,
+    sampleBaseG: postSrcG,
+    sampleBaseB: postSrcB,
+    sampleTargetR,
+    sampleTargetG,
+    sampleTargetB,
+    sampleW: curW,
+    sampleSkinMask: srcSamples.skinW,
   };
 }
 
@@ -1213,10 +1704,20 @@ function fitZeroInterceptPoly3Altair(lattice) {
     baseA,
     baseBLab,
     baseSkinMask,
-    adaptiveSkinProtect = 0.60,
+    adaptiveSkinProtect = 0.65,
+    tgtSkinRatio = 0.0,
     targetR,
     targetG,
     targetB,
+    sampleCount = 0,
+    sampleBaseR,
+    sampleBaseG,
+    sampleBaseB,
+    sampleTargetR,
+    sampleTargetG,
+    sampleTargetB,
+    sampleW,
+    sampleSkinMask,
   } = lattice;
   const N = 19;
   const AtA = new Float64Array(N * N);
@@ -1224,23 +1725,9 @@ function fitZeroInterceptPoly3Altair(lattice) {
   const AtYG = new Float64Array(N);
   const AtYB = new Float64Array(N);
   const phi = new Float64Array(N);
+  const skinWeightScale = smoothstep(0.08, 0.20, tgtSkinRatio);
 
-  for (let idx = 0; idx < LATTICE_COUNT; idx++) {
-    const r = baseR[idx];
-    const g = baseG[idx];
-    const b = baseB[idx];
-    const L = baseL[idx];
-    const chr = Math.hypot(baseA[idx], baseBLab[idx]);
-
-    const isNeutral = chr < 0.045 ? 3.5 : 1.0;
-    const isDark = L < 0.14 ? 4.2 : 1.0;
-    const isBrightNeutral =
-      L > 0.94 && chr < 0.03 ? 18.0 : L > 0.74 && chr < 0.06 ? 5.5 : 1.0;
-    const skinM = baseSkinMask[idx];
-    const isSkin =
-      skinM > 0.12 ? 1.0 + skinM * (10.0 + 18.0 * adaptiveSkinProtect) : 1.0;
-    const w = isNeutral * isDark * isBrightNeutral * isSkin;
-
+  const accumulateRow = (r, g, b, tr, tg, tb, w) => {
     const r2 = r * r;
     const g2 = g * g;
     const b2 = b * b;
@@ -1265,10 +1752,6 @@ function fitZeroInterceptPoly3Altair(lattice) {
     phi[17] = b2 * g;
     phi[18] = r * g * b;
 
-    const tr = targetR[idx];
-    const tg = targetG[idx];
-    const tb = targetB[idx];
-
     for (let i = 0; i < N; i++) {
       const wPhiI = w * phi[i];
       AtYR[i] += wPhiI * tr;
@@ -1279,6 +1762,53 @@ function fitZeroInterceptPoly3Altair(lattice) {
         AtA[rowOff + j] += wPhiI * phi[j];
       }
     }
+  };
+
+  // 1. Global 17^3 lattice nodes (ensures smooth gamut-wide extrapolation)
+  let latticeWeightSum = 0.0;
+  for (let idx = 0; idx < LATTICE_COUNT; idx++) {
+    const r = baseR[idx];
+    const g = baseG[idx];
+    const b = baseB[idx];
+    const L = baseL[idx];
+    const chr = Math.hypot(baseA[idx], baseBLab[idx]);
+
+    const isNeutral = chr < 0.045 ? 1.8 : 1.0;
+    const isDark = L < 0.08 ? 3.2 : 1.0;
+    const isBrightNeutral = L > 0.92 && chr < 0.035 ? 2.8 : 1.0;
+    const skinM = baseSkinMask[idx];
+    const isSkin =
+      skinM > 0.15
+        ? 1.0 + skinM * (4.0 + (12.0 + 18.0 * adaptiveSkinProtect) * skinWeightScale)
+        : 1.0;
+    const w = isNeutral * isDark * isBrightNeutral * isSkin;
+    latticeWeightSum += w;
+    accumulateRow(r, g, b, targetR[idx], targetG[idx], targetB[idx], w);
+  }
+
+  // 2. Direct target-image SOT samples (focuses cubic precision on the actual
+  // target image's color clusters & narrow skin tones rather than empty cube corners)
+  if (sampleCount >= 16 && sampleBaseR && sampleTargetR) {
+    let rawSampleW = 0.0;
+    for (let i = 0; i < sampleCount; i++) {
+      rawSampleW += sampleW ? sampleW[i] : 1.0;
+    }
+    const sampleNorm = (latticeWeightSum * 1.15) / Math.max(rawSampleW, 1e-4);
+    for (let i = 0; i < sampleCount; i++) {
+      const baseW = (sampleW ? sampleW[i] : 1.0) * sampleNorm;
+      const sm = sampleSkinMask ? sampleSkinMask[i] : 0.0;
+      const skinBoost =
+        sm > 0.15 ? 1.0 + sm * (2.0 + 28.0 * adaptiveSkinProtect * skinWeightScale) : 1.0;
+      accumulateRow(
+        sampleBaseR[i],
+        sampleBaseG[i],
+        sampleBaseB[i],
+        sampleTargetR[i],
+        sampleTargetG[i],
+        sampleTargetB[i],
+        baseW * skinBoost
+      );
+    }
   }
 
   for (let i = 0; i < N; i++) {
@@ -1288,7 +1818,7 @@ function fitZeroInterceptPoly3Altair(lattice) {
   }
 
   for (let i = 0; i < N; i++) {
-    const lambda = i < 3 ? 24.0 : i < 9 ? 120.0 : 280.0;
+    const lambda = i < 3 ? 10.0 : i < 9 ? 55.0 : 140.0;
     AtA[i * N + i] += lambda;
     if (i === 0) AtYR[0] += lambda * 1.0;
     if (i === 1) AtYG[1] += lambda * 1.0;
@@ -1353,7 +1883,8 @@ function fitResidualHue6Altair(lattice, polyR, polyG, polyB) {
     baseG,
     baseB,
     baseSkinMask,
-    adaptiveSkinProtect = 0.60,
+    adaptiveSkinProtect = 0.62,
+    tgtSkinRatio = 0.0,
     targetR,
     targetG,
     targetB,
@@ -1363,23 +1894,24 @@ function fitResidualHue6Altair(lattice, polyR, polyG, polyB) {
   const sumSat = new Float64Array(6);
   const sumLum = new Float64Array(6);
 
-  // Non-skin damping on Red-Orange (s=0, 0 deg) and Yellow-Orange (s=5, -60 deg)
-  // opponent-chroma sectors where human skin tones reside (~-35 deg to -52 deg).
-  const skinSectorNonSkinDamp = clamp(1.0 - 0.72 * adaptiveSkinProtect, 0.22, 0.75);
+  // Only emphasize narrow-locus skin residuals in s=5 (Yellow-Orange, -60 deg opponent)
+  // when genuine portrait skin is present; never suppress Red/Magenta (s=0, s=1) or
+  // non-skin warm/cool hues globally.
+  const hasRealSkin = smoothstep(0.06, 0.18, tgtSkinRatio);
 
   for (let i = 0; i < LATTICE_COUNT; i++) {
     const r = baseR[i];
     const g = baseG[i];
     const b = baseB[i];
-    const pr = clamp(evalPoly19(polyR, r, g, b), 0.0, 1.35);
-    const pg = clamp(evalPoly19(polyG, r, g, b), 0.0, 1.35);
-    const pb = clamp(evalPoly19(polyB, r, g, b), 0.0, 1.35);
+    const pr = clamp(evalPoly19(polyR, r, g, b), 0.0, 1.15);
+    const pg = clamp(evalPoly19(polyG, r, g, b), 0.0, 1.15);
+    const pb = clamp(evalPoly19(polyB, r, g, b), 0.0, 1.15);
 
     const y0 = 0.2126 * pr + 0.7152 * pg + 0.0722 * pb;
     const c1 = pr - y0;
     const c2 = pb - y0;
     const chr = Math.hypot(c1, c2);
-    if (chr < 0.045 || y0 < 0.12 || y0 > 0.86) continue;
+    if (chr < 0.045 || y0 < 0.12 || y0 > 0.92) continue;
 
     const tr = targetR[i];
     const tg = targetG[i];
@@ -1391,24 +1923,26 @@ function fitResidualHue6Altair(lattice, polyR, polyG, polyB) {
 
     const h0 = Math.atan2(c2, c1);
     const hT = Math.atan2(tc2, tc1);
-    const dHue = clamp(wrapAngleRad(hT - h0), -0.32, 0.32);
-    const dSat = clamp((tChr - chr) / Math.max(chr, 0.05), -0.42, 0.42);
-    const dLum = clamp((ty - y0) / 0.24, -0.28, 0.28);
+    const dHue = clamp(wrapAngleRad(hT - h0), -0.34, 0.34);
+    const dSat = clamp((tChr - chr) / Math.max(chr, 0.05), -0.45, 0.45);
+    const dLum = clamp((ty - y0) / 0.24, -0.26, 0.26);
 
     const gate =
       smoothstep(0.045, 0.13, chr) *
       smoothstep(0.12, 0.24, y0) *
-      (1.0 - smoothstep(0.72, 0.88, y0));
+      (1.0 - smoothstep(0.84, 0.95, y0));
 
     const skinM = baseSkinMask ? baseSkinMask[i] : 0.0;
     const skinBoost =
-      skinM > 0.15 ? 1.0 + skinM * (8.0 + 14.0 * adaptiveSkinProtect) : 1.0;
+      hasRealSkin > 1e-3 && skinM > 0.20
+        ? 1.0 + hasRealSkin * skinM * (6.0 + 10.0 * adaptiveSkinProtect)
+        : 1.0;
 
     for (let s = 0; s < 6; s++) {
       let sw = hueSectorWeight(h0, HUE_CENTERS[s]) * gate;
       if (sw <= 1e-4) continue;
-      if (s === 0 || s === 5) {
-        sw *= skinM > 0.15 ? skinBoost : skinSectorNonSkinDamp;
+      if (s === 5 && skinM > 0.20) {
+        sw *= skinBoost;
       }
       sumW[s] += sw;
       sumHue[s] += sw * dHue;
@@ -1420,15 +1954,12 @@ function fitResidualHue6Altair(lattice, polyR, polyG, polyB) {
   const hueShift = IDENTITY_HUE6.slice();
   const hueSat = IDENTITY_HUE6.slice();
   const hueLuma = IDENTITY_HUE6.slice();
-  const ridge = 42.0;
+  const ridge = 38.0;
 
   for (let s = 0; s < 6; s++) {
-    const isSkinSector = s === 0 || s === 5;
     const denom = sumW[s] + ridge;
-    const maxShift = isSkinSector ? 0.30 : 0.20;
-    const maxSat = isSkinSector ? clamp(0.24 - 0.08 * adaptiveSkinProtect, 0.16, 0.24) : 0.26;
-    hueShift[s] = clamp(sumHue[s] / denom, -maxShift, maxShift);
-    hueSat[s] = clamp(sumSat[s] / denom, -maxSat, maxSat);
+    hueShift[s] = clamp(sumHue[s] / denom, -0.26, 0.26);
+    hueSat[s] = clamp(sumSat[s] / denom, -0.30, 0.30);
     hueLuma[s] = clamp(sumLum[s] / denom, -0.16, 0.16);
   }
 
@@ -1436,7 +1967,7 @@ function fitResidualHue6Altair(lattice, polyR, polyG, polyB) {
 }
 
 // Canonical skin anchors (Fair, Medium, Olive, Deep) used as a lightweight
-// corridor guard inside Closed-Loop Residual Trim.
+// corridor guard inside Closed-Loop Residual Trim when real skin is present.
 const SKIN_GUARD_SWATCHES = Object.freeze([
   [0.91, 0.76, 0.67],
   [0.78, 0.57, 0.44],
@@ -1447,16 +1978,16 @@ const SKIN_GUARD_SWATCHES = Object.freeze([
 function skinCorridorExcessRad(hueRad) {
   let deg = hueRad * RAD_TO_DEG;
   if (deg < 0.0) deg += 360.0;
-  if (deg >= 25.0 && deg <= 65.0) return 0.0;
-  const distLow = Math.abs(wrapAngleRad(hueRad - 25.0 * DEG_TO_RAD));
-  const distHigh = Math.abs(wrapAngleRad(hueRad - 65.0 * DEG_TO_RAD));
+  if (deg >= 28.0 && deg <= 58.0) return 0.0;
+  const distLow = Math.abs(wrapAngleRad(hueRad - 28.0 * DEG_TO_RAD));
+  const distHigh = Math.abs(wrapAngleRad(hueRad - 58.0 * DEG_TO_RAD));
   return Math.min(distLow, distHigh);
 }
 
 // ---------------------------------------------------------------------------
 // Closed-Loop Verification & Residual Trim against Exact evaluateGradeRGB()
 // ---------------------------------------------------------------------------
-function measureOklabError(params, srcSamples, refStats) {
+function measureOklabError(params, srcSamples, refStats, darkTargetFactor = 0.0, tgtSkinRatio = 0.0) {
   const G = prepareGrade(params);
   const outRgb = [0, 0, 0];
   const outLab = [0, 0, 0];
@@ -1483,7 +2014,7 @@ function measureOklabError(params, srcSamples, refStats) {
     sumB += wbW * outLab[2];
 
     const sw = srcSamples.skinW ? srcSamples.skinW[i] : 0.0;
-    if (sw > 0.15) {
+    if (sw > 0.20) {
       const hIn = Math.atan2(srcSamples.bLab[i], srcSamples.a[i]);
       const hOut = Math.atan2(outLab[2], outLab[1]);
       const drift = Math.abs(wrapAngleRad(hOut - hIn));
@@ -1494,20 +2025,22 @@ function measureOklabError(params, srcSamples, refStats) {
     }
   }
 
-  // Canonical skin swatches guard (prevents trim from drifting skin out of [25°, 65°])
-  const swatchWeight = skinWSum > 1e-3 ? 0.35 : 0.15;
-  for (let k = 0; k < SKIN_GUARD_SWATCHES.length; k++) {
-    const [sr, sg, sb] = SKIN_GUARD_SWATCHES[k];
-    srgbToOklab(sr, sg, sb, inLab);
-    evaluateGradeRGB(G, sr, sg, sb, outRgb, false);
-    srgbToOklab(outRgb[0], outRgb[1], outRgb[2], outLab);
-    const hIn = Math.atan2(inLab[2], inLab[1]);
-    const hOut = Math.atan2(outLab[2], outLab[1]);
-    const drift = Math.abs(wrapAngleRad(hOut - hIn));
-    const excess = skinCorridorExcessRad(hOut);
-    skinDriftSum += swatchWeight * (drift + 3.0 * excess);
-    skinOutSum += swatchWeight * excess;
-    skinWSum += swatchWeight;
+  // Canonical skin swatch corridor guard activates only when real skin exists in target
+  if (tgtSkinRatio > 0.05 || skinWSum > 1e-3) {
+    const swatchWeight = 0.30 * smoothstep(0.04, 0.14, Math.max(tgtSkinRatio, skinWSum > 1e-3 ? 0.10 : 0.0));
+    for (let k = 0; k < SKIN_GUARD_SWATCHES.length; k++) {
+      const [sr, sg, sb] = SKIN_GUARD_SWATCHES[k];
+      srgbToOklab(sr, sg, sb, inLab);
+      evaluateGradeRGB(G, sr, sg, sb, outRgb, false);
+      srgbToOklab(outRgb[0], outRgb[1], outRgb[2], outLab);
+      const hIn = Math.atan2(inLab[2], inLab[1]);
+      const hOut = Math.atan2(outLab[2], outLab[1]);
+      const drift = Math.abs(wrapAngleRad(hOut - hIn));
+      const excess = skinCorridorExcessRad(hOut);
+      skinDriftSum += swatchWeight * (drift + 3.0 * excess);
+      skinOutSum += swatchWeight * excess;
+      skinWSum += swatchWeight;
+    }
   }
 
   const meanL = sumL / Math.max(sumW, 1e-6);
@@ -1518,8 +2051,11 @@ function measureOklabError(params, srcSamples, refStats) {
   const errB = refStats.meanB - meanB;
   const meanSkinPenalty = skinWSum > 1e-5 ? skinDriftSum / skinWSum : 0.0;
   const skinOutOfCorridor = skinWSum > 1e-5 ? skinOutSum / skinWSum : 0.0;
+  // Prioritize chromatic fidelity over brightness chase on dark cinema targets
+  const lWeight = 1.0 - 0.55 * darkTargetFactor;
   const score =
-    Math.sqrt(errL * errL + 1.8 * (errA * errA + errB * errB)) + 0.45 * meanSkinPenalty;
+    Math.sqrt(lWeight * errL * errL + 2.2 * (errA * errA + errB * errB)) +
+    0.45 * meanSkinPenalty;
   return { errL, errA, errB, skinOutOfCorridor, score };
 }
 
@@ -1585,16 +2121,13 @@ export function analyzeEngineAltairV4(refView, tgtView, options = {}) {
   const refStats = computeDualSpaceStats(refSamples);
   const srcStats = computeDualSpaceStats(srcSamples);
   const effectiveSkinRatio = hasRealTarget ? srcStats.skinRatio : refStats.skinRatio;
+  const darkTargetFactor = computeDarkTargetFactor(srcStats);
 
   if (typeof onStage === "function") {
     onStage("Altair 4.0 ULTRA: Solving scene-linear sliders & 3-way wheels...");
   }
 
-  const primaryParams = computePrimarySlidersAltair(
-    refStats,
-    srcStats,
-    effectiveSkinRatio
-  );
+  const primaryParams = computePrimarySlidersAltair(refStats, srcStats);
   const G_sliders = prepareGrade({
     ...primaryParams,
     autoGradeMix: 0.0,
@@ -1602,7 +2135,7 @@ export function analyzeEngineAltairV4(refView, tgtView, options = {}) {
   });
 
   if (typeof onStage === "function") {
-    onStage("Altair 4.0 ULTRA: Iterative 3D OKLab covariance & 5-zone spline...");
+    onStage("Altair 4.0 ULTRA: 16-dir 3D OKLab SOT + covariance & 5-zone spline...");
   }
 
   const lattice = buildAltairLatticeTargets(
@@ -1610,6 +2143,7 @@ export function analyzeEngineAltairV4(refView, tgtView, options = {}) {
     refSamples,
     srcSamples,
     refStats,
+    srcStats,
     effectiveSkinRatio
   );
 
@@ -1637,45 +2171,53 @@ export function analyzeEngineAltairV4(refView, tgtView, options = {}) {
     hueLuma,
   });
 
-  // Closed-loop residual trim against the exact evaluateGradeRGB() shader twin
-  const baseEval = measureOklabError(candidate, srcSamples, refStats);
+  // Closed-loop residual trim against the exact evaluateGradeRGB() shader twin.
+  // Tightly bounds positive exposure lift on dark targets while allowing clean
+  // chromatic temp/tint convergence without global skin suppression.
+  const baseEval = measureOklabError(
+    candidate,
+    srcSamples,
+    refStats,
+    darkTargetFactor,
+    effectiveSkinRatio
+  );
   if (baseEval.score > 0.006) {
-    const skinTrimDamp = 1.0 - 0.65 * smoothstep(0.08, 0.25, effectiveSkinRatio);
+    const headroomUsed = computeHighlightHeadroomUsed(srcStats);
+    const maxPosEvTrim = 0.05 * (1.0 - 0.85 * darkTargetFactor) * (1.0 - headroomUsed);
+    const evMaxCeil = Math.min(0.24 - 0.12 * darkTargetFactor, 0.24 - 0.18 * headroomUsed);
     const trimmed = sanitizeParams({
       ...candidate,
       exposure: round2(
         clamp(
-          candidate.exposure + clamp(baseEval.errL * 0.55 * skinTrimDamp, -0.14, 0.14),
-          -0.60,
-          0.55
+          candidate.exposure + clamp(baseEval.errL * 0.35, -0.10, maxPosEvTrim),
+          -0.42,
+          evMaxCeil
         )
       ),
       temp: round2(
         clamp(
           candidate.temp +
-            clamp(
-              (baseEval.errB * 1.5 + baseEval.errA * 0.35) * 0.45 * skinTrimDamp,
-              -0.14,
-              0.14
-            ),
-          -0.65,
-          0.65
+            clamp((baseEval.errB * 1.7 + baseEval.errA * 0.35) * 0.48, -0.16, 0.16),
+          -0.60,
+          0.60
         )
       ),
       tint: round2(
         clamp(
           candidate.tint +
-            clamp(
-              (baseEval.errA * 1.4 - baseEval.errB * 0.2) * 0.45 * skinTrimDamp,
-              -0.12,
-              0.12
-            ),
-          -0.45,
-          0.45
+            clamp((baseEval.errA * 1.9 - baseEval.errB * 0.2) * 0.52, -0.18, 0.18),
+          -0.55,
+          0.55
         )
       ),
     });
-    const trimEval = measureOklabError(trimmed, srcSamples, refStats);
+    const trimEval = measureOklabError(
+      trimmed,
+      srcSamples,
+      refStats,
+      darkTargetFactor,
+      effectiveSkinRatio
+    );
     if (
       trimEval.score < baseEval.score &&
       trimEval.skinOutOfCorridor <= baseEval.skinOutOfCorridor + 1e-4
