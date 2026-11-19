@@ -333,7 +333,10 @@ def _run_ffmpeg_pass(
     vf = (
         "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease:flags=bilinear,"
         "scale=trunc(iw/2)*2:trunc(ih/2)*2,"
-        f"lut3d=file='{escaped_lut}':interp=trilinear"
+        "format=rgb48le,"
+        f"lut3d=file='{escaped_lut}':interp=tetrahedral,"
+        "scale=iw:ih:out_color_matrix=bt709,"
+        "format=yuv420p"
     )
 
     if use_nvenc:
@@ -363,6 +366,12 @@ def _run_ffmpeg_pass(
         "-vf",
         vf,
         *video_args,
+        "-colorspace",
+        "bt709",
+        "-color_primaries",
+        "bt709",
+        "-color_trc",
+        "bt709",
         "-movflags",
         "+faststart",
         *audio_args,

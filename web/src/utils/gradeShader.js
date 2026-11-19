@@ -113,9 +113,9 @@ vec3 kfHybridLayer(vec3 baseColor) {
     float y0 = dot(p, vec3(0.2126, 0.7152, 0.0722));
     float c1 = p.r - y0;
     float c2 = p.b - y0;
-    float chr = sqrt(c1 * c1 + c2 * c2 + 1e-10);
+    float chr = sqrt(c1 * c1 + c2 * c2 + 1e-6);
     float hueGate = smoothstep(0.015, 0.08, chr) * smoothstep(0.03, 0.14, y0) * (1.0 - smoothstep(0.86, 0.99, y0));
-    float hAngle = atan(c2, c1);
+    float hAngle = (abs(c1) + abs(c2)) > 1e-4 ? atan(c2, c1) : 0.0;
 
     float w0 = kfHueSector(hAngle, 0.0);
     float w1 = kfHueSector(hAngle, 1.04719755);
@@ -266,9 +266,9 @@ void main() {
 
     vec3 origRgb = clamp(c.rgb / max(a, 1e-5), 0.0, 1.0);
     float baseLuma = dot(origRgb, vec3(0.2126, 0.7152, 0.0722));
-    float shadowMask = smoothstep(0.015, 0.16, baseLuma);
-    float blackProtect = smoothstep(0.0, 0.06, baseLuma) * (0.15 + 0.85 * shadowMask);
-    vec3 graded = mix(origRgb, kfGrade(origRgb), blackProtect);
+    vec3 graded = kfGrade(origRgb);
+    float toeProtect = smoothstep(0.0, 0.04, baseLuma);
+    graded = min(graded, origRgb) + max(graded - origRgb, vec3(0.0)) * toeProtect;
     gl_FragColor = vec4(graded * a, a);
 }
 `;
@@ -410,9 +410,8 @@ void main() {
             outRgb = clamp(mix(inputRgb, lutRgb, clamp(uLutMix, 0.0, 1.5)), 0.0, 1.0);
         } else {
             outRgb = kfGrade(inputRgb);
-            float shadowMask = smoothstep(0.015, 0.16, baseLuma);
-            float blackProtect = smoothstep(0.0, 0.06, baseLuma) * (0.15 + 0.85 * shadowMask);
-            outRgb = mix(inputRgb, outRgb, blackProtect);
+            float toeProtect = smoothstep(0.0, 0.04, baseLuma);
+            outRgb = min(outRgb, inputRgb) + max(outRgb - inputRgb, vec3(0.0)) * toeProtect;
         }
     }
     if (uMonitorMode > 0.5) {

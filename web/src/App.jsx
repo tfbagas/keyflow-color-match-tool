@@ -1777,6 +1777,10 @@ export default function App() {
       try {
         const baseName =
           presetName || targetImage?.baseName || referenceImage?.baseName || "Target";
+        const calibratedVideoParams = applyCalibrationToParams(
+          effectiveParams,
+          calibration
+        );
         const res =
           renderMode === "cloud"
             ? await exportVideoInCloud({
@@ -1785,11 +1789,11 @@ export default function App() {
                 videoDurationSec: Number.isFinite(videoEl?.duration)
                   ? videoEl.duration
                   : 0,
-                params: gradingParams,
+                params: calibratedVideoParams,
                 activeLut,
                 lutMix: matchStrength / 100,
                 engine: activeEngineId,
-                matchStrength,
+                matchStrength: 100,
                 logProfile: simulateLogInput,
                 presetName: baseName,
                 onProgress: (pct) => setVideoExportProgress(pct),
@@ -1805,11 +1809,11 @@ export default function App() {
             : await exportGradedVideo({
                 videoSrc: src,
                 targetFile: fileFallback,
-                params: gradingParams,
+                params: calibratedVideoParams,
                 activeLut,
                 lutMix: matchStrength / 100,
                 engine: activeEngineId,
-                matchStrength,
+                matchStrength: 100,
                 logProfile: simulateLogInput,
                 layout,
                 splitPosition,
@@ -1843,7 +1847,8 @@ export default function App() {
       videoEl,
       presetName,
       referenceImage,
-      gradingParams,
+      effectiveParams,
+      calibration,
       activeLut,
       activeEngineId,
       matchStrength,

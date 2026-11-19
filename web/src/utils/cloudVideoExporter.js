@@ -1,6 +1,9 @@
 import { generateLutText, LUT_SIZE } from "./lutExporter";
 import { DEFAULT_ENGINE_ID, getEngineCodename } from "./engineRegistry";
 import { scaleParamsByStrength } from "./gradeEngine";
+import { isLogProfileActive } from "./logProfiles";
+
+const LOG_LUT_SIZE = 65;
 
 const CLOUD_CLIENT_ID_KEY = "kf_cloud_client_id";
 const DEFAULT_PROD_CLOUD_RENDER_URL = "https://color-match-tool-cloud-render.onrender.com";
@@ -536,16 +539,18 @@ export async function exportVideoInCloud({
       ? videoDurationSec
       : await probeVideoDurationSec(videoBlob);
 
-  // 2. Bake active grading stack into a 33x33x33 .cube 3D LUT (~300 KB)
-  report(12, "Baking 3D LUT (.cube)...");
+  // 2. Bake active grading stack into a .cube 3D LUT (65^3 when Camera Log is active, 33^3 otherwise)
+  const useLogLutSize = isLogProfileActive(logProfile);
+  const lutGridSize = useLogLutSize ? LOG_LUT_SIZE : LUT_SIZE;
+  report(12, useLogLutSize ? "Baking 65³ Log 3D LUT (.cube)..." : "Baking 3D LUT (.cube)...");
   const effectiveParams =
-    typeof matchStrength === "number" && matchStrength < 100
+    typeof matchStrength === "number" && matchStrength !== 100
       ? scaleParamsByStrength(params, matchStrength)
       : params;
   const cubeText = generateLutText(
     effectiveParams,
     presetName || "Match Grade",
-    LUT_SIZE,
+    lutGridSize,
     logProfile,
     activeLut,
     lutMix

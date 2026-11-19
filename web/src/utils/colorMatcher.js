@@ -46,29 +46,26 @@ function filmicRollLinearChannel(v) {
 }
 
 // 1:1 CPU twin of GLSL kfFilmicLinearShoulder(vec3 rgb) in gradeShader.js.
-// Applies a smooth C1 scene-linear highlight soft-shoulder above 0.80 linear
-// luminance so bright skies, neon lights, and anime glows compress cleanly.
+// Applies a single-pass C1 ratio-preserving scene-linear highlight soft-shoulder
+// above 0.80 linear + gentle highlight desaturation (no double roll-off).
 export function filmicLinearShoulderRGB(r, g, b, out) {
   let lr = srgbToLinearExtended(r);
   let lg = srgbToLinearExtended(g);
   let lb = srgbToLinearExtended(b);
 
-  const linY = 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
-  if (linY > FILMIC_SHOULDER_KNEE) {
-    const rolledY = filmicRollLinearChannel(linY);
-    const scaleY = rolledY / Math.max(linY, 1e-5);
-    lr *= scaleY;
-    lg *= scaleY;
-    lb *= scaleY;
-    const desatT = clamp((linY - FILMIC_SHOULDER_KNEE) / 0.65, 0.0, 1.0) * 0.28;
+  const maxLin = Math.max(lr, lg, lb);
+  if (maxLin > FILMIC_SHOULDER_KNEE) {
+    const rolledMax = filmicRollLinearChannel(maxLin);
+    const scale = rolledMax / Math.max(maxLin, 1e-5);
+    lr *= scale;
+    lg *= scale;
+    lb *= scale;
+    const rolledY = 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+    const desatT = clamp((maxLin - FILMIC_SHOULDER_KNEE) / 0.65, 0.0, 1.0) * 0.24;
     lr = lr + (rolledY - lr) * desatT;
     lg = lg + (rolledY - lg) * desatT;
     lb = lb + (rolledY - lb) * desatT;
   }
-
-  lr = filmicRollLinearChannel(lr);
-  lg = filmicRollLinearChannel(lg);
-  lb = filmicRollLinearChannel(lb);
 
   out[0] = linearToSrgbChannel(lr);
   out[1] = linearToSrgbChannel(lg);
@@ -231,26 +228,49 @@ vec3 kfFilmicLinearShoulder(vec3 rgb) {
     float lg = kfSrgbToLinExt(rgb.g);
     float lb = kfSrgbToLinExt(rgb.b);
 
-    float linY = 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
-    if (linY > 0.80) {
-        float rolledY = kfFilmicRollLin(linY);
-        float scaleY = rolledY / max(linY, 1e-5);
-        lr *= scaleY;
-        lg *= scaleY;
-        lb *= scaleY;
-        float desatT = clamp((linY - 0.80) / 0.65, 0.0, 1.0) * 0.28;
+    float maxLin = max(lr, max(lg, lb));
+    if (maxLin > 0.80) {
+        float rolledMax = kfFilmicRollLin(maxLin);
+        float scale = rolledMax / max(maxLin, 1e-5);
+        lr *= scale;
+        lg *= scale;
+        lb *= scale;
+        float rolledY = 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+        float desatT = clamp((maxLin - 0.80) / 0.65, 0.0, 1.0) * 0.24;
         lr = mix(lr, rolledY, desatT);
         lg = mix(lg, rolledY, desatT);
         lb = mix(lb, rolledY, desatT);
     }
 
-    lr = kfFilmicRollLin(lr);
-    lg = kfFilmicRollLin(lg);
-    lb = kfFilmicRollLin(lb);
-
     return vec3(kfLinToSrgb(lr), kfLinToSrgb(lg), kfLinToSrgb(lb));
 }
 `;
+
+// ---------------------------------------------------------------------------
+// Sample-First Target Striding (avoids full-frame Log + AutoNorm overhead)
+// ---------------------------------------------------------------------------
+export function strideSampleRgba(rgba, totalPixels = 0, maxSamples = 3072) {
+  const n = totalPixels || (rgba ? Math.floor(rgba.length / 4) : 0);
+  if (!rgba || n <= 0) {
+    return { data: rgba, numPixels: 0 };
+  }
+  if (n <= maxSamples) {
+    return { data: rgba, numPixels: n };
+  }
+  const step = Math.max(1, Math.floor(n / maxSamples));
+  const outCount = Math.ceil(n / step);
+  const out = new Uint8ClampedArray(outCount * 4);
+  let dst = 0;
+  for (let p = 0; p < n; p += step) {
+    const src = p * 4;
+    out[dst] = rgba[src];
+    out[dst + 1] = rgba[src + 1];
+    out[dst + 2] = rgba[src + 2];
+    out[dst + 3] = rgba[src + 3];
+    dst += 4;
+  }
+  return { data: out, numPixels: dst >> 2 };
+}
 
 // ---------------------------------------------------------------------------
 // Pre-Match Target Auto-Normalization (Exposure + White Balance Neutralization)

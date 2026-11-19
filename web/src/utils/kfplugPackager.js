@@ -555,9 +555,9 @@ ${hasLut ? `const float uLutMix = ${fmtFloat(clampedLutMix)};\n` : ""}`;
 
   if (!hasLut) {
     const gradeBody = `    float srcLuma = dot(origRgb, vec3(0.2126, 0.7152, 0.0722));
-    float shadowMask = smoothstep(0.015, 0.16, srcLuma);
-    float blackProtect = smoothstep(0.0, 0.06, srcLuma) * (0.15 + 0.85 * shadowMask);
-    vec3 graded = mix(origRgb, kfGrade(origRgb), blackProtect);`;
+    vec3 graded = kfGrade(origRgb);
+    float toeProtect = smoothstep(0.0, 0.04, srcLuma);
+    graded = min(graded, origRgb) + max(graded - origRgb, vec3(0.0)) * toeProtect;`;
 
     return `${PRECISION_HEADER}
 uniform sampler2D uTexture;

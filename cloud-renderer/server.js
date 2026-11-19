@@ -393,7 +393,10 @@ function runFfmpegPass(inputPath, lutPath, outputPath, durationSec, audioArgs, o
     const vf =
       `scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease:flags=bilinear,` +
       `scale=trunc(iw/2)*2:trunc(ih/2)*2,` +
-      `lut3d=file='${escapedLut}':interp=trilinear`;
+      `format=rgb48le,` +
+      `lut3d=file='${escapedLut}':interp=tetrahedral,` +
+      `scale=iw:ih:out_color_matrix=bt709,` +
+      `format=yuv420p`;
 
     const args = [
       "-y",
@@ -422,6 +425,12 @@ function runFfmpegPass(inputPath, lutPath, outputPath, durationSec, audioArgs, o
       "rc-lookahead=4:sync-lookahead=0:bframes=0:ref=1:aq-mode=2",
       "-pix_fmt",
       "yuv420p",
+      "-colorspace",
+      "bt709",
+      "-color_primaries",
+      "bt709",
+      "-color_trc",
+      "bt709",
       "-movflags",
       "+faststart",
       ...audioArgs,

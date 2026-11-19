@@ -264,12 +264,12 @@ export function applyHybridLayerRGB(G, baseR, baseG, baseB, out) {
   const y0 = 0.2126 * pr + 0.7152 * pg + 0.0722 * pb;
   const c1 = pr - y0;
   const c2 = pb - y0;
-  const chr = Math.sqrt(c1 * c1 + c2 * c2 + 1e-10);
+  const chr = Math.sqrt(c1 * c1 + c2 * c2 + 1e-6);
   const hueGate =
     smoothstep(0.015, 0.08, chr) *
     smoothstep(0.03, 0.14, y0) *
     (1.0 - smoothstep(0.86, 0.99, y0));
-  const hAngle = Math.atan2(c2, c1);
+  const hAngle = Math.abs(c1) + Math.abs(c2) > 1e-4 ? Math.atan2(c2, c1) : 0.0;
 
   let dHue = 0.0;
   let dSat = 0.0;
@@ -472,9 +472,10 @@ export function evaluateGradeRGB(G, rawR, rawG, rawB, out, simulateLogInput = fa
   }
   const baseLuma = 0.2126 * inR + 0.7152 * inG + 0.0722 * inB;
   gradeRGB(G, inR, inG, inB, out);
-  const shadowMask = smoothstep(0.015, 0.16, baseLuma);
-  const blackProtect = smoothstep(0.0, 0.06, baseLuma) * (0.15 + 0.85 * shadowMask);
-  out[0] = inR * (1.0 - blackProtect) + out[0] * blackProtect;
-  out[1] = inG * (1.0 - blackProtect) + out[1] * blackProtect;
-  out[2] = inB * (1.0 - blackProtect) + out[2] * blackProtect;
+  // Strictly monotonic shadow-toe clamp: prevents unwanted black lift in [0.0, 0.04]
+  // without pulling darkened shadows back up (zero luminance reversals).
+  const toeProtect = smoothstep(0.0, 0.04, baseLuma);
+  out[0] = Math.min(out[0], inR) + Math.max(out[0] - inR, 0.0) * toeProtect;
+  out[1] = Math.min(out[1], inG) + Math.max(out[1] - inG, 0.0) * toeProtect;
+  out[2] = Math.min(out[2], inB) + Math.max(out[2] - inB, 0.0) * toeProtect;
 }

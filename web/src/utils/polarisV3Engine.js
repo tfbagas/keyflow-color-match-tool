@@ -8,6 +8,7 @@ import {
 } from "./gradeEngine.js";
 import {
   compressOklabChroma,
+  strideSampleRgba,
   autoNormalizeTargetPixels,
   applyTargetAutoNormalizeOffsets,
 } from "./colorMatcher.js";
@@ -742,17 +743,23 @@ export function analyzeEngineV3(refView, tgtView, options = {}) {
   let effectiveTgtN = targetNumPixels;
   let normStats = null;
   if (effectiveTgtView && effectiveTgtN > 0) {
-    if (isLogProfileActive(inputProfile)) {
-      effectiveTgtView = applyLogProfileToRgba(effectiveTgtView, effectiveTgtN, inputProfile);
-    }
-    if (autoNormalizeTarget) {
-      if (typeof onStage === "function") {
-        onStage("Auto-normalizing target exposure & white balance...");
+    const needsLog = isLogProfileActive(inputProfile);
+    if (needsLog || autoNormalizeTarget) {
+      const sampled = strideSampleRgba(effectiveTgtView, effectiveTgtN, 3072);
+      effectiveTgtView = sampled.data;
+      effectiveTgtN = sampled.numPixels;
+      if (needsLog) {
+        effectiveTgtView = applyLogProfileToRgba(effectiveTgtView, effectiveTgtN, inputProfile);
       }
-      const norm = autoNormalizeTargetPixels(effectiveTgtView, effectiveTgtN);
-      effectiveTgtView = norm.data;
-      effectiveTgtN = norm.numPixels;
-      normStats = norm.normStats;
+      if (autoNormalizeTarget) {
+        if (typeof onStage === "function") {
+          onStage("Auto-normalizing target exposure & white balance...");
+        }
+        const norm = autoNormalizeTargetPixels(effectiveTgtView, effectiveTgtN);
+        effectiveTgtView = norm.data;
+        effectiveTgtN = norm.numPixels;
+        normStats = norm.normStats;
+      }
     }
   }
 
