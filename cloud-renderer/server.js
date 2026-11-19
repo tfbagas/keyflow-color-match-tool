@@ -33,6 +33,9 @@ const MEMORY_RECHECK_INTERVAL_MS = 1000;
 const FFMPEG_TIMEOUT_MS = 360_000;
 const PRESIGN_TTL_SEC = 15 * 60;
 const OUTPUT_CLEANUP_MS = 15 * 60 * 1000;
+const WORKER_OVERRIDE_KEY = "worker-override.json";
+const WORKER_OVERRIDE_CACHE_TTL_MS = 10_000;
+const WORKER_HEALTH_TIMEOUT_MS = 2500;
 
 const r2Configured = Boolean(
   R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET_NAME
@@ -71,6 +74,82 @@ let memoryRecheckTimer = null;
 // Daily quota maps keyed by UTC YYYY-MM-DD -> Map<key, count>
 const clientDailyUsage = new Map();
 const ipDailyUsage = new Map();
+
+// In-memory cache for R2 worker-override.json (10s TTL)
+let workerOverrideCache = { fetchedAt: 0, value: null };
+
+async function readStreamToUtf8(body) {
+  if (!body) return "";
+  if (typeof body.transformToString === "function") {
+    return body.transformToString("utf8");
+  }
+  const chunks = [];
+  for await (const chunk of body) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function getWorkerOverrideFromR2() {
+  if (!r2Configured || !s3Client) return null;
+  const now = Date.now();
+  if (now - workerOverrideCache.fetchedAt < WORKER_OVERRIDE_CACHE_TTL_MS) {
+    return workerOverrideCache.value;
+  }
+
+  let parsed = null;
+  try {
+    const resp = await s3Client.send(
+      new GetObjectCommand({
+        Bucket: R2_BUCKET_NAME,
+        Key: WORKER_OVERRIDE_KEY,
+      })
+    );
+    const raw = await readStreamToUtf8(resp.Body);
+    const data = JSON.parse(raw);
+    const url = typeof data?.url === "string" ? data.url.trim().replace(/\/+$/, "") : "";
+    const expiresAt = Number(data?.expiresAt);
+    if (/^https?:\/\//i.test(url) && Number.isFinite(expiresAt)) {
+      parsed = {
+        url,
+        mode: typeof data.mode === "string" && data.mode.trim() ? data.mode.trim() : "kaggle-gpu",
+        expiresAt,
+        limits: {
+          dailyLimit: Number(data?.limits?.dailyLimit) || 15,
+          maxDurationSec: Number(data?.limits?.maxDurationSec) || 180,
+          maxFileSizeMb: Number(data?.limits?.maxFileSizeMb) || 300,
+        },
+      };
+    }
+  } catch (err) {
+    const code = err?.name || err?.Code || "";
+    if (code !== "NoSuchKey" && err?.$metadata?.httpStatusCode !== 404) {
+      console.warn("[WorkerOverride] Failed to read worker-override.json from R2:", err.message);
+    }
+  }
+
+  workerOverrideCache = { fetchedAt: now, value: parsed };
+  return parsed;
+}
+
+async function checkWorkerHealth(baseUrl) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WORKER_HEALTH_TIMEOUT_MS);
+  if (typeof timer.unref === "function") timer.unref();
+  try {
+    const resp = await fetch(`${baseUrl}/health`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    if (!resp.ok) return false;
+    const data = await resp.json().catch(() => null);
+    return data ? data.ok !== false : true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function getUtcDateKey() {
   return new Date().toISOString().slice(0, 10);
@@ -484,6 +563,41 @@ app.get("/health", (_req, res) => {
     queuedJobs: queue.length,
     r2Configured,
   });
+});
+
+app.get("/api/worker-target", async (_req, res) => {
+  const fallback = {
+    mode: "render-cpu",
+    baseUrl: null,
+    limits: {
+      dailyLimit: DAILY_LIMIT_PER_USER,
+      maxDurationSec: MAX_DURATION_SEC,
+      maxFileSizeMb: MAX_FILE_SIZE_MB,
+    },
+  };
+
+  try {
+    const override = await getWorkerOverrideFromR2();
+    if (!override || Date.now() >= override.expiresAt) {
+      res.json(fallback);
+      return;
+    }
+
+    const healthy = await checkWorkerHealth(override.url);
+    if (!healthy) {
+      res.json(fallback);
+      return;
+    }
+
+    res.json({
+      mode: override.mode,
+      baseUrl: override.url,
+      limits: override.limits,
+    });
+  } catch (err) {
+    console.warn("[WorkerTarget] Error resolving worker target:", err.message);
+    res.json(fallback);
+  }
 });
 
 app.get("/api/quota", (req, res) => {

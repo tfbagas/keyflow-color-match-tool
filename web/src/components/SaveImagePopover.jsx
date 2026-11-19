@@ -135,6 +135,7 @@ export default function SaveImagePopover({
       : exportLayout === "split"
       ? "split"
       : "graded";
+  const isKaggleTurbo = cloudQuota?.workerMode === "kaggle-gpu";
   const maxCloudDurationSec = cloudQuota?.maxDurationSec ?? 60;
   const maxCloudFileSizeMb = cloudQuota?.maxFileSizeMb ?? 100;
   const activeCloudWorkers = cloudQuota?.activeWorkers ?? 0;
@@ -399,6 +400,14 @@ export default function SaveImagePopover({
 
                   {renderMode === "cloud" ? (
                     <div className="space-y-2">
+                      {isKaggleTurbo && (
+                        <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-amber-400/12 border border-amber-400/35 text-[10px] font-semibold text-amber-200">
+                          <span>⚡ Kaggle GPU Turbo</span>
+                          <span className="font-mono text-[9px] text-amber-300/90">
+                            NVENC • 180s • 300MB
+                          </span>
+                        </div>
+                      )}
                       <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-2 rounded-lg bg-[#0A0A0D]/55 border border-white/[0.08] text-[10px] font-mono">
                         <div className="flex items-center gap-2">
                           <span

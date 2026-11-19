@@ -12,6 +12,7 @@ const POLL_INTERVAL_MS = 2000;
 const RENDER_POLL_TIMEOUT_MS = 360_000;
 const WAKE_TIMEOUT_MS = 75_000;
 const WAKE_POLL_INTERVAL_MS = 3_000;
+const WORKER_TARGET_TIMEOUT_MS = 4_000;
 
 export function getCloudRenderBaseUrl() {
   const raw = import.meta.env?.VITE_CLOUD_RENDER_URL;
@@ -116,7 +117,81 @@ async function fetchWithDetail(url, options, contextLabel) {
     return await fetch(url, options);
   } catch (err) {
     if (err?.name === "AbortError") throw err;
-    throw new Error(`${contextLabel} failed (${err?.message || "network/CORS error"}).`);
+    const wrapped = new Error(`${contextLabel} failed (${err?.message || "network/CORS error"}).`);
+    wrapped.isNetworkError = true;
+    throw wrapped;
+  }
+}
+
+function isTunnelUnreachableError(err) {
+  if (!err || err.name === "AbortError") return false;
+  if (err.isNetworkError || err.isTunnelUnreachable) return true;
+  const msg = String(err.message || "");
+  return (
+    /network\/CORS error/i.test(msg) ||
+    /did not respond within/i.test(msg) ||
+    /HTTP (502|503|52[0-9]|530)\b/.test(msg)
+  );
+}
+
+async function resolveWorkerTarget(renderBaseUrl, abortSignal) {
+  const fallback = {
+    mode: "render-cpu",
+    baseUrl: renderBaseUrl,
+    renderBaseUrl,
+    limits: {
+      dailyLimit: DEFAULT_DAILY_LIMIT,
+      maxDurationSec: DEFAULT_MAX_DURATION_SEC,
+      maxFileSizeMb: DEFAULT_MAX_FILE_SIZE_MB,
+    },
+  };
+  if (!renderBaseUrl) return fallback;
+
+  const controller = new AbortController();
+  const onParentAbort = () => controller.abort();
+  abortSignal?.addEventListener("abort", onParentAbort, { once: true });
+  const timer = setTimeout(() => controller.abort(), WORKER_TARGET_TIMEOUT_MS);
+
+  try {
+    const resp = await fetch(`${renderBaseUrl}/api/worker-target`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    if (!resp.ok) return fallback;
+    const data = await resp.json().catch(() => null);
+    const targetUrl =
+      typeof data?.baseUrl === "string" ? data.baseUrl.trim().replace(/\/+$/, "") : "";
+    if (data?.mode === "kaggle-gpu" && /^https?:\/\//i.test(targetUrl)) {
+      return {
+        mode: "kaggle-gpu",
+        baseUrl: targetUrl,
+        renderBaseUrl,
+        limits: {
+          dailyLimit: Number(data?.limits?.dailyLimit) || 15,
+          maxDurationSec: Number(data?.limits?.maxDurationSec) || 180,
+          maxFileSizeMb: Number(data?.limits?.maxFileSizeMb) || 300,
+        },
+      };
+    }
+    if (data?.limits) {
+      return {
+        ...fallback,
+        limits: {
+          dailyLimit: Number(data.limits.dailyLimit) || DEFAULT_DAILY_LIMIT,
+          maxDurationSec: Number(data.limits.maxDurationSec) || DEFAULT_MAX_DURATION_SEC,
+          maxFileSizeMb: Number(data.limits.maxFileSizeMb) || DEFAULT_MAX_FILE_SIZE_MB,
+        },
+      };
+    }
+    return fallback;
+  } catch {
+    if (abortSignal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
+    return fallback;
+  } finally {
+    clearTimeout(timer);
+    abortSignal?.removeEventListener("abort", onParentAbort);
   }
 }
 
@@ -228,11 +303,43 @@ async function wakeCloudWorker(baseUrl, onStatusChange, abortSignal) {
   );
 }
 
+async function fetchQuotaFromBase(baseUrl, clientId, workerMode, fallbackLimits, signal) {
+  const resp = await fetchWithDetail(
+    `${baseUrl}/api/quota?clientId=${encodeURIComponent(clientId)}`,
+    { method: "GET", signal },
+    `Cloud quota check (${baseUrl})`
+  );
+  if (!resp.ok) {
+    const errBody = await resp.json().catch(() => ({}));
+    const statusLabel = `HTTP ${resp.status}${resp.statusText ? ` ${resp.statusText}` : ""}`;
+    const err = new Error(errBody.error || `Failed to fetch cloud quota (${statusLabel}).`);
+    if (resp.status >= 502) err.isTunnelUnreachable = true;
+    throw err;
+  }
+  const data = await resp.json();
+  return {
+    configured: true,
+    workerMode,
+    workerBaseUrl: baseUrl,
+    used: Number(data.used ?? 0),
+    remaining: Number(data.remaining ?? 0),
+    limit: Number(data.limit ?? fallbackLimits.dailyLimit),
+    queueLength: Number(data.queueLength ?? 0),
+    activeWorkers: Number(data.activeWorkers ?? 0),
+    maxConcurrency: Number(data.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY),
+    queuedJobs: Number(data.queuedJobs ?? 0),
+    maxDurationSec: Number(data.maxDurationSec ?? fallbackLimits.maxDurationSec),
+    maxFileSizeMb: Number(data.maxFileSizeMb ?? fallbackLimits.maxFileSizeMb),
+  };
+}
+
 export async function fetchCloudQuota(signal) {
-  const baseUrl = getCloudRenderBaseUrl();
-  if (!baseUrl) {
+  const renderBaseUrl = getCloudRenderBaseUrl();
+  if (!renderBaseUrl) {
     return {
       configured: false,
+      workerMode: "render-cpu",
+      workerBaseUrl: "",
       used: 0,
       remaining: 0,
       limit: DEFAULT_DAILY_LIMIT,
@@ -245,29 +352,26 @@ export async function fetchCloudQuota(signal) {
     };
   }
   const clientId = getOrCreateClientId();
-  const resp = await fetchWithDetail(
-    `${baseUrl}/api/quota?clientId=${encodeURIComponent(clientId)}`,
-    { method: "GET", signal },
-    `Cloud quota check (${baseUrl})`
-  );
-  if (!resp.ok) {
-    const errBody = await resp.json().catch(() => ({}));
-    const statusLabel = `HTTP ${resp.status}${resp.statusText ? ` ${resp.statusText}` : ""}`;
-    throw new Error(errBody.error || `Failed to fetch cloud quota (${statusLabel}).`);
+  const target = await resolveWorkerTarget(renderBaseUrl, signal);
+
+  try {
+    return await fetchQuotaFromBase(target.baseUrl, clientId, target.mode, target.limits, signal);
+  } catch (err) {
+    if (target.mode === "kaggle-gpu" && isTunnelUnreachableError(err)) {
+      return await fetchQuotaFromBase(
+        renderBaseUrl,
+        clientId,
+        "render-cpu",
+        {
+          dailyLimit: DEFAULT_DAILY_LIMIT,
+          maxDurationSec: DEFAULT_MAX_DURATION_SEC,
+          maxFileSizeMb: DEFAULT_MAX_FILE_SIZE_MB,
+        },
+        signal
+      );
+    }
+    throw err;
   }
-  const data = await resp.json();
-  return {
-    configured: true,
-    used: Number(data.used ?? 0),
-    remaining: Number(data.remaining ?? 0),
-    limit: Number(data.limit ?? DEFAULT_DAILY_LIMIT),
-    queueLength: Number(data.queueLength ?? 0),
-    activeWorkers: Number(data.activeWorkers ?? 0),
-    maxConcurrency: Number(data.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY),
-    queuedJobs: Number(data.queuedJobs ?? 0),
-    maxDurationSec: Number(data.maxDurationSec ?? DEFAULT_MAX_DURATION_SEC),
-    maxFileSizeMb: Number(data.maxFileSizeMb ?? DEFAULT_MAX_FILE_SIZE_MB),
-  };
 }
 
 export async function exportVideoInCloud({
@@ -285,8 +389,8 @@ export async function exportVideoInCloud({
   onStatusChange,
   abortSignal,
 }) {
-  const baseUrl = getCloudRenderBaseUrl();
-  if (!baseUrl) {
+  const renderBaseUrl = getCloudRenderBaseUrl();
+  if (!renderBaseUrl) {
     throw new Error(
       "Cloud Render is not configured (VITE_CLOUD_RENDER_URL is unset). Use Local Render instead."
     );
@@ -320,28 +424,7 @@ export async function exportVideoInCloud({
       ? videoDurationSec
       : await probeVideoDurationSec(videoBlob);
 
-  // 2. Wake Render free instance & check quota
-  await wakeCloudWorker(baseUrl, onStatusChange, abortSignal);
-
-  const quota = await fetchCloudQuota(abortSignal);
-  if (quota.remaining <= 0) {
-    throw new Error(
-      `Daily Cloud Render quota (${quota.limit}/day) reached. Switch to Local Render for unlimited exports.`
-    );
-  }
-  const maxBytes = quota.maxFileSizeMb * 1024 * 1024;
-  if (videoBlob.size > maxBytes) {
-    throw new Error(
-      `Video exceeds ${quota.maxFileSizeMb} MB Cloud Render limit. Use Local Render for larger files.`
-    );
-  }
-  if (!durationSec || durationSec > quota.maxDurationSec) {
-    throw new Error(
-      `Video exceeds ${quota.maxDurationSec}s Cloud Render limit. Use Local Render for longer clips.`
-    );
-  }
-
-  // 3. Bake active grading stack into a 33x33x33 .cube 3D LUT (~300 KB)
+  // 2. Bake active grading stack into a 33x33x33 .cube 3D LUT (~300 KB)
   report(12, "Baking 3D LUT (.cube)...");
   const effectiveParams =
     typeof matchStrength === "number" && matchStrength < 100
@@ -356,162 +439,216 @@ export async function exportVideoInCloud({
     lutMix
   );
 
-  // 4. Initialize job & presigned R2 URLs
-  report(16, "Initializing cloud job...");
   const rawFileName =
     (targetFile instanceof File && targetFile.name) || `${presetName || "video"}.mp4`;
   const contentType = videoBlob.type || "video/mp4";
 
-  const initResp = await fetchWithDetail(
-    `${baseUrl}/api/jobs/init`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        clientId,
-        fileName: rawFileName,
-        fileSizeBytes: videoBlob.size,
-        durationSec,
-        contentType,
-      }),
-      signal: abortSignal,
-    },
-    "Initialize cloud job"
-  );
-  const initData = await initResp.json().catch(() => ({}));
-  if (!initResp.ok) {
-    throw new Error(initData.error || `Failed to initialize cloud job (HTTP ${initResp.status}).`);
-  }
+  const executePipeline = async (baseUrl, workerMode, limits) => {
+    // Wake worker & check quota
+    await wakeCloudWorker(baseUrl, onStatusChange, abortSignal);
 
-  const { jobId, videoUploadUrl, lutUploadUrl } = initData;
-
-  // 5. Direct upload video + .cube to Cloudflare R2
-  report(20, "Uploading video to cloud storage...");
-  await uploadViaPut(
-    videoUploadUrl,
-    videoBlob,
-    contentType,
-    (ratio) => {
-      const pct = 20 + Math.round(ratio * 25);
-      report(pct, `Uploading video (${Math.round(ratio * 100)}%)...`);
-    },
-    abortSignal
-  );
-
-  report(46, "Uploading 3D LUT (.cube)...");
-  await uploadViaPut(
-    lutUploadUrl,
-    cubeText,
-    "text/plain;charset=utf-8",
-    null,
-    abortSignal
-  );
-
-  // 6. Enqueue FIFO render job
-  report(50, "Enqueueing Cloud FFmpeg job...");
-  const startResp = await fetchWithDetail(
-    `${baseUrl}/api/jobs/${encodeURIComponent(jobId)}/start`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clientId }),
-      signal: abortSignal,
-    },
-    "Start cloud render"
-  );
-  const startData = await startResp.json().catch(() => ({}));
-  if (startResp.status === 404) {
-    const reason = (startData.error || "Job not found or worker restarted").replace(/\.+$/, "");
-    throw new Error(
-      /retry/i.test(reason) ? `${reason}.` : `${reason}. Please retry.`
-    );
-  }
-  if (!startResp.ok) {
-    throw new Error(startData.error || `Failed to start cloud render (HTTP ${startResp.status}).`);
-  }
-
-  // 7. Poll job status every 2s (up to 6 minutes)
-  let downloadUrl = null;
-  const pollStartTime = Date.now();
-  while (true) {
-    throwIfAborted(abortSignal);
-    if (Date.now() - pollStartTime > RENDER_POLL_TIMEOUT_MS) {
+    const quota = await fetchQuotaFromBase(baseUrl, clientId, workerMode, limits, abortSignal);
+    if (quota.remaining <= 0) {
       throw new Error(
-        "Cloud render timed out after 6 minutes. Please try again or use Local Render."
+        `Daily Cloud Render quota (${quota.limit}/day) reached. Switch to Local Render for unlimited exports.`
       );
     }
-    await sleepWithAbort(POLL_INTERVAL_MS, abortSignal);
+    const maxBytes = quota.maxFileSizeMb * 1024 * 1024;
+    if (videoBlob.size > maxBytes) {
+      throw new Error(
+        `Video exceeds ${quota.maxFileSizeMb} MB Cloud Render limit. Use Local Render for larger files.`
+      );
+    }
+    if (!durationSec || durationSec > quota.maxDurationSec) {
+      throw new Error(
+        `Video exceeds ${quota.maxDurationSec}s Cloud Render limit. Use Local Render for longer clips.`
+      );
+    }
 
-    const statusResp = await fetchWithDetail(
-      `${baseUrl}/api/jobs/${encodeURIComponent(jobId)}`,
+    // Initialize job & presigned R2 URLs
+    report(16, "Initializing cloud job...");
+    const initResp = await fetchWithDetail(
+      `${baseUrl}/api/jobs/init`,
       {
-        method: "GET",
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId,
+          fileName: rawFileName,
+          fileSizeBytes: videoBlob.size,
+          durationSec,
+          contentType,
+        }),
         signal: abortSignal,
       },
-      "Poll cloud job status"
+      "Initialize cloud job"
     );
-    const job = await statusResp.json().catch(() => ({}));
-    if (statusResp.status === 404) {
-      const reason = (job.error || "Job not found or worker restarted").replace(/\.+$/, "");
-      throw new Error(
-        /retry/i.test(reason) ? `${reason}.` : `${reason}. Please retry.`
+    const initData = await initResp.json().catch(() => ({}));
+    if (!initResp.ok) {
+      const err = new Error(
+        initData.error || `Failed to initialize cloud job (HTTP ${initResp.status}).`
       );
+      if (initResp.status >= 502) err.isTunnelUnreachable = true;
+      throw err;
     }
-    if (!statusResp.ok) {
-      throw new Error(job.error || `Failed to poll job status (HTTP ${statusResp.status}).`);
+
+    const { jobId, videoUploadUrl, lutUploadUrl } = initData;
+
+    // Direct upload video + .cube to Cloudflare R2
+    report(20, "Uploading video to cloud storage...");
+    await uploadViaPut(
+      videoUploadUrl,
+      videoBlob,
+      contentType,
+      (ratio) => {
+        const pct = 20 + Math.round(ratio * 25);
+        report(pct, `Uploading video (${Math.round(ratio * 100)}%)...`);
+      },
+      abortSignal
+    );
+
+    report(46, "Uploading 3D LUT (.cube)...");
+    await uploadViaPut(
+      lutUploadUrl,
+      cubeText,
+      "text/plain;charset=utf-8",
+      null,
+      abortSignal
+    );
+
+    // Enqueue FIFO render job
+    report(
+      50,
+      workerMode === "kaggle-gpu"
+        ? "Enqueueing Kaggle GPU FFmpeg job..."
+        : "Enqueueing Cloud FFmpeg job..."
+    );
+    const startResp = await fetchWithDetail(
+      `${baseUrl}/api/jobs/${encodeURIComponent(jobId)}/start`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId }),
+        signal: abortSignal,
+      },
+      "Start cloud render"
+    );
+    const startData = await startResp.json().catch(() => ({}));
+    if (startResp.status === 404) {
+      const reason = (startData.error || "Job not found or worker restarted").replace(/\.+$/, "");
+      throw new Error(/retry/i.test(reason) ? `${reason}.` : `${reason}. Please retry.`);
+    }
+    if (!startResp.ok) {
+      const err = new Error(
+        startData.error || `Failed to start cloud render (HTTP ${startResp.status}).`
+      );
+      if (startResp.status >= 502) err.isTunnelUnreachable = true;
+      throw err;
     }
 
-    if (job.status === "queued") {
-      const pos = job.queuePosition || 1;
-      report(52, `Queue #${pos} — waiting for Cloud FFmpeg...`);
-    } else if (job.status === "processing") {
-      const pctMatch = /\((\d+)%\)/.exec(job.progressText || "");
-      const renderPct = pctMatch ? Number(pctMatch[1]) : 50;
-      const mappedPct = 55 + Math.round((renderPct / 100) * 35);
-      report(mappedPct, job.progressText || "Rendering on Cloud FFmpeg...");
-    } else if (job.status === "failed") {
-      throw new Error(job.error || "Cloud FFmpeg render failed.");
-    } else if (job.status === "completed") {
-      downloadUrl = job.downloadUrl;
-      break;
+    // Poll job status every 2s (up to 6 minutes)
+    let downloadUrl = null;
+    const pollStartTime = Date.now();
+    while (true) {
+      throwIfAborted(abortSignal);
+      if (Date.now() - pollStartTime > RENDER_POLL_TIMEOUT_MS) {
+        throw new Error(
+          "Cloud render timed out after 6 minutes. Please try again or use Local Render."
+        );
+      }
+      await sleepWithAbort(POLL_INTERVAL_MS, abortSignal);
+
+      const statusResp = await fetchWithDetail(
+        `${baseUrl}/api/jobs/${encodeURIComponent(jobId)}`,
+        {
+          method: "GET",
+          signal: abortSignal,
+        },
+        "Poll cloud job status"
+      );
+      const job = await statusResp.json().catch(() => ({}));
+      if (statusResp.status === 404) {
+        const reason = (job.error || "Job not found or worker restarted").replace(/\.+$/, "");
+        throw new Error(/retry/i.test(reason) ? `${reason}.` : `${reason}. Please retry.`);
+      }
+      if (!statusResp.ok) {
+        const err = new Error(job.error || `Failed to poll job status (HTTP ${statusResp.status}).`);
+        if (statusResp.status >= 502) err.isTunnelUnreachable = true;
+        throw err;
+      }
+
+      if (job.status === "queued") {
+        const pos = job.queuePosition || 1;
+        report(
+          52,
+          workerMode === "kaggle-gpu"
+            ? `Queue #${pos} — waiting for Kaggle GPU...`
+            : `Queue #${pos} — waiting for Cloud FFmpeg...`
+        );
+      } else if (job.status === "processing") {
+        const pctMatch = /\((\d+)%\)/.exec(job.progressText || "");
+        const renderPct = pctMatch ? Number(pctMatch[1]) : 50;
+        const mappedPct = 55 + Math.round((renderPct / 100) * 35);
+        report(mappedPct, job.progressText || "Rendering on Cloud FFmpeg...");
+      } else if (job.status === "failed") {
+        throw new Error(job.error || "Cloud FFmpeg render failed.");
+      } else if (job.status === "completed") {
+        downloadUrl = job.downloadUrl;
+        break;
+      }
     }
-  }
 
-  if (!downloadUrl) {
-    throw new Error("Cloud render completed without a download URL.");
-  }
+    if (!downloadUrl) {
+      throw new Error("Cloud render completed without a download URL.");
+    }
 
-  // 8. Download rendered MP4 & trigger browser save
-  report(92, "Downloading rendered MP4...");
-  const codename = getEngineCodename(engine);
-  const cleanBase =
-    String(presetName || "Target")
-      .replace(/[^a-zA-Z0-9._-]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "Target";
-  const engineSuffix = codename ? `_${codename}` : "";
-  const fileName = `${cleanBase}${engineSuffix}_cloud_graded.mp4`;
+    // Download rendered MP4 & trigger browser save
+    report(92, "Downloading rendered MP4...");
+    const codename = getEngineCodename(engine);
+    const cleanBase =
+      String(presetName || "Target")
+        .replace(/[^a-zA-Z0-9._-]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "Target";
+    const engineSuffix = codename ? `_${codename}` : "";
+    const fileName = `${cleanBase}${engineSuffix}_cloud_graded.mp4`;
 
-  const dlResp = await fetchWithDetail(
-    downloadUrl,
-    { signal: abortSignal },
-    "Download rendered MP4"
-  );
-  if (!dlResp.ok) {
-    throw new Error(`Failed to download rendered MP4 (HTTP ${dlResp.status}).`);
-  }
-  const mp4Blob = await dlResp.blob();
-  triggerBlobDownload(mp4Blob, fileName);
+    const dlResp = await fetchWithDetail(
+      downloadUrl,
+      { signal: abortSignal },
+      "Download rendered MP4"
+    );
+    if (!dlResp.ok) {
+      throw new Error(`Failed to download rendered MP4 (HTTP ${dlResp.status}).`);
+    }
+    const mp4Blob = await dlResp.blob();
+    triggerBlobDownload(mp4Blob, fileName);
 
-  // 9. Best-effort R2 cleanup
-  report(98, "Cleaning up cloud storage...");
+    // Best-effort R2 cleanup
+    report(98, "Cleaning up cloud storage...");
+    try {
+      await fetch(`${baseUrl}/api/jobs/${encodeURIComponent(jobId)}/cleanup`, {
+        method: "POST",
+      });
+    } catch {
+      // Server has a 15-min fallback cleanup timer
+    }
+
+    report(100, "Exported Cloud Video!");
+    return { fileName, jobId, workerMode };
+  };
+
+  const target = await resolveWorkerTarget(renderBaseUrl, abortSignal);
   try {
-    await fetch(`${baseUrl}/api/jobs/${encodeURIComponent(jobId)}/cleanup`, {
-      method: "POST",
-    });
-  } catch {
-    // Server has a 15-min fallback cleanup timer
+    return await executePipeline(target.baseUrl, target.mode, target.limits);
+  } catch (err) {
+    if (target.mode === "kaggle-gpu" && isTunnelUnreachableError(err)) {
+      report(5, "Kaggle GPU unreachable — falling back to Render.com...");
+      return await executePipeline(renderBaseUrl, "render-cpu", {
+        dailyLimit: DEFAULT_DAILY_LIMIT,
+        maxDurationSec: DEFAULT_MAX_DURATION_SEC,
+        maxFileSizeMb: DEFAULT_MAX_FILE_SIZE_MB,
+      });
+    }
+    throw err;
   }
-
-  report(100, "Exported Cloud Video!");
-  return { fileName, jobId };
 }
