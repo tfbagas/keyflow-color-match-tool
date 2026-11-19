@@ -354,6 +354,12 @@ function computeDualSpaceStats(samples) {
       midAB: [0.0, 0.0],
       highAB: [0.0, 0.0],
       skinRatio: 0.0,
+      brightNeutralRatio: 0.0,
+      skyPixelRatio: 0.0,
+      skyDominantFactor: 0.0,
+      cloudRatio: 0.0,
+      highKeyFactor: 0.0,
+      domAB: [0.0, 0.0],
     };
   }
 
@@ -371,6 +377,13 @@ function computeDualSpaceStats(samples) {
   let mdA = 0.0, mdB = 0.0, mdCW = 0.0;
   let hiA = 0.0, hiB = 0.0, hiCW = 0.0;
   let skinSum = 0.0;
+  let brightNeutralSum = 0.0;
+  let skyChromaSum = 0.0;
+  let skyAreaSum = 0.0;
+  let cloudAreaSum = 0.0;
+  let domA = 0.0;
+  let domB = 0.0;
+  let domWTotal = 0.0;
 
   for (let i = 0; i < n; i++) {
     const w = samples.covW[i];
@@ -381,6 +394,8 @@ function computeDualSpaceStats(samples) {
     const b = samples.bLab[i];
     const C = Math.hypot(a, b);
     const logY = Math.log2(Math.max(linY, 0.004));
+    let hueDeg = Math.atan2(b, a) * RAD_TO_DEG;
+    if (hueDeg < 0.0) hueDeg += 360.0;
 
     sumW += w;
     sumLogY += w * logY;
@@ -400,6 +415,29 @@ function computeDualSpaceStats(samples) {
       hiW += w;
     }
 
+    // Near-neutral bright structures (pillars, white fabrics, specular highlights: C < 0.045, L > 0.72)
+    const brightNeutralM =
+      smoothstep(0.70, 0.76, L) * (1.0 - smoothstep(0.032, 0.048, C));
+    brightNeutralSum += brightNeutralM;
+
+    // High-luminance sky cluster detector (L > 0.65, hue in [200°, 255°], C > 0.035)
+    const skyMask =
+      smoothstep(0.60, 0.70, L) *
+      smoothstep(192.0, 204.0, hueDeg) *
+      (1.0 - smoothstep(252.0, 266.0, hueDeg)) *
+      smoothstep(0.025, 0.055, C);
+    skyChromaSum += w * C * skyMask;
+    skyAreaSum += w * skyMask;
+
+    // Bright cloud / white sky area (L > 0.88)
+    cloudAreaSum += w * smoothstep(0.84, 0.90, L);
+
+    // Chroma-weighted dominant hue direction (for complementary hue opposition detection)
+    const domW = w * smoothstep(0.025, 0.075, C);
+    domA += domW * a;
+    domB += domW * b;
+    domWTotal += domW;
+
     // 3-zone chromaticity (for lift / gamma / gain decomposition)
     const wSh = smoothstep(0.06, 0.14, L) * (1.0 - smoothstep(0.28, 0.42, L)) * w;
     const wMd = smoothstep(0.26, 0.42, L) * (1.0 - smoothstep(0.62, 0.76, L)) * w;
@@ -412,37 +450,85 @@ function computeDualSpaceStats(samples) {
   }
 
   const invW = 1.0 / Math.max(sumW, 1e-6);
-  const meanLogY = sumLogY * invW;
+  let meanLogY = sumLogY * invW;
   const meanL = sumL * invW;
   const meanChroma = sumChroma * invW;
   const lowChromaRatio = sumLowChroma * invW;
   const meanA = sumA / Math.max(sumWbW, 1e-6);
   const meanB = sumB / Math.max(sumWbW, 1e-6);
+  const brightNeutralRatio = brightNeutralSum / Math.max(n, 1);
+  const skyChromaConcentration = skyChromaSum / Math.max(sumChroma, 1e-5);
+  const skyPixelRatio = skyAreaSum * invW;
+  const cloudRatio = cloudAreaSum * invW;
+
+  // Detects references whose chromatic energy is concentrated in a narrow high-luminance
+  // blue sky cluster (L > 0.65, hue in [200°, 255°]) rather than a scene-wide cool illuminant.
+  const skyDominantFactor = clamp(
+    smoothstep(0.42, 0.78, skyChromaConcentration) *
+      smoothstep(0.14, 0.36, skyPixelRatio),
+    0.0,
+    1.0
+  );
+
+  // Detects high-key references (mean L > 0.65 with large white cloud/sky area) so luminance
+  // percentiles & contrast stats downweight L > 0.88 sky/cloud pixels to prevent milky haze.
+  const highKeyFactor = clamp(
+    smoothstep(0.62, 0.74, meanL) *
+      smoothstep(0.20, 0.48, cloudRatio + 0.50 * skyPixelRatio),
+    0.0,
+    1.0
+  );
+
+  // Foreground/mid-luminance weighting for luminance percentiles & dynamic-range spread
+  // on high-key references (downweights L > 0.88 sky/cloud pixels).
+  let lumaWeights = samples.covW;
+  if (highKeyFactor > 1e-3) {
+    const fgW = new Float32Array(n);
+    let fgSumW = 0.0;
+    let fgSumLogY = 0.0;
+    for (let i = 0; i < n; i++) {
+      const cloudAtten =
+        1.0 - highKeyFactor * 0.85 * smoothstep(0.83, 0.90, samples.L[i]);
+      const fw = Math.max(samples.covW[i] * cloudAtten, 1e-5);
+      fgW[i] = fw;
+      fgSumW += fw;
+      fgSumLogY += fw * Math.log2(Math.max(samples.linY[i], 0.004));
+    }
+    lumaWeights = fgW;
+    const fgMeanLogY = fgSumLogY / Math.max(fgSumW, 1e-6);
+    meanLogY = meanLogY + (fgMeanLogY - meanLogY) * highKeyFactor;
+  }
 
   let varLogY = 0.0;
   let varL = 0.0;
+  let varW = 0.0;
   for (let i = 0; i < n; i++) {
-    const w = samples.covW[i];
+    const w = lumaWeights[i];
     const dLog = Math.log2(Math.max(samples.linY[i], 0.004)) - meanLogY;
     const dL = samples.L[i] - meanL;
     varLogY += w * dLog * dLog;
-    varL += w * dL * dL;
+    varL += samples.covW[i] * dL * dL;
+    varW += w;
   }
 
   const zoneQuantilesL = computeWeightedQuantiles(
     samples.L,
-    samples.covW,
+    lumaWeights,
     [0.075, 0.25, 0.5, 0.75, 0.925]
   );
 
   // Smooth Bayesian prior toward global chromatic mean [meanA, meanB] when a
   // tonal zone has sparse pixels (e.g. bright references like Barbie with few
-  // deep shadows), preventing fallback-to-zero from inventing opposite-hue casts.
+  // deep shadows), dampened on sky-dominant refs so bright blue skies do not
+  // hallucinate saturated blue shadow casts when shadows are absent.
   const zonePriorW = Math.max(sumW * 0.05, 1e-4);
+  const shadowPriorScale = 1.0 - 0.72 * skyDominantFactor;
+  const shPriorA = meanA * shadowPriorScale;
+  const shPriorB = meanB * shadowPriorScale;
 
   return {
     meanLogY,
-    stdLogY: Math.sqrt(varLogY * invW),
+    stdLogY: Math.sqrt(varLogY / Math.max(varW, 1e-6)),
     meanL,
     stdL: Math.sqrt(varL * invW),
     meanA,
@@ -453,18 +539,25 @@ function computeDualSpaceStats(samples) {
     highEnergy: hiW > 1e-4 ? hiY / hiW : 0.68,
     zoneQuantilesL,
     shadowAB: [
-      (shA + zonePriorW * meanA) / (shCW + zonePriorW),
-      (shB + zonePriorW * meanB) / (shCW + zonePriorW),
+      (shA + zonePriorW * shPriorA) / (shCW + zonePriorW),
+      (shB + zonePriorW * shPriorB) / (shCW + zonePriorW),
     ],
     midAB: [
-      (mdA + zonePriorW * meanA) / (mdCW + zonePriorW),
-      (mdB + zonePriorW * meanB) / (mdCW + zonePriorW),
+      (mdA + zonePriorW * shPriorA) / (mdCW + zonePriorW),
+      (mdB + zonePriorW * shPriorB) / (mdCW + zonePriorW),
     ],
     highAB: [
       (hiA + zonePriorW * meanA) / (hiCW + zonePriorW),
       (hiB + zonePriorW * meanB) / (hiCW + zonePriorW),
     ],
     skinRatio: skinSum / Math.max(n, 1),
+    brightNeutralRatio,
+    skyPixelRatio,
+    skyDominantFactor,
+    cloudRatio,
+    highKeyFactor,
+    domAB:
+      domWTotal > 1e-5 ? [domA / domWTotal, domB / domWTotal] : [0.0, 0.0],
   };
 }
 
@@ -1036,21 +1129,23 @@ export function buildMonotoneHermite5Zone(
   srcQuantilesL,
   refQuantilesL,
   blend = 0.62,
-  darkTargetFactor = 0.0
+  darkTargetFactor = 0.0,
+  highKeyRefFactor = 0.0
 ) {
   const xs = TONE_ZONE_KNOTS;
   const n = xs.length; // 7 knots
   const ys = new Float64Array(n);
 
   // Asymmetric per-zone delta bounds: [Blacks, Shadows, Midtones, Highlights, Whites]
-  // Tightly suppresses positive black/shadow lift on dark cinema targets so deep shadows
-  // retain rich density instead of washing out into milky gray.
+  // Tightly suppresses positive black/shadow lift on dark cinema targets and on
+  // high-key cloud/sky references so foliage, shadows, and midtones stay crisp and haze-free.
   const dtf = clamp(darkTargetFactor, 0.0, 1.0);
+  const hkf = clamp(highKeyRefFactor, 0.0, 1.0);
   const maxPosDelta = [
-    0.020 * (1.0 - 0.80 * dtf),
-    0.042 * (1.0 - 0.65 * dtf),
-    0.058 * (1.0 - 0.35 * dtf),
-    0.048 * (1.0 - 0.25 * dtf),
+    0.020 * (1.0 - 0.80 * dtf) * (1.0 - 0.88 * hkf),
+    0.042 * (1.0 - 0.65 * dtf) * (1.0 - 0.85 * hkf),
+    0.058 * (1.0 - 0.35 * dtf) * (1.0 - 0.68 * hkf),
+    0.048 * (1.0 - 0.25 * dtf) * (1.0 - 0.35 * hkf),
     0.032,
   ];
   const maxNegDelta = [0.045, 0.072, 0.080, 0.075, 0.055];
@@ -1171,14 +1266,19 @@ function oklabABToZeroMeanWheelDelta(da, db, gain = 1.0, maxOffset = 0.07) {
 function computePrimarySlidersAltair(refStats, srcStats) {
   const darkTargetFactor = computeDarkTargetFactor(srcStats);
   const headroomUsed = computeHighlightHeadroomUsed(srcStats);
+  const skyDom = refStats.skyDominantFactor || 0.0;
+  const highKeyRef = refStats.highKeyFactor || 0.0;
+  const tgtBrightNeutral = smoothstep(0.03, 0.16, srcStats.brightNeutralRatio || 0.0);
 
   // 1. Scene-Linear Exposure (EV) from log2 linear luminance energy.
-  // Tightened upper ceiling prevents blown-out midtones/highlights on bright targets
-  // and preserves rich black density when matching dark cinema targets against bright refs.
+  // Tightened upper ceiling prevents blown-out midtones/highlights on bright targets,
+  // preserves rich black density on dark targets, and prevents high-key cloud refs from
+  // lifting shadows into milky haze.
   const rawEv = (refStats.meanLogY - srcStats.meanLogY) * 0.34;
   const evCapDark = 0.22 - 0.12 * darkTargetFactor;
   const evCapHighlight = 0.22 * (1.0 - 0.92 * headroomUsed);
-  const maxEv = Math.min(evCapDark, evCapHighlight);
+  const evCapHighKey = 0.22 * (1.0 - 0.82 * highKeyRef);
+  const maxEv = Math.min(evCapDark, evCapHighlight, evCapHighKey);
   const exposure = clamp(0.30 * fastTanh(rawEv / 0.30), -0.36, maxEv);
 
   // 2. Scene-Linear Geometric Mid-Gray Pivot & Dynamic-Range Contrast
@@ -1187,31 +1287,36 @@ function computePrimarySlidersAltair(refStats, srcStats) {
   const pivot = clamp(0.72 * 0.435 + 0.28 * pivotSrgb, 0.38, 0.49);
 
   // Symmetric ratio floor prevents contrast collapse on flat/monochrome self-matches;
-  // prevent low contrast from lifting blacks into milky gray on dark targets.
+  // prevent low contrast from lifting blacks into milky gray on dark targets or high-key refs.
   const spreadRatio =
     Math.max(refStats.stdLogY, 0.42) / Math.max(srcStats.stdLogY, 0.42);
   const iqrRef = Math.max(refStats.zoneQuantilesL[3] - refStats.zoneQuantilesL[1], 0.14);
   const iqrSrc = Math.max(srcStats.zoneQuantilesL[3] - srcStats.zoneQuantilesL[1], 0.14);
   const combinedRatio = 0.55 * spreadRatio + 0.45 * (iqrRef / iqrSrc);
-  const minContrast = 0.88 + 0.08 * darkTargetFactor;
+  const minContrast = Math.min(1.0, 0.88 + 0.08 * darkTargetFactor + 0.12 * highKeyRef);
   const maxContrast = 1.22 - 0.14 * headroomUsed;
   const contrast = clamp(1.0 + (combinedRatio - 1.0) * 0.40, minContrast, maxContrast);
 
   // 3. Multi-Zone Shadow & Highlight primary energy offsets
-  // Tight positive caps keep deep blacks dense and bright highlights unclipped.
+  // Tight positive caps keep deep blacks dense, bright highlights unclipped, and prevent
+  // high-key white clouds from lifting target foliage/mid-shadows into milky haze.
   const shDeltaL = refStats.zoneQuantilesL[1] - srcStats.zoneQuantilesL[1];
   const hiDeltaL = refStats.zoneQuantilesL[3] - srcStats.zoneQuantilesL[3];
-  const maxPosShadows = 0.06 * (1.0 - 0.85 * darkTargetFactor);
-  const maxPosHighlights = 0.06 * (1.0 - 0.45 * darkTargetFactor) * (1.0 - headroomUsed);
+  const maxPosShadows =
+    0.06 * (1.0 - 0.85 * darkTargetFactor) * (1.0 - 0.92 * highKeyRef);
+  const maxPosHighlights =
+    0.06 * (1.0 - 0.45 * darkTargetFactor) * (1.0 - headroomUsed);
   const shadows = clamp(shDeltaL * 0.50, -0.22, maxPosShadows);
   const highlights = clamp(hiDeltaL * 0.50, -0.24, maxPosHighlights);
 
-  // 4. Illuminant-weighted OKLab White Balance (unblocked by skin ratio so pinks,
-  // warm cinema ambers, and cool teals transfer freely at full intensity)
+  // 4. Illuminant-weighted OKLab White Balance: dampen global temp/tint when the
+  // reference's chromatic energy is concentrated in a narrow high-luminance blue sky
+  // cluster (L > 0.65, hue in [200°, 255°]) rather than a true scene-wide cool illuminant.
   const dA = refStats.meanA - srcStats.meanA;
   const dB = refStats.meanB - srcStats.meanB;
-  const temp = clamp((dB * 2.55 + dA * 0.45) * 0.60, -0.50, 0.50);
-  const tint = clamp((dA * 2.95 - dB * 0.25) * 0.68, -0.46, 0.46);
+  const skyWbDamp = 1.0 - 0.65 * skyDom;
+  const temp = clamp((dB * 2.55 + dA * 0.45) * 0.60 * skyWbDamp, -0.50, 0.50);
+  const tint = clamp((dA * 2.95 - dB * 0.25) * 0.68 * skyWbDamp, -0.46, 0.46);
 
   // 5. Saturation & Smart Vibrance (symmetric chroma floor for flat/monochrome inputs)
   const chromaRatio =
@@ -1225,17 +1330,32 @@ function computePrimarySlidersAltair(refStats, srcStats) {
     maxVib
   );
 
-  // 6. 3-Way Split-Toning Wheel Decomposition (residual zone color minus global WB)
-  const shDA = (refStats.shadowAB[0] - srcStats.shadowAB[0]) - dA * 0.42;
-  const shDB = (refStats.shadowAB[1] - srcStats.shadowAB[1]) - dB * 0.42;
-  const mdDA = (refStats.midAB[0] - srcStats.midAB[0]) - dA * 0.52;
-  const mdDB = (refStats.midAB[1] - srcStats.midAB[1]) - dB * 0.52;
-  const hiDA = (refStats.highAB[0] - srcStats.highAB[0]) - dA * 0.45;
-  const hiDB = (refStats.highAB[1] - srcStats.highAB[1]) - dB * 0.45;
+  // 6. 3-Way Split-Toning Wheel Decomposition (residual zone color minus effective global WB)
+  const effDA = dA * skyWbDamp;
+  const effDB = dB * skyWbDamp;
+  const shDA = (refStats.shadowAB[0] - srcStats.shadowAB[0]) - effDA * 0.42;
+  const shDB = (refStats.shadowAB[1] - srcStats.shadowAB[1]) - effDB * 0.42;
+  const mdDA = (refStats.midAB[0] - srcStats.midAB[0]) - effDA * 0.52;
+  const mdDB = (refStats.midAB[1] - srcStats.midAB[1]) - effDB * 0.52;
+  const hiDA = (refStats.highAB[0] - srcStats.highAB[0]) - effDA * 0.45;
+  const hiDB = (refStats.highAB[1] - srcStats.highAB[1]) - effDB * 0.45;
 
-  const gainHeadroomDamp = 1.0 - 0.55 * headroomUsed;
-  const lift = oklabABToZeroMeanWheelDelta(shDA, shDB, 0.66, 0.080);
-  const gamma = oklabABToZeroMeanWheelDelta(mdDA, mdDB, 0.66, 0.082);
+  const skyWheelDamp = 1.0 - 0.55 * skyDom;
+  const gainHeadroomDamp =
+    (1.0 - 0.55 * headroomUsed) *
+    (1.0 - 0.72 * skyDom * (0.45 + 0.55 * tgtBrightNeutral));
+  const lift = oklabABToZeroMeanWheelDelta(
+    shDA,
+    shDB,
+    0.66 * skyWheelDamp,
+    0.080 * skyWheelDamp
+  );
+  const gamma = oklabABToZeroMeanWheelDelta(
+    mdDA,
+    mdDB,
+    0.66 * skyWheelDamp,
+    0.082 * skyWheelDamp
+  );
   const gain = oklabABToZeroMeanWheelDelta(
     hiDA,
     hiDB,
@@ -1345,7 +1465,11 @@ function buildAltairLatticeTargets(
   }
 
   // 5-Zone Monotone Hermite Tonal Curve solved on post-slider source vs reference
-  // with dark-cinema density guard so deep shadows never wash out to milky gray.
+  // with dark-cinema density guard & high-key cloud anti-haze guard so deep shadows
+  // and foliage never wash out to milky gray.
+  const highKeyRefFactor = refStats.highKeyFactor || 0.0;
+  const skyDomFactor = refStats.skyDominantFactor || 0.0;
+  const tgtBrightNeutralRatio = srcStats.brightNeutralRatio || 0.0;
   const postSrcQuantilesL = computeWeightedQuantiles(
     postSrcL,
     curW,
@@ -1355,7 +1479,8 @@ function buildAltairLatticeTargets(
     postSrcQuantilesL,
     refStats.zoneQuantilesL,
     0.58,
-    darkTargetFactor
+    darkTargetFactor,
+    highKeyRefFactor
   );
 
   // Stage 2A: Fast 16-Direction 3D OKLab Sliced Optimal Transport on strided samples
@@ -1450,7 +1575,20 @@ function buildAltairLatticeTargets(
 
   // Adaptive skinProtect retention weight strictly inside the narrow natural skin locus
   const adaptiveSkinProtect = clamp(0.65 + 0.30 * Math.min(1.0, tgtSkinRatio * 4.5), 0.65, 0.95);
-  const maxPosLDelta = 0.055 * (1.0 - 0.38 * darkTargetFactor);
+  const maxPosLDelta = 0.055 * (1.0 - 0.38 * darkTargetFactor) * (1.0 - 0.48 * highKeyRefFactor);
+
+  // Neutral highlight & white-axis chromatic anchor strength (L > 0.78, C < 0.05)
+  const whiteAnchorStrength = clamp(
+    0.48 + 0.36 * smoothstep(0.03, 0.16, tgtBrightNeutralRatio) + 0.24 * skyDomFactor,
+    0.48,
+    0.96
+  );
+
+  // Reference dominant chromatic direction for opposing-hue cancellation damping
+  const refDomA = refStats.domAB ? refStats.domAB[0] : 0.0;
+  const refDomB = refStats.domAB ? refStats.domAB[1] : 0.0;
+  const refDomC = Math.hypot(refDomA, refDomB);
+  const refDomStrength = smoothstep(0.035, 0.095, refDomC);
 
   // Shared per-point OKLab target synthesizer (used identically on both the 17^3
   // lattice and the actual target image samples so poly3 fits the real scene
@@ -1475,6 +1613,7 @@ function buildAltairLatticeTargets(
     outRgb
   ) => {
     const origC = Math.hypot(a0, b0);
+    const rawOrigC = Math.hypot(rawOrigA, rawOrigB);
 
     // 1. Combine 5-Zone Monotone Hermite Tonal Curve with SOT + Covariance hybrid L
     const splineL = evalMonotoneHermite(toneSpline, L0);
@@ -1493,6 +1632,81 @@ function buildAltairLatticeTargets(
     const hybridB = 0.84 * sB + 0.16 * cB;
     let candA = a0 + (hybridA - a0) * neutralGuard * shadowToeMask;
     let candB = b0 + (hybridB - b0) * neutralGuard * shadowToeMask;
+
+    // 3B. Complementary Hue Preservation (chromatic-separation damping curve on
+    // high-chroma target clusters C > 0.12 when opposing the reference hue axis,
+    // e.g. vibrant Barbie pink [320°, 25°] vs reference sky blue [200°, 255°]).
+    // Shifts gracefully toward cooler/pastel cinema tones instead of collapsing
+    // through (a=0, b=0) into muddy gray-brown.
+    let sepDamp = 0.0;
+    const highChromaMask = smoothstep(0.085, 0.140, rawOrigC);
+    if (highChromaMask > 1e-4 && rawOrigC > 1e-4) {
+      const origUx = rawOrigA / rawOrigC;
+      const origUy = rawOrigB / rawOrigC;
+      const candC = Math.hypot(candA, candB);
+      const cosRef =
+        refDomC > 1e-5
+          ? (origUx * refDomA + origUy * refDomB) / refDomC
+          : 1.0;
+      const refOppose = smoothstep(-0.15, 0.55, -cosRef) * refDomStrength;
+
+      const cosCand =
+        candC > 1e-5 ? (origUx * candA + origUy * candB) / candC : -1.0;
+      const chromaLoss = clamp(1.0 - candC / rawOrigC, 0.0, 1.0);
+      const collapseOppose = clamp(
+        smoothstep(0.24, 0.60, chromaLoss) * 0.72 +
+          smoothstep(0.30, 0.85, 1.0 - cosCand) * 0.55,
+        0.0,
+        1.0
+      );
+
+      let origHueDeg = Math.atan2(rawOrigB, rawOrigA) * RAD_TO_DEG;
+      if (origHueDeg < 0.0) origHueDeg += 360.0;
+      const inWarmPinkBand =
+        origHueDeg >= 315.0 || origHueDeg <= 30.0
+          ? 1.0
+          : clamp(
+              smoothstep(295.0, 315.0, origHueDeg) +
+                (1.0 - smoothstep(30.0, 48.0, origHueDeg)),
+              0.0,
+              1.0
+            );
+      const pinkOpposeBonus = inWarmPinkBand * skyDomFactor * 0.22;
+
+      sepDamp = clamp(
+        highChromaMask *
+          (Math.max(refOppose, refOppose * 0.55 + collapseOppose * 0.65) +
+            pinkOpposeBonus),
+        0.0,
+        0.96
+      );
+
+      if (sepDamp > 1e-4) {
+        const origHue = Math.atan2(rawOrigB, rawOrigA);
+        const candHue = candC > 1e-5 ? Math.atan2(candB, candA) : origHue;
+        const dHue = wrapAngleRad(candHue - origHue);
+        // Bounded graceful hue shift toward cooler/pastel cinema tone
+        const dampedDHue = clamp(dHue * (1.0 - 0.80 * sepDamp), -0.34, 0.34);
+        const safeHue = origHue + dampedDHue;
+        // Preserve clean chromaticity instead of collapsing through (a=0, b=0)
+        const minPreservedC = rawOrigC * (1.0 - 0.14 * sepDamp);
+        const safeC = candC + (Math.max(candC, minPreservedC) - candC) * sepDamp;
+        candA = safeC * Math.cos(safeHue);
+        candB = safeC * Math.sin(safeHue);
+      }
+    }
+
+    // 3C. Upper Neutral-Axis Chromatic Anchor (L > 0.78, C < 0.05):
+    // Pulls bright neutral pillars, fabrics, and specular highlights back to their
+    // pre-slider neutral chroma (rawOrigA, rawOrigB) so poly3 cancels any residual
+    // blue/cyan cast from high-key sky references.
+    const upperNeutralMask =
+      smoothstep(0.74, 0.82, rawOrigL) * (1.0 - smoothstep(0.025, 0.052, rawOrigC));
+    if (upperNeutralMask > 1e-4) {
+      const anchorPull = upperNeutralMask * whiteAnchorStrength;
+      candA = candA + (rawOrigA - candA) * anchorPull;
+      candB = candB + (rawOrigB - candB) * anchorPull;
+    }
 
     // 4. Narrow Natural Skin-Tone Cluster Lock: strictly L in [0.35, 0.82],
     // C in [0.03, 0.145], hue in [28°, 58°] with smooth falloff.
@@ -1522,23 +1736,34 @@ function buildAltairLatticeTargets(
         safeHue += pullRad * skinM * 0.92;
       }
 
+      // Guard firmly against cool-reference desaturation while keeping natural ceiling
+      const desatGuard = candC < skinAnchorC ? 0.96 : 0.82;
+      const minSkinC = skinAnchorC * (0.94 + 0.05 * skinM);
       const safeC = clamp(
-        skinAnchorC + (candC - skinAnchorC) * (1.0 - effProtect * skinM * 0.82),
-        skinAnchorC * 0.84,
+        skinAnchorC + (candC - skinAnchorC) * (1.0 - effProtect * skinM * desatGuard),
+        minSkinC,
         Math.min(skinAnchorC * 1.15, 0.135)
       );
       candA = safeC * Math.cos(safeHue);
       candB = safeC * Math.sin(safeHue);
 
-      if (skinTargetL > rawOrigL + 0.012 && rawOrigL > 0.72) {
-        skinTargetL = rawOrigL + 0.012 + (skinTargetL - (rawOrigL + 0.012)) * (1.0 - 0.82 * skinM);
+      const skinLiftMask = smoothstep(0.56, 0.72, rawOrigL) * skinM;
+      if (skinTargetL > rawOrigL + 0.010 && skinLiftMask > 1e-4) {
+        skinTargetL =
+          rawOrigL +
+          0.010 +
+          (skinTargetL - (rawOrigL + 0.010)) * (1.0 - 0.86 * skinLiftMask);
       }
     }
 
-    // 5. Final chroma soft-compression and dark-safe luminance anchoring
+    // 5. Final chroma soft-compression and dark-safe / anti-haze luminance anchoring
     compressOklabChroma(candA, candB, abComp);
     const hiLumaGuard = 1.0 - 0.72 * smoothstep(0.80, 0.97, L0);
-    const darkLiftGuard = 1.0 - 0.78 * darkTargetFactor * (1.0 - smoothstep(0.05, 0.24, L0));
+    const shadowAntiHaze = Math.max(
+      0.78 * darkTargetFactor * (1.0 - smoothstep(0.05, 0.24, L0)),
+      0.86 * highKeyRefFactor * (1.0 - smoothstep(0.18, 0.46, L0))
+    );
+    const darkLiftGuard = 1.0 - shadowAntiHaze;
     const rawDeltaL = skinTargetL - L0;
     const boundedDeltaL =
       rawDeltaL > 0.0
@@ -1554,15 +1779,21 @@ function buildAltairLatticeTargets(
     outRgb[0] = bR + (tmpRgb[0] - bR) * shadowToeMask;
     outRgb[1] = bG + (tmpRgb[1] - bG) * shadowToeMask;
     outRgb[2] = bB + (tmpRgb[2] - bB) * shadowToeMask;
+    return sepDamp;
   };
 
   const targetR = new Float32Array(LATTICE_COUNT);
   const targetG = new Float32Array(LATTICE_COUNT);
   const targetB = new Float32Array(LATTICE_COUNT);
+  const baseUpperNeutralMask = new Float32Array(LATTICE_COUNT);
+  const baseSepDampMask = new Float32Array(LATTICE_COUNT);
   const synthRgb = [0, 0, 0];
 
   for (let i = 0; i < LATTICE_COUNT; i++) {
-    synthesizePoint(
+    const rawC = Math.hypot(origA[i], origBLab[i]);
+    baseUpperNeutralMask[i] =
+      smoothstep(0.72, 0.80, origL[i]) * (1.0 - smoothstep(0.025, 0.052, rawC));
+    baseSepDampMask[i] = synthesizePoint(
       baseR[i],
       baseG[i],
       baseB[i],
@@ -1591,8 +1822,13 @@ function buildAltairLatticeTargets(
   const sampleTargetR = new Float32Array(nSrc);
   const sampleTargetG = new Float32Array(nSrc);
   const sampleTargetB = new Float32Array(nSrc);
+  const sampleUpperNeutralMask = new Float32Array(nSrc);
+  const sampleSepDampMask = new Float32Array(nSrc);
   for (let i = 0; i < nSrc; i++) {
-    synthesizePoint(
+    const rawC = Math.hypot(srcSamples.a[i], srcSamples.bLab[i]);
+    sampleUpperNeutralMask[i] =
+      smoothstep(0.70, 0.78, srcSamples.L[i]) * (1.0 - smoothstep(0.030, 0.048, rawC));
+    sampleSepDampMask[i] = synthesizePoint(
       postSrcR[i],
       postSrcG[i],
       postSrcB[i],
@@ -1624,8 +1860,12 @@ function buildAltairLatticeTargets(
     baseA,
     baseBLab,
     baseSkinMask: origSkinMask,
+    baseUpperNeutralMask,
+    baseSepDampMask,
     adaptiveSkinProtect,
     tgtSkinRatio,
+    tgtBrightNeutralRatio,
+    skyDomFactor,
     targetR,
     targetG,
     targetB,
@@ -1638,6 +1878,8 @@ function buildAltairLatticeTargets(
     sampleTargetB,
     sampleW: curW,
     sampleSkinMask: srcSamples.skinW,
+    sampleUpperNeutralMask,
+    sampleSepDampMask,
   };
 }
 
@@ -1704,8 +1946,12 @@ function fitZeroInterceptPoly3Altair(lattice) {
     baseA,
     baseBLab,
     baseSkinMask,
+    baseUpperNeutralMask,
+    baseSepDampMask,
     adaptiveSkinProtect = 0.65,
     tgtSkinRatio = 0.0,
+    tgtBrightNeutralRatio = 0.0,
+    skyDomFactor = 0.0,
     targetR,
     targetG,
     targetB,
@@ -1718,6 +1964,8 @@ function fitZeroInterceptPoly3Altair(lattice) {
     sampleTargetB,
     sampleW,
     sampleSkinMask,
+    sampleUpperNeutralMask,
+    sampleSepDampMask,
   } = lattice;
   const N = 19;
   const AtA = new Float64Array(N * N);
@@ -1725,7 +1973,12 @@ function fitZeroInterceptPoly3Altair(lattice) {
   const AtYG = new Float64Array(N);
   const AtYB = new Float64Array(N);
   const phi = new Float64Array(N);
-  const skinWeightScale = smoothstep(0.08, 0.20, tgtSkinRatio);
+  const skinWeightScale = smoothstep(0.04, 0.14, tgtSkinRatio);
+  const whiteWeightScale = clamp(
+    smoothstep(0.03, 0.16, tgtBrightNeutralRatio) * 0.75 + skyDomFactor * 0.65,
+    0.0,
+    1.2
+  );
 
   const accumulateRow = (r, g, b, tr, tg, tb, w) => {
     const r2 = r * r;
@@ -1775,19 +2028,27 @@ function fitZeroInterceptPoly3Altair(lattice) {
 
     const isNeutral = chr < 0.045 ? 1.8 : 1.0;
     const isDark = L < 0.08 ? 3.2 : 1.0;
-    const isBrightNeutral = L > 0.92 && chr < 0.035 ? 2.8 : 1.0;
+    const upperNeutM = baseUpperNeutralMask ? baseUpperNeutralMask[idx] : 0.0;
+    const isBrightNeutral =
+      upperNeutM > 0.10
+        ? 1.0 + upperNeutM * (4.5 + 18.0 * whiteWeightScale)
+        : L > 0.92 && chr < 0.035
+        ? 2.8
+        : 1.0;
     const skinM = baseSkinMask[idx];
     const isSkin =
       skinM > 0.15
         ? 1.0 + skinM * (4.0 + (12.0 + 18.0 * adaptiveSkinProtect) * skinWeightScale)
         : 1.0;
-    const w = isNeutral * isDark * isBrightNeutral * isSkin;
+    const sepM = baseSepDampMask ? baseSepDampMask[idx] : 0.0;
+    const isOpposeChroma = sepM > 0.20 ? 1.0 + sepM * 3.5 : 1.0;
+    const w = isNeutral * isDark * isBrightNeutral * isSkin * isOpposeChroma;
     latticeWeightSum += w;
     accumulateRow(r, g, b, targetR[idx], targetG[idx], targetB[idx], w);
   }
 
   // 2. Direct target-image SOT samples (focuses cubic precision on the actual
-  // target image's color clusters & narrow skin tones rather than empty cube corners)
+  // target image's color clusters, bright neutral whites, & narrow skin tones)
   if (sampleCount >= 16 && sampleBaseR && sampleTargetR) {
     let rawSampleW = 0.0;
     for (let i = 0; i < sampleCount; i++) {
@@ -1798,7 +2059,12 @@ function fitZeroInterceptPoly3Altair(lattice) {
       const baseW = (sampleW ? sampleW[i] : 1.0) * sampleNorm;
       const sm = sampleSkinMask ? sampleSkinMask[i] : 0.0;
       const skinBoost =
-        sm > 0.15 ? 1.0 + sm * (2.0 + 28.0 * adaptiveSkinProtect * skinWeightScale) : 1.0;
+        sm > 0.15 ? 1.0 + sm * (2.5 + 28.0 * adaptiveSkinProtect * skinWeightScale) : 1.0;
+      const unm = sampleUpperNeutralMask ? sampleUpperNeutralMask[i] : 0.0;
+      const whiteBoost =
+        unm > 0.15 ? 1.0 + unm * (2.0 + 14.0 * whiteWeightScale) : 1.0;
+      const sepm = sampleSepDampMask ? sampleSepDampMask[i] : 0.0;
+      const sepBoost = sepm > 0.20 ? 1.0 + sepm * 4.0 : 1.0;
       accumulateRow(
         sampleBaseR[i],
         sampleBaseG[i],
@@ -1806,7 +2072,7 @@ function fitZeroInterceptPoly3Altair(lattice) {
         sampleTargetR[i],
         sampleTargetG[i],
         sampleTargetB[i],
-        baseW * skinBoost
+        baseW * skinBoost * whiteBoost * sepBoost
       );
     }
   }
@@ -2000,7 +2266,10 @@ function measureOklabError(params, srcSamples, refStats, darkTargetFactor = 0.0,
   let sumB = 0.0;
   let skinDriftSum = 0.0;
   let skinOutSum = 0.0;
+  let skinChromaLossSum = 0.0;
   let skinWSum = 0.0;
+  let whiteCastSum = 0.0;
+  let whiteWSum = 0.0;
 
   for (let i = 0; i < srcSamples.count; i += step) {
     evaluateGradeRGB(G, srcSamples.r[i], srcSamples.g[i], srcSamples.b[i], outRgb, false);
@@ -2013,14 +2282,28 @@ function measureOklabError(params, srcSamples, refStats, darkTargetFactor = 0.0,
     sumA += wbW * outLab[1];
     sumB += wbW * outLab[2];
 
+    const inC = Math.hypot(srcSamples.a[i], srcSamples.bLab[i]);
+    const outC = Math.hypot(outLab[1], outLab[2]);
+
+    // Guard near-neutral bright structures (L > 0.72, C < 0.045) from white-point cast
+    if (srcSamples.L[i] > 0.72 && inC < 0.045) {
+      const wn = smoothstep(0.72, 0.80, srcSamples.L[i]) * (1.0 - smoothstep(0.025, 0.045, inC));
+      if (wn > 0.1) {
+        whiteCastSum += wn * Math.max(0.0, outC - inC);
+        whiteWSum += wn;
+      }
+    }
+
     const sw = srcSamples.skinW ? srcSamples.skinW[i] : 0.0;
     if (sw > 0.20) {
       const hIn = Math.atan2(srcSamples.bLab[i], srcSamples.a[i]);
       const hOut = Math.atan2(outLab[2], outLab[1]);
       const drift = Math.abs(wrapAngleRad(hOut - hIn));
       const excess = skinCorridorExcessRad(hOut);
-      skinDriftSum += sw * (drift + 3.0 * excess);
+      const chromaLoss = Math.max(0.0, inC - outC);
+      skinDriftSum += sw * (drift + 3.0 * excess + 2.5 * chromaLoss);
       skinOutSum += sw * excess;
+      skinChromaLossSum += sw * chromaLoss;
       skinWSum += sw;
     }
   }
@@ -2037,26 +2320,33 @@ function measureOklabError(params, srcSamples, refStats, darkTargetFactor = 0.0,
       const hOut = Math.atan2(outLab[2], outLab[1]);
       const drift = Math.abs(wrapAngleRad(hOut - hIn));
       const excess = skinCorridorExcessRad(hOut);
-      skinDriftSum += swatchWeight * (drift + 3.0 * excess);
+      const chromaLoss = Math.max(0.0, Math.hypot(inLab[1], inLab[2]) - Math.hypot(outLab[1], outLab[2]));
+      skinDriftSum += swatchWeight * (drift + 3.0 * excess + 2.5 * chromaLoss);
       skinOutSum += swatchWeight * excess;
+      skinChromaLossSum += swatchWeight * chromaLoss;
       skinWSum += swatchWeight;
     }
   }
 
+  const skyWbDamp = 1.0 - 0.65 * (refStats.skyDominantFactor || 0.0);
+  const highKeyRef = refStats.highKeyFactor || 0.0;
   const meanL = sumL / Math.max(sumW, 1e-6);
   const meanA = sumA / Math.max(sumWbW, 1e-6);
   const meanB = sumB / Math.max(sumWbW, 1e-6);
   const errL = refStats.meanL - meanL;
-  const errA = refStats.meanA - meanA;
-  const errB = refStats.meanB - meanB;
+  const errA = refStats.meanA * skyWbDamp - meanA;
+  const errB = refStats.meanB * skyWbDamp - meanB;
   const meanSkinPenalty = skinWSum > 1e-5 ? skinDriftSum / skinWSum : 0.0;
   const skinOutOfCorridor = skinWSum > 1e-5 ? skinOutSum / skinWSum : 0.0;
-  // Prioritize chromatic fidelity over brightness chase on dark cinema targets
-  const lWeight = 1.0 - 0.55 * darkTargetFactor;
+  const skinChromaLoss = skinWSum > 1e-5 ? skinChromaLossSum / skinWSum : 0.0;
+  const whiteCastDrift = whiteWSum > 1e-5 ? whiteCastSum / whiteWSum : 0.0;
+  // Prioritize chromatic fidelity over brightness chase on dark cinema targets & high-key refs
+  const lWeight = (1.0 - 0.55 * darkTargetFactor) * (1.0 - 0.65 * highKeyRef);
   const score =
     Math.sqrt(lWeight * errL * errL + 2.2 * (errA * errA + errB * errB)) +
-    0.45 * meanSkinPenalty;
-  return { errL, errA, errB, skinOutOfCorridor, score };
+    0.45 * meanSkinPenalty +
+    2.4 * whiteCastDrift;
+  return { errL, errA, errB, skinOutOfCorridor, skinChromaLoss, whiteCastDrift, score };
 }
 
 // ---------------------------------------------------------------------------
@@ -2183,8 +2473,19 @@ export function analyzeEngineAltairV4(refView, tgtView, options = {}) {
   );
   if (baseEval.score > 0.006) {
     const headroomUsed = computeHighlightHeadroomUsed(srcStats);
-    const maxPosEvTrim = 0.05 * (1.0 - 0.85 * darkTargetFactor) * (1.0 - headroomUsed);
-    const evMaxCeil = Math.min(0.24 - 0.12 * darkTargetFactor, 0.24 - 0.18 * headroomUsed);
+    const highKeyRef = refStats.highKeyFactor || 0.0;
+    const skyDom = refStats.skyDominantFactor || 0.0;
+    const maxPosEvTrim =
+      0.05 *
+      (1.0 - 0.85 * darkTargetFactor) *
+      (1.0 - headroomUsed) *
+      (1.0 - 0.90 * highKeyRef);
+    const evMaxCeil = Math.min(
+      0.24 - 0.12 * darkTargetFactor,
+      0.24 - 0.18 * headroomUsed,
+      0.24 - 0.20 * highKeyRef
+    );
+    const wbTrimDamp = 1.0 - 0.70 * skyDom;
     const trimmed = sanitizeParams({
       ...candidate,
       exposure: round2(
@@ -2197,7 +2498,7 @@ export function analyzeEngineAltairV4(refView, tgtView, options = {}) {
       temp: round2(
         clamp(
           candidate.temp +
-            clamp((baseEval.errB * 1.7 + baseEval.errA * 0.35) * 0.48, -0.16, 0.16),
+            clamp((baseEval.errB * 1.7 + baseEval.errA * 0.35) * 0.48 * wbTrimDamp, -0.16, 0.16),
           -0.60,
           0.60
         )
@@ -2205,7 +2506,7 @@ export function analyzeEngineAltairV4(refView, tgtView, options = {}) {
       tint: round2(
         clamp(
           candidate.tint +
-            clamp((baseEval.errA * 1.9 - baseEval.errB * 0.2) * 0.52, -0.18, 0.18),
+            clamp((baseEval.errA * 1.9 - baseEval.errB * 0.2) * 0.52 * wbTrimDamp, -0.18, 0.18),
           -0.55,
           0.55
         )
@@ -2220,7 +2521,9 @@ export function analyzeEngineAltairV4(refView, tgtView, options = {}) {
     );
     if (
       trimEval.score < baseEval.score &&
-      trimEval.skinOutOfCorridor <= baseEval.skinOutOfCorridor + 1e-4
+      trimEval.skinOutOfCorridor <= baseEval.skinOutOfCorridor + 1e-4 &&
+      trimEval.whiteCastDrift <= baseEval.whiteCastDrift + 0.002 &&
+      trimEval.skinChromaLoss <= baseEval.skinChromaLoss + 0.003
     ) {
       candidate = trimmed;
     }
