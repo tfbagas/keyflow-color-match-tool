@@ -138,7 +138,7 @@ export default function SaveImagePopover({
   const maxCloudDurationSec = cloudQuota?.maxDurationSec ?? 60;
   const maxCloudFileSizeMb = cloudQuota?.maxFileSizeMb ?? 100;
   const activeCloudWorkers = cloudQuota?.activeWorkers ?? 0;
-  const maxCloudConcurrency = cloudQuota?.maxConcurrency ?? 3;
+  const maxCloudConcurrency = cloudQuota?.maxConcurrency ?? 2;
   const queuedCloudJobs = cloudQuota?.queuedJobs ?? cloudQuota?.queueLength ?? 0;
   const targetFileSizeMb =
     targetFile && typeof targetFile.size === "number"

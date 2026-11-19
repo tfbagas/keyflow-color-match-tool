@@ -7,7 +7,7 @@ const DEFAULT_PROD_CLOUD_RENDER_URL = "https://color-match-tool-cloud-render.onr
 const DEFAULT_MAX_DURATION_SEC = 60;
 const DEFAULT_MAX_FILE_SIZE_MB = 100;
 const DEFAULT_DAILY_LIMIT = 5;
-const DEFAULT_MAX_CONCURRENCY = 3;
+const DEFAULT_MAX_CONCURRENCY = 2;
 const POLL_INTERVAL_MS = 2000;
 const RENDER_POLL_TIMEOUT_MS = 360_000;
 const WAKE_TIMEOUT_MS = 75_000;
@@ -420,6 +420,11 @@ export async function exportVideoInCloud({
     "Start cloud render"
   );
   const startData = await startResp.json().catch(() => ({}));
+  if (startResp.status === 404) {
+    throw new Error(
+      startData.error || "Job lost due to worker restart. Please retry."
+    );
+  }
   if (!startResp.ok) {
     throw new Error(startData.error || `Failed to start cloud render (HTTP ${startResp.status}).`);
   }
@@ -445,6 +450,11 @@ export async function exportVideoInCloud({
       "Poll cloud job status"
     );
     const job = await statusResp.json().catch(() => ({}));
+    if (statusResp.status === 404) {
+      throw new Error(
+        job.error || "Job lost due to worker restart. Please retry."
+      );
+    }
     if (!statusResp.ok) {
       throw new Error(job.error || `Failed to poll job status (HTTP ${statusResp.status}).`);
     }

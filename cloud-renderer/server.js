@@ -27,8 +27,8 @@ const DAILY_LIMIT_PER_USER = Math.max(1, Number(process.env.DAILY_LIMIT_PER_USER
 const MAX_DURATION_SEC = Math.max(1, Number(process.env.MAX_DURATION_SEC) || 60);
 const MAX_FILE_SIZE_MB = Math.max(1, Number(process.env.MAX_FILE_SIZE_MB) || 100);
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
-const RENDER_CONCURRENCY = Math.min(3, Math.max(1, Number(process.env.RENDER_CONCURRENCY) || 3));
-const MIN_FREE_RAM_FOR_EXTRA_WORKER_BYTES = 145 * 1024 * 1024;
+const RENDER_CONCURRENCY = Math.min(2, Math.max(1, Number(process.env.RENDER_CONCURRENCY) || 2));
+const MIN_FREE_RAM_FOR_EXTRA_WORKER_BYTES = 210 * 1024 * 1024;
 const MEMORY_RECHECK_INTERVAL_MS = 1500;
 const FFMPEG_TIMEOUT_MS = 360_000;
 const PRESIGN_TTL_SEC = 15 * 60;
@@ -253,31 +253,39 @@ function runFfmpegPass(inputPath, lutPath, outputPath, durationSec, audioArgs, o
 
     const args = [
       "-y",
+      "-loglevel",
+      "error",
+      "-stats",
+      "-threads",
+      "1",
       "-i",
       inputPath,
       "-vf",
       vf,
+      "-threads",
+      "1",
+      "-filter_threads",
+      "1",
       "-c:v",
       "libx264",
       "-preset",
       "ultrafast",
       "-crf",
-      "18",
+      "19",
       "-tune",
       "fastdecode",
+      "-x264-params",
+      "rc-lookahead=5:sync-lookahead=0:bframes=0:ref=1",
       "-pix_fmt",
       "yuv420p",
       "-movflags",
       "+faststart",
-      "-threads",
-      "2",
       ...audioArgs,
       outputPath,
     ];
 
     const proc = spawn("ffmpeg", args, {
       stdio: ["ignore", "ignore", "pipe"],
-      timeout: FFMPEG_TIMEOUT_MS,
     });
     let stderrTail = "";
     let settled = false;
@@ -293,12 +301,17 @@ function runFfmpegPass(inputPath, lutPath, outputPath, durationSec, audioArgs, o
 
     proc.stderr.on("data", (chunk) => {
       const text = chunk.toString("utf8");
-      stderrTail = (stderrTail + text).slice(-2000);
       if (durationSec > 0) {
         const curSec = parseFfmpegTimeSec(text);
         if (curSec !== null) {
           const pct = Math.min(99, Math.max(1, Math.round((curSec / durationSec) * 100)));
           onProgressText(`Rendering on Cloud FFmpeg (${pct}%)...`);
+        }
+      }
+      for (const line of text.split(/[\r\n]+/)) {
+        const trimmed = line.trim();
+        if (trimmed && !/^frame=\s*\d+/.test(trimmed)) {
+          stderrTail = (stderrTail ? `${stderrTail}\n${trimmed}` : trimmed).slice(-1024);
         }
       }
     });
@@ -350,10 +363,12 @@ async function runFfmpegLut(inputPath, lutPath, outputPath, durationSec, onProgr
   }
 }
 
-function scheduleOutputCleanup(job) {
+function scheduleJobExpiry(job, deleteOutput = true) {
   if (job.cleanupTimer) clearTimeout(job.cleanupTimer);
   job.cleanupTimer = setTimeout(async () => {
-    await deleteR2Object(job.outputKey);
+    if (deleteOutput) {
+      await deleteR2Object(job.outputKey);
+    }
     jobs.delete(job.jobId);
   }, OUTPUT_CLEANUP_MS);
   if (typeof job.cleanupTimer.unref === "function") {
@@ -400,6 +415,11 @@ async function runJob(job) {
       job.progressText = txt;
     });
 
+    await Promise.all([
+      fsp.rm(inputPath, { force: true }).catch(() => {}),
+      fsp.rm(lutPath, { force: true }).catch(() => {}),
+    ]);
+
     job.progressText = "Uploading rendered MP4...";
     await uploadFileToR2(outputPath, job.outputKey, "video/mp4");
 
@@ -416,7 +436,7 @@ async function runJob(job) {
     job.status = "completed";
     job.downloadUrl = downloadUrl;
     job.progressText = "Render complete";
-    scheduleOutputCleanup(job);
+    scheduleJobExpiry(job, true);
   } catch (err) {
     console.error(`[Worker] Job ${job.jobId} failed:`, err);
     job.status = "failed";
@@ -426,6 +446,7 @@ async function runJob(job) {
       decrementQuota(job.clientId, job.ip);
       job.quotaCharged = false;
     }
+    scheduleJobExpiry(job, false);
   } finally {
     await fsp.rm(jobDir, { recursive: true, force: true }).catch(() => {});
     await Promise.all([deleteR2Object(job.videoKey), deleteR2Object(job.lutKey)]);
@@ -556,7 +577,7 @@ app.post("/api/jobs/init", async (req, res) => {
       ),
     ]);
 
-    jobs.set(jobId, {
+    const job = {
       jobId,
       clientId,
       ip,
@@ -572,7 +593,9 @@ app.post("/api/jobs/init", async (req, res) => {
       error: null,
       quotaCharged: false,
       cleanupTimer: null,
-    });
+    };
+    jobs.set(jobId, job);
+    scheduleJobExpiry(job, false);
 
     res.json({
       jobId,
@@ -591,7 +614,7 @@ app.post("/api/jobs/init", async (req, res) => {
 app.post("/api/jobs/:jobId/start", (req, res) => {
   const job = jobs.get(req.params.jobId);
   if (!job) {
-    res.status(404).json({ error: "Job not found or expired." });
+    res.status(404).json({ error: "Job lost due to worker restart. Please retry." });
     return;
   }
 
@@ -614,6 +637,10 @@ app.post("/api/jobs/:jobId/start", (req, res) => {
     return;
   }
 
+  if (job.cleanupTimer) {
+    clearTimeout(job.cleanupTimer);
+    job.cleanupTimer = null;
+  }
   incrementQuota(job.clientId, job.ip);
   job.quotaCharged = true;
   job.status = "queued";
@@ -638,7 +665,7 @@ app.post("/api/jobs/:jobId/start", (req, res) => {
 app.get("/api/jobs/:jobId", (req, res) => {
   const job = jobs.get(req.params.jobId);
   if (!job) {
-    res.status(404).json({ error: "Job not found or expired." });
+    res.status(404).json({ error: "Job lost due to worker restart. Please retry." });
     return;
   }
 
@@ -674,6 +701,8 @@ app.post("/api/jobs/:jobId/cleanup", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(
-    `[cloud-renderer] Listening on port ${PORT} (R2 configured: ${r2Configured}, limit: ${DAILY_LIMIT_PER_USER}/day)`
+    `[cloud-renderer] Listening on port ${PORT} (R2 configured: ${r2Configured}, concurrency: 1-${RENDER_CONCURRENCY}, minFreeRamMB: ${Math.round(
+      MIN_FREE_RAM_FOR_EXTRA_WORKER_BYTES / (1024 * 1024)
+    )}, limit: ${DAILY_LIMIT_PER_USER}/day)`
   );
 });
