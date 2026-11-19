@@ -12,6 +12,7 @@ from __future__ import annotations
 import atexit
 from collections import deque
 from datetime import datetime, timezone
+import io
 import json
 import os
 from pathlib import Path
@@ -29,16 +30,23 @@ import uuid
 
 def _ensure_python_deps() -> None:
     required = {
-        "fastapi": "fastapi",
-        "uvicorn": "uvicorn",
-        "boto3": "boto3",
-        "botocore": "botocore",
+        ("fastapi",): "fastapi",
+        ("uvicorn",): "uvicorn",
+        ("boto3",): "boto3",
+        ("botocore",): "botocore",
+        ("python_multipart", "multipart"): "python-multipart",
     }
     missing = []
-    for mod, pkg in required.items():
-        try:
-            __import__(mod)
-        except ImportError:
+    for mods, pkg in required.items():
+        found = False
+        for mod in mods:
+            try:
+                __import__(mod)
+                found = True
+                break
+            except ImportError:
+                continue
+        if not found:
             missing.append(pkg)
     if missing:
         print(f"[setup] Installing missing Python packages: {', '.join(missing)}")
@@ -50,6 +58,7 @@ _ensure_python_deps()
 import boto3  # noqa: E402
 from botocore.config import Config  # noqa: E402
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
+from fastapi.concurrency import run_in_threadpool  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
 import uvicorn  # noqa: E402
@@ -105,14 +114,14 @@ def _build_r2_client():
         # Disable automatic CRC32 checksum query params on presigned PUT URLs (rejected by R2).
         config = Config(
             signature_version="s3v4",
-            s3={"addressing_style": "path"},
+            s3={"addressing_style": "virtual"},
             request_checksum_calculation="when_required",
             response_checksum_validation="when_required",
         )
     except TypeError:
         config = Config(
             signature_version="s3v4",
-            s3={"addressing_style": "path"},
+            s3={"addressing_style": "virtual"},
         )
     return boto3.client(
         "s3",
@@ -641,16 +650,12 @@ async def init_job(request: Request) -> dict:
 
     video_upload_url = s3_client.generate_presigned_url(
         "put_object",
-        Params={"Bucket": R2_BUCKET_NAME, "Key": video_key, "ContentType": content_type},
+        Params={"Bucket": R2_BUCKET_NAME, "Key": video_key},
         ExpiresIn=PRESIGN_TTL_SEC,
     )
     lut_upload_url = s3_client.generate_presigned_url(
         "put_object",
-        Params={
-            "Bucket": R2_BUCKET_NAME,
-            "Key": lut_key,
-            "ContentType": "text/plain;charset=utf-8",
-        },
+        Params={"Bucket": R2_BUCKET_NAME, "Key": lut_key},
         ExpiresIn=PRESIGN_TTL_SEC,
     )
 
@@ -660,6 +665,7 @@ async def init_job(request: Request) -> dict:
             "clientId": cid,
             "ip": ip,
             "durationSec": duration_sec,
+            "contentType": content_type,
             "videoExt": video_ext,
             "videoKey": video_key,
             "lutKey": lut_key,
@@ -681,6 +687,82 @@ async def init_job(request: Request) -> dict:
         "videoKey": video_key,
         "lutKey": lut_key,
         "outputKey": output_key,
+    }
+
+
+@app.post("/api/jobs/{job_id}/upload")
+async def upload_job_files(job_id: str, request: Request) -> dict:
+    """Fallback endpoint to upload video + .cube LUT directly to R2 via the worker."""
+    if not r2_configured or not s3_client:
+        raise HTTPException(status_code=503, detail="Cloud storage (R2) is not configured.")
+
+    with state_lock:
+        job = jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found or worker restarted")
+    if job["status"] != "initialized":
+        raise HTTPException(status_code=409, detail="Job has already been started.")
+
+    content_type_header = (request.headers.get("content-type") or "").lower()
+    if "multipart/form-data" not in content_type_header:
+        raise HTTPException(
+            status_code=400,
+            detail="Expected multipart/form-data with 'video' and 'lut' fields.",
+        )
+
+    form = await request.form()
+    video_part = form.get("video")
+    lut_part = form.get("lut")
+
+    if video_part is None or not hasattr(video_part, "file"):
+        raise HTTPException(status_code=400, detail="Missing 'video' file in multipart upload.")
+    if lut_part is None:
+        raise HTTPException(status_code=400, detail="Missing 'lut' in multipart upload.")
+
+    video_ct = getattr(video_part, "content_type", None) or job.get("contentType") or "video/mp4"
+    try:
+        video_part.file.seek(0)
+        await run_in_threadpool(
+            s3_client.upload_fileobj,
+            video_part.file,
+            R2_BUCKET_NAME,
+            job["videoKey"],
+            ExtraArgs={"ContentType": video_ct},
+        )
+
+        if hasattr(lut_part, "file"):
+            lut_part.file.seek(0)
+            await run_in_threadpool(
+                s3_client.upload_fileobj,
+                lut_part.file,
+                R2_BUCKET_NAME,
+                job["lutKey"],
+                ExtraArgs={"ContentType": "text/plain;charset=utf-8"},
+            )
+        else:
+            lut_bytes = str(lut_part).encode("utf-8")
+            await run_in_threadpool(
+                s3_client.upload_fileobj,
+                io.BytesIO(lut_bytes),
+                R2_BUCKET_NAME,
+                job["lutKey"],
+                ExtraArgs={"ContentType": "text/plain;charset=utf-8"},
+            )
+    finally:
+        if hasattr(video_part, "close"):
+            await video_part.close()
+        if hasattr(lut_part, "close"):
+            await lut_part.close()
+
+    with state_lock:
+        if job_id in jobs and jobs[job_id]["status"] == "initialized":
+            jobs[job_id]["progressText"] = "Uploaded via worker fallback. Ready to start."
+
+    return {
+        "ok": True,
+        "jobId": job_id,
+        "videoKey": job["videoKey"],
+        "lutKey": job["lutKey"],
     }
 
 

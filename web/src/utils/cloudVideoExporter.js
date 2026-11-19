@@ -253,14 +253,69 @@ function uploadViaPut(url, body, contentType, onProgress, abortSignal) {
 
     xhr.onerror = () => {
       abortSignal?.removeEventListener("abort", onAbort);
-      reject(
-        new Error(
-          "Network/CORS error while uploading to cloud storage (R2 PUT blocked or unreachable)."
-        )
+      const err = new Error(
+        "Network/CORS error while uploading to cloud storage (R2 PUT blocked or unreachable)."
       );
+      err.isR2UploadNetworkError = true;
+      reject(err);
     };
 
     xhr.send(body);
+  });
+}
+
+function uploadViaWorker(baseUrl, jobId, videoBlob, fileName, cubeText, onProgress, abortSignal) {
+  return new Promise((resolve, reject) => {
+    throwIfAborted(abortSignal);
+    const formData = new FormData();
+    formData.append("video", videoBlob, fileName || "input.mp4");
+    formData.append(
+      "lut",
+      new Blob([cubeText], { type: "text/plain;charset=utf-8" }),
+      "grade.cube"
+    );
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${baseUrl}/api/jobs/${encodeURIComponent(jobId)}/upload`, true);
+
+    const onAbort = () => {
+      xhr.abort();
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    abortSignal?.addEventListener("abort", onAbort, { once: true });
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && typeof onProgress === "function") {
+        onProgress(e.loaded / Math.max(1, e.total));
+      }
+    };
+
+    xhr.onload = () => {
+      abortSignal?.removeEventListener("abort", onAbort);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        let detail = xhr.statusText ? ` ${xhr.statusText}` : "";
+        try {
+          const parsed = JSON.parse(xhr.responseText);
+          if (parsed?.error) detail = `: ${parsed.error}`;
+        } catch {
+          // ignore non-JSON body
+        }
+        const err = new Error(`Worker upload fallback failed (HTTP ${xhr.status}${detail}).`);
+        if (xhr.status >= 502) err.isTunnelUnreachable = true;
+        reject(err);
+      }
+    };
+
+    xhr.onerror = () => {
+      abortSignal?.removeEventListener("abort", onAbort);
+      const err = new Error("Worker upload fallback failed (network/CORS error).");
+      err.isNetworkError = true;
+      reject(err);
+    };
+
+    xhr.send(formData);
   });
 }
 
@@ -553,27 +608,46 @@ export async function exportVideoInCloud({
 
     const { jobId, videoUploadUrl, lutUploadUrl } = initData;
 
-    // Direct upload video + .cube to Cloudflare R2
-    report(20, "Uploading video to cloud storage...");
-    await uploadViaPut(
-      videoUploadUrl,
-      videoBlob,
-      contentType,
-      (ratio) => {
-        const pct = 20 + Math.round(ratio * 25);
-        report(pct, `Uploading video (${Math.round(ratio * 100)}%)...`);
-      },
-      abortSignal
-    );
+    // Direct upload video + .cube to Cloudflare R2 (fall back to worker upload on Network/CORS error)
+    try {
+      report(20, "Uploading video to cloud storage...");
+      await uploadViaPut(
+        videoUploadUrl,
+        videoBlob,
+        contentType,
+        (ratio) => {
+          const pct = 20 + Math.round(ratio * 25);
+          report(pct, `Uploading video (${Math.round(ratio * 100)}%)...`);
+        },
+        abortSignal
+      );
 
-    report(46, "Uploading 3D LUT (.cube)...");
-    await uploadViaPut(
-      lutUploadUrl,
-      cubeText,
-      "text/plain;charset=utf-8",
-      null,
-      abortSignal
-    );
+      report(46, "Uploading 3D LUT (.cube)...");
+      await uploadViaPut(
+        lutUploadUrl,
+        cubeText,
+        "text/plain;charset=utf-8",
+        null,
+        abortSignal
+      );
+    } catch (uploadErr) {
+      if (!uploadErr?.isR2UploadNetworkError) {
+        throw uploadErr;
+      }
+      report(20, "Direct R2 upload blocked — uploading via worker fallback...");
+      await uploadViaWorker(
+        baseUrl,
+        jobId,
+        videoBlob,
+        rawFileName,
+        cubeText,
+        (ratio) => {
+          const pct = 20 + Math.round(ratio * 28);
+          report(pct, `Uploading via worker (${Math.round(ratio * 100)}%)...`);
+        },
+        abortSignal
+      );
+    }
 
     // Enqueue FIFO render job
     report(
