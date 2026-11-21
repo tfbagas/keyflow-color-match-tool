@@ -335,7 +335,7 @@ function drawCard01Polaris(ctx, x, y, w, h, isId) {
     y,
     w,
     pad,
-    isId ? "01  -  ALTAIR 4.0 ULTRA & SAINS WARNA" : "01  -  ALTAIR 4.0 ULTRA & COLOR SCIENCE"
+    isId ? "01  -  ALTAIR 4.5 REFRESH & SAINS WARNA" : "01  -  ALTAIR 4.5 REFRESH & COLOR SCIENCE"
   );
 
   const startY = y + 76;
@@ -345,31 +345,31 @@ function drawCard01Polaris(ctx, x, y, w, h, isId) {
 
   const engines = [
     {
-      name: "Sirius 2.5",
-      tag: "BALANCED",
-      sub: isId ? "Tonal + Split Tone" : "Tonal + Split Tone",
+      name: "Altair 4.5 Refresh",
+      tag: "CINEMA 32³",
+      sub: "Two-Stage Source Normalize + Sigma",
       bullets: isId
-        ? ["Toning 3-Arah", "Putih Bersih", "Match Seimbang"]
-        : ["3-Way Toning", "Clean Whites", "Balanced Match"],
-      pro: false,
+        ? ["Normalisasi Sumber D65", "SOT OKLab 3D Halton", "LUT Tetrahedral 32³"]
+        : ["Source Normalize D65", "Halton 3D OKLab SOT", "32³ Tetrahedral LUT"],
+      pro: true,
     },
     {
-      name: "Polaris 3.5 PRO",
-      tag: "CINEMA PRO",
-      sub: "3D Poly + OKLab",
-      bullets: isId
-        ? ["Kompresi Gamut OKLab", "Aman di Warna Kulit", "Hitam Pekat Bersih"]
-        : ["OKLab Gamut Comp", "Skin-Safe Roll-Off", "Deep Blacks Toe"],
-      pro: false,
-    },
-    {
-      name: "Altair 4.0 ULTRA",
-      tag: "SCENE-LINEAR PRO",
-      sub: "3D OKLab + Filmic",
+      name: "Altair 4.0",
+      tag: "CREATIVE",
+      sub: "1-Stage OKLab + Filmic",
       bullets: isId
         ? ["Kovarians 3D OKLab", "Kurva Tonal 5-Zona", "Filmic Roll-Off & .kfplug"]
         : ["3D OKLab Transfer", "5-Zone Tonal Curve", "Filmic Roll-Off & .kfplug"],
-      pro: true,
+      pro: false,
+    },
+    {
+      name: "Polaris 3.5",
+      tag: "ANIME",
+      sub: "Palette Anchor + OKLab",
+      bullets: isId
+        ? ["Jangkar Palet Cel", "Aman di Warna Kulit", "Hitam Pekat Bersih"]
+        : ["Cel Palette Anchor", "Skin-Safe Roll-Off", "Deep Blacks Toe"],
+      pro: false,
     },
   ];
 

@@ -87,7 +87,7 @@ export default function CommandPalette({
       action: () => setLang(lang === "id" ? "en" : "id"),
     });
 
-    // 1. Color Match Engines (Sirius 2.5, Polaris 3.5 PRO, Altair 4.0 ULTRA)
+    // 1. Color Match Engines (Altair 4.5 Refresh, Altair 4.0, Polaris 3.5)
     engines.forEach((eng) => {
       const sub = t(`engines.${eng.id}.subtitle`) || eng.subtitle;
       const best = t(`engines.${eng.id}.bestFor`) || eng.bestFor;

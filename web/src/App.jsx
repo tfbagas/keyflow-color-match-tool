@@ -2500,13 +2500,11 @@ export default function App() {
         e.preventDefault();
         setIsShortcutsOpen((v) => !v);
       } else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "1") {
-        handleEngineChange("v2");
-      } else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "2") {
-        handleEngineChange("v3");
-      } else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "3") {
-        handleEngineChange("altair");
-      } else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "4") {
         handleEngineChange("altair_refresh");
+      } else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "2") {
+        handleEngineChange("altair");
+      } else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "3") {
+        handleEngineChange("v3");
       } else if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "[") {
         e.preventDefault();
         setIsLeftCollapsed((v) => !v);
@@ -2812,11 +2810,35 @@ export default function App() {
   const handleApplyLook = useCallback(
     (look) => {
       if (!look || !look.params) return;
+      // Drop any baked LUT so the look drives the live parametric pipeline.
+      activeLutRef.current = null;
       setActiveLut(null);
-      if (look.engineId) setActiveEngineId(resolveEngineId(look.engineId));
+      glPreviewRef.current?.setActiveLut?.(null);
+      // Switch solver engine to the preset's calibrated engine (legacy ids resolve safely).
+      const nextEngineId = resolveEngineId(look.engineId || look.engine);
+      activeEngineIdRef.current = nextEngineId;
+      setActiveEngineId(nextEngineId);
       if (look.logProfile) setSimulateLogInput(resolveLogProfileId(look.logProfile));
-      if (typeof look.matchStrength === "number") setMatchStrength(look.matchStrength);
-      setGradingParams({ ...DEFAULT_PARAMS, ...look.params });
+      if (typeof look.matchStrength === "number") {
+        const maxStrength = getEngine(nextEngineId).usesLut32 ? 100 : 150;
+        const nextStrength = clamp(Math.round(look.matchStrength), 0, maxStrength);
+        liveStrengthRef.current = nextStrength;
+        setMatchStrength(nextStrength);
+        glPreviewRef.current?.setLutMix?.(nextStrength / 100);
+      }
+      if (typeof look.sigma === "number") {
+        const nextSigma = clamp(Math.round(look.sigma), 0, 100);
+        styleSigmaRef.current = nextSigma;
+        setStyleSigma(nextSigma);
+      }
+      if (typeof look.skinProtect === "number") {
+        const nextSkin = clamp(Math.round(look.skinProtect), 0, 100);
+        liveSkinProtectRef.current = nextSkin;
+        setSkinProtect(nextSkin);
+      }
+      const nextParams = { ...DEFAULT_PARAMS, ...look.params };
+      liveParamsRef.current = nextParams;
+      setGradingParams(nextParams);
       setPresetName(look.name || "Custom Look");
       setImportedLook({ name: look.name || "Custom Look", source: "looks-drawer" });
       setStatusText("Applied Look");
@@ -2990,7 +3012,7 @@ export default function App() {
   const activeEngine = useMemo(
     () =>
       engineOptions.find((e) => e.id === activeEngineId) ||
-      engineOptions[engineOptions.length - 1],
+      engineOptions[0],
     [engineOptions, activeEngineId]
   );
 
@@ -4071,7 +4093,7 @@ export default function App() {
                 </div>
               )}
 
-              {/* Solver Tier Selector (Altair 4.5 Refresh, Altair 4.0, Polaris 3.5, Sirius 2.5) */}
+              {/* Solver Tier Selector (Altair 4.5 Refresh, Altair 4.0, Polaris 3.5) */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#A1A1AA] inline-flex items-center gap-1.5">
@@ -4087,7 +4109,7 @@ export default function App() {
                   aria-label={t("engineCard.selectorAria")}
                   className="grid grid-cols-2 gap-1.5"
                 >
-                  {[...engineOptions].reverse().map((eng) => {
+                  {engineOptions.map((eng) => {
                     const isActive = activeEngineId === eng.id;
                     return (
                       <button
@@ -5913,7 +5935,7 @@ export default function App() {
                         </h3>
                       </div>
                       <span className="text-[10px] font-mono text-[#A1A1AA]">
-                        Sirius · Polaris · Altair
+                        Altair 4.5 · Altair 4.0 · Polaris 3.5
                       </span>
                     </div>
                     <div className="p-4 overflow-x-auto">
@@ -5929,25 +5951,25 @@ export default function App() {
                         <tbody className="divide-y divide-white/[0.06]">
                           {[
                             {
-                              id: "v2",
-                              name: "Sirius 2.5",
-                              space: "Rec.709 + CIE Lab",
-                              speed: "Ultra-Fast (<25ms)",
-                              useCase: "Instant mobile drafts & lightweight look transfer",
-                            },
-                            {
-                              id: "v3",
-                              name: "Polaris 3.5 PRO",
-                              space: "3D OKLab + AgX Roll-Off",
-                              speed: "Fast (~60ms)",
-                              useCase: "Balanced cinema matching with smooth highlight knee",
+                              id: "altair_refresh",
+                              name: "Altair 4.5 Refresh",
+                              space: "Two-Stage OKLab SOT + Sigma Style",
+                              speed: "Deterministic · <8ms (32³ LUT)",
+                              useCase: "Cinema color matching across mismatched lighting & 1:1 .aex parity",
                             },
                             {
                               id: "altair",
-                              name: "Altair 4.0 ULTRA",
+                              name: "Altair 4.0",
                               space: "Scene-Linear + 16-Dir Sliced OT",
                               speed: "Precision · ~12ms (Sample-First)",
-                              useCase: "Reference-grade color matching & skin-tone cluster lock",
+                              useCase: "Creative, mood-preserving stylized looks with skin-tone cluster lock",
+                            },
+                            {
+                              id: "v3",
+                              name: "Polaris 3.5",
+                              space: "3D OKLab + AgX Roll-Off",
+                              speed: "Fast (~60ms)",
+                              useCase: "Anime & cel-shaded palette anchoring with smooth highlight knee",
                             },
                           ].map((row) => {
                             const isCurrent = activeEngineId === row.id;

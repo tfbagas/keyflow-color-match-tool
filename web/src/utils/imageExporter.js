@@ -268,12 +268,6 @@ const REC709_COLORIMETER_8STEP = [
 
 function getEngineTelemetrySpec(engineId) {
   const resolved = resolveEngineId(engineId);
-  if (resolved === "v2") {
-    return {
-      tierLabel: "SIRIUS 2.5 FAST",
-      pipelineTag: "3-WAY TONAL",
-    };
-  }
   if (resolved === "v3") {
     return {
       tierLabel: "POLARIS 3.5 ANIME",

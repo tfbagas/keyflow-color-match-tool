@@ -1,11 +1,4 @@
-import { analyzeImagePixels } from "./colorGrading.js";
-import { sanitizeParams } from "./gradeEngine.js";
 import { checkAllowedHost } from "./hostGuard.js";
-import {
-  autoNormalizeTargetPixels,
-  applyTargetAutoNormalizeOffsets,
-} from "./colorMatcher.js";
-import { applyLogProfileToRgba, isLogProfileActive } from "./logProfiles.js";
 import { analyzeEngineV3 } from "./polarisV3Engine.js";
 import { analyzeEngineAltairV4 } from "./altairV4Engine.js";
 import { bakeParamsToLut32 } from "../engine/lut3d.ts";
@@ -32,51 +25,7 @@ export {
   resetV3TemporalState,
 };
 
-function prepareTargetForAnalysis(tgtData, targetNumPixels, options = {}) {
-  const tgtN = targetNumPixels || (tgtData ? Math.floor(tgtData.length / 4) : 0);
-  if (!tgtData || tgtN < 1) {
-    return { data: null, numPixels: 0, normStats: null };
-  }
-  let working = tgtData;
-  if (isLogProfileActive(options.inputProfile)) {
-    working = applyLogProfileToRgba(working, tgtN, options.inputProfile);
-  }
-  if (options.autoNormalizeTarget) {
-    const norm = autoNormalizeTargetPixels(working, tgtN);
-    return { data: norm.data, numPixels: norm.numPixels, normStats: norm.normStats };
-  }
-  return { data: working, numPixels: tgtN, normStats: null };
-}
-
 export const ENGINE_REGISTRY = {
-  v2: {
-    ...ENGINE_METADATA.v2,
-    analyze(refData, tgtData, options = {}) {
-      if (!checkAllowedHost()) {
-        throw new Error("Unauthorized host environment.");
-      }
-      const {
-        numPixels = 0,
-        targetNumPixels = 0,
-        mediaType = "image",
-        onStage,
-      } = options;
-      const refPixels = numPixels || (refData ? Math.floor(refData.length / 4) : 0);
-      const prep = prepareTargetForAnalysis(tgtData, targetNumPixels, options);
-      const v2Out = analyzeImagePixels(
-        refData,
-        refPixels,
-        onStage,
-        prep.data,
-        prep.numPixels,
-        mediaType
-      );
-      const merged = { ...v2Out, autoGradeMix: 0.0, filmicShoulder: 0.0 };
-      return sanitizeParams(
-        prep.normStats ? applyTargetAutoNormalizeOffsets(merged, prep.normStats) : merged
-      );
-    },
-  },
   v3: {
     ...ENGINE_METADATA.v3,
     analyze(refData, tgtData, options = {}) {
@@ -132,7 +81,7 @@ export const ENGINE_REGISTRY = {
 
 /**
  * Unified engine runner returning { params, lut32, lutMeta, bakeMs }.
- * Sirius 2.5 & Polaris 3.5 run their existing parametric shaders (lut32 = null).
+ * Polaris 3.5 runs its existing parametric shader (lut32 = null). Legacy "sirius"/"v2" IDs resolve to Altair 4.5 Refresh.
  * Altair 4.0 bakes its 1-stage OKLab grade into a 32^3 tetrahedral LUT.
  * Altair 4.5 Refresh runs the deterministic Two-Stage solver + Primary/Wheels/Hue 6V decomposition into 32^3.
  */
@@ -205,9 +154,8 @@ export function getEngine(engineId = DEFAULT_ENGINE_ID) {
 
 export function listEngines() {
   return [
-    ENGINE_REGISTRY.v2,
-    ENGINE_REGISTRY.v3,
-    ENGINE_REGISTRY.altair,
     ENGINE_REGISTRY.altair_refresh,
+    ENGINE_REGISTRY.altair,
+    ENGINE_REGISTRY.v3,
   ];
 }

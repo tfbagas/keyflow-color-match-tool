@@ -130,14 +130,14 @@ export const TRANSLATIONS = {
       step3: "3. Match & Export",
       tipReset: "Tips: Double-click slider to reset",
       tipFine: "Shift+Drag: 0.01 fine",
-      tipEngines: "1 / 2 / 3: Sirius 2.5 / Polaris 3.5 PRO / Altair 4.0 ULTRA",
+      tipEngines: "1 / 2 / 3: Altair 4.5 Refresh / Altair 4.0 / Polaris 3.5",
       tipUndo: "Ctrl+Z: Undo",
     },
     engineCard: {
       title: "ENGINE & MATCH STRENGTH",
       compareAria: "Compare Color Match Engines",
-      compareTitle: "Compare Sirius 2.5, Polaris 3.5 PRO, and Altair 4.0 ULTRA side-by-side",
-      compareHeader: "Engine Comparison (Sirius 2.5 / Polaris 3.5 PRO / Altair 4.0 ULTRA)",
+      compareTitle: "Compare Altair 4.5 Refresh, Altair 4.0, and Polaris 3.5 side-by-side",
+      compareHeader: "Engine Comparison (Altair 4.5 Refresh / Altair 4.0 / Polaris 3.5)",
       selectorAria: "Color Match Engine Selector",
       bestForPrefix: "Best for:",
       shortcutPrefix: "Shortcut",
@@ -148,13 +148,6 @@ export const TRANSLATIONS = {
         "Pre-normalize Target exposure and white balance toward Rec.709 neutral before running color transfer",
     },
     engines: {
-      v2: {
-        subtitle: "Lightweight moment shift",
-        bestFor: "Fast everyday Rec.709 matching with lightweight moment shift",
-        summary:
-          "Lightweight moment-shift solver for rapid balanced contrast and clean whites.",
-        pipelineBadges: ["FAST", "Moment Shift", "Clean Whites"],
-      },
       v3: {
         subtitle: "Flat / cel-shaded palette anchor",
         bestFor: "Anime, stylized illustrations & flat/cel-shaded palette anchoring",
@@ -408,6 +401,9 @@ export const TRANSLATIONS = {
       lookNamePlaceholder: "Look name (e.g., Golden Hour)...",
       save: "Save",
       builtinTab: "Built-in Looks ({count})",
+      filterAll: "All",
+      filterAria: "Filter looks by engine",
+      filterEmpty: "No looks for this engine.",
       savedTab: "Saved ({count})",
       exportJson: "Export .json",
       importJson: "Import .json",
@@ -441,7 +437,7 @@ export const TRANSLATIONS = {
     },
     commandPalette: {
       ariaLabel: "Spotlight Command Bar",
-      searchPlaceholder: "Search engines (Sirius/Polaris/Altair), Log profiles, Looks, or exports...",
+      searchPlaceholder: "Search engines (Altair/Polaris), Log profiles, Looks, or exports...",
       closeAria: "Close Command Bar",
       noMatch: 'No matching studio commands for "{query}"',
       footerNavigate: "Up/Down to navigate - Enter to run",
@@ -611,7 +607,7 @@ export const TRANSLATIONS = {
       shortcuts: [
         { keys: "\\", desc: "Hold to preview original ungraded source" },
         { keys: "Space", desc: "Play or pause video preview" },
-        { keys: "1 / 2 / 3", desc: "Switch Sirius 2.5, Polaris 3.5 PRO, or Altair 4.0 ULTRA engine" },
+        { keys: "1 / 2 / 3", desc: "Switch Altair 4.5 Refresh, Altair 4.0, or Polaris 3.5 engine" },
         { keys: "Ctrl + K", desc: "Open Spotlight Command Bar" },
         { keys: "Ctrl + Z", desc: "Undo last grading parameter change" },
         { keys: "Ctrl + Shift + Z", desc: "Redo grading parameter change" },
@@ -766,14 +762,14 @@ export const TRANSLATIONS = {
       step3: "3. Match & Ekspor",
       tipReset: "Tips: Klik 2x slider untuk reset",
       tipFine: "Shift+Geser: Presisi 0.01",
-      tipEngines: "1 / 2 / 3: Sirius 2.5 / Polaris 3.5 PRO / Altair 4.0 ULTRA",
+      tipEngines: "1 / 2 / 3: Altair 4.5 Refresh / Altair 4.0 / Polaris 3.5",
       tipUndo: "Ctrl+Z: Undo",
     },
     engineCard: {
       title: "ENGINE & KEKUATAN MATCH",
       compareAria: "Bandingkan Engine Color Match",
-      compareTitle: "Bandingkan Sirius 2.5, Polaris 3.5 PRO, dan Altair 4.0 ULTRA berdampingan",
-      compareHeader: "Perbandingan Engine (Sirius 2.5 / Polaris 3.5 PRO / Altair 4.0 ULTRA)",
+      compareTitle: "Bandingkan Altair 4.5 Refresh, Altair 4.0, dan Polaris 3.5 berdampingan",
+      compareHeader: "Perbandingan Engine (Altair 4.5 Refresh / Altair 4.0 / Polaris 3.5)",
       selectorAria: "Pemilih Engine Color Match",
       bestForPrefix: "Cocok untuk:",
       shortcutPrefix: "Pintasan",
@@ -784,13 +780,6 @@ export const TRANSLATIONS = {
         "Normalisasi awal exposure dan white balance Target ke netral Rec.709 sebelum transfer warna",
     },
     engines: {
-      v2: {
-        subtitle: "Pergeseran momen ringan",
-        bestFor: "Grading harian cepat dengan pergeseran momen ringan",
-        summary:
-          "Solver pergeseran momen ringan untuk kontras seimbang dan putih bersih secara instan.",
-        pipelineBadges: ["FAST", "Moment Shift", "Putih Bersih"],
-      },
       v3: {
         subtitle: "Jangkar palet flat / cel-shaded",
         bestFor: "Anime, ilustrasi bergaya & jangkar palet cel-shaded",
@@ -1044,6 +1033,9 @@ export const TRANSLATIONS = {
       lookNamePlaceholder: "Nama look (cth., Golden Hour)...",
       save: "Simpan",
       builtinTab: "Look Bawaan ({count})",
+      filterAll: "Semua",
+      filterAria: "Filter look berdasarkan engine",
+      filterEmpty: "Tidak ada look untuk engine ini.",
       savedTab: "Tersimpan ({count})",
       exportJson: "Ekspor .json",
       importJson: "Impor .json",
@@ -1077,7 +1069,7 @@ export const TRANSLATIONS = {
     },
     commandPalette: {
       ariaLabel: "Spotlight Command Bar",
-      searchPlaceholder: "Cari engine (Sirius/Polaris/Altair), profil Log, Looks, atau menu ekspor...",
+      searchPlaceholder: "Cari engine (Altair/Polaris), profil Log, Looks, atau menu ekspor...",
       closeAria: "Tutup Command Bar",
       noMatch: 'Tidak ada perintah studio untuk "{query}"',
       footerNavigate: "Atas/Bawah untuk pilih - Enter untuk jalankan",
@@ -1247,7 +1239,7 @@ export const TRANSLATIONS = {
       shortcuts: [
         { keys: "\\", desc: "Tahan untuk mengintip gambar asli sebelum di-grade" },
         { keys: "Space", desc: "Putar atau jeda pratinjau video" },
-        { keys: "1 / 2 / 3", desc: "Ganti engine Sirius 2.5, Polaris 3.5 PRO, atau Altair 4.0 ULTRA" },
+        { keys: "1 / 2 / 3", desc: "Ganti engine Altair 4.5 Refresh, Altair 4.0, atau Polaris 3.5" },
         { keys: "Ctrl + K", desc: "Buka Spotlight Command Bar" },
         { keys: "Ctrl + Z", desc: "Undo perubahan parameter grading terakhir" },
         { keys: "Ctrl + Shift + Z", desc: "Redo perubahan parameter grading" },
@@ -1274,20 +1266,34 @@ export const TRANSLATIONS = {
 };
 
 export const BUILT_IN_LOOK_DESCRIPTIONS_ID = {
-  "teal-orange-cinema":
-    "Bayangan teal ala film Hollywood dengan highlight warna kulit keemasan yang hangat dan kontras sinematik.",
-  "tokyo-night-anime":
-    "Bayangan malam biru kobalt pekat, highlight neon cyan yang tajam, dan saturasi kota yang hidup.",
-  "kodak-portra-warm":
-    "Highlight lembut, midtone hangat yang halus, dan reproduksi warna kulit pastel yang natural.",
-  "bleach-bypass-noir":
-    "Tampilan kontras tinggi bergaya perak dengan hitam pekat dan nuansa baja rendah saturasi.",
-  "cyberpunk-magenta":
-    "Highlight magenta elektrik berpadu dengan bayangan cyan-ungu pekat untuk suasana malam futuristik.",
-  "clean-commercial-rec709":
-    "Warna putih netral seimbang, mikro-kontras tegas, dan warna jernih sesuai aslinya.",
-  "fuji-classic-chrome":
-    "Estetika film dokumenter dengan warna hijau kalem, bayangan dalam, dan highlight kuning keemasan.",
+  "kodak-2383-print":
+    "Emulasi cetak proyeksi: highlight hangat yang halus, bayangan condong teal, dan hijau yang sedikit terkompresi.",
+  "bleach-bypass":
+    "Proses retensi perak: hitam pekat, kontras keras, dan warna kulit serta dedaunan biru-baja rendah saturasi.",
+  "desert-amber":
+    "Highlight amber terbakar matahari, midtone oranye gosong, dan bayangan dingin kalem untuk lanskap gersang.",
+  "tungsten-nocturne":
+    "Highlight lampu tungsten hangat melawan bayangan indigo pekat dengan kontras low-key yang terkendali.",
+  "crisp-commercial":
+    "Putih netral bersih, mikro-kontras tegas, dan warna sesuai aslinya untuk pekerjaan brand dan produk.",
+  "cyberpunk-2099":
+    "Highlight magenta elektrik di atas bayangan cyan-ungu dengan papan neon jenuh dan kontras mengilap.",
+  "hyper-pop-pastel":
+    "Warna permen yang cerah dan lega: bayangan terangkat, pink dan aqua bercahaya, serta kilau kontras rendah.",
+  "golden-hour-halation":
+    "Highlight madu bercahaya dengan halation merah hangat, bayangan lembut, dan kehangatan kulit yang menawan.",
+  "tokyo-midnight-rain":
+    "Jalanan kobalt basah hujan dengan pantulan neon cyan-pink dan hitam pekat yang moody.",
+  "90s-city-pop":
+    "Nostalgia gradasi senja: hitam berkabut terangkat, langit pink-oranye, dan aksen biru kolam turkuois.",
+  "makoto-sky-dusk":
+    "Langit gradasi bercahaya, awan senja cyan-ke-magenta yang jenuh, dan highlight ala lukisan yang tajam.",
+  "kyoani-soft-daylight":
+    "Cahaya siang kontra-cahaya yang lembut dengan highlight creamy, bayangan lega, dan kulit serta dedaunan pastel.",
+  "90s-cel-archive":
+    "Nostalgia cel lukis tangan: bidang warna matte datar, tinta sedikit pudar, dan keseimbangan hangat era siaran.",
+  "mappa-dark-action":
+    "Grade aksi gelap kontras tinggi: hitam pekat tertekan, merah menggigit, serta hijau dan biru dingin rendah saturasi.",
 };
 
 export const SAMPLE_LOOK_LABELS_ID = {

@@ -8,10 +8,17 @@ export const ENGINE_ALIASES = Object.freeze({
   "vega-1": "altair",
   vega_1: "altair",
   // Canonical & friendly aliases
-  v2: "v2",
-  sirius: "v2",
+  // Retired Sirius 2.5 (v2) -> silently mapped to Altair 4.5 Refresh
+  v2: "altair_refresh",
+  sirius: "altair_refresh",
+  "sirius2.5": "altair_refresh",
+  sirius25: "altair_refresh",
   v3: "v3",
   polaris: "v3",
+  polaris35: "v3",
+  "polaris3.5": "v3",
+  "polaris-3.5": "v3",
+  "polaris-35": "v3",
   v4: "altair",
   altair: "altair",
   altair4: "altair",
@@ -29,31 +36,12 @@ export const ENGINE_ALIASES = Object.freeze({
 });
 
 export const ENGINE_CODENAME_MAP = Object.freeze({
-  v2: "sirius",
   v3: "polaris",
   altair: "altair",
   altair_refresh: "altair45",
 });
 
 export const ENGINE_METADATA = {
-  v2: {
-    id: "v2",
-    name: "Sirius",
-    codename: "sirius",
-    versionBadge: "2.5",
-    functionalTag: "FAST",
-    badge: "2.5 · FAST",
-    subtitle: "Lightweight moment shift",
-    shortTag: "FAST",
-    shortcutKey: "1",
-    usesLut32: false,
-    bestFor: "Fast everyday Rec.709 matching with lightweight moment shift",
-    summary:
-      "Lightweight moment-shift solver for rapid balanced contrast and clean whites.",
-    pipelineBadges: ["FAST", "Moment Shift", "Clean Whites"],
-    description:
-      "Lightweight moment-shift solver for rapid balanced contrast and clean whites.",
-  },
   v3: {
     id: "v3",
     name: "Polaris",
@@ -63,7 +51,7 @@ export const ENGINE_METADATA = {
     badge: "3.5 · ANIME",
     subtitle: "Flat / cel-shaded palette anchor",
     shortTag: "ANIME",
-    shortcutKey: "2",
+    shortcutKey: "3",
     usesLut32: false,
     bestFor: "Anime, stylized illustrations & flat/cel-shaded palette anchoring",
     summary:
@@ -81,7 +69,7 @@ export const ENGINE_METADATA = {
     badge: "4.0 · CREATIVE",
     subtitle: "1-stage mood-preserving OKLab (32³ LUT)",
     shortTag: "CREATIVE",
-    shortcutKey: "3",
+    shortcutKey: "2",
     usesLut32: true,
     bestFor: "1-stage mood-preserving stylized looks baked into 32³ tetrahedral LUT",
     summary:
@@ -105,7 +93,7 @@ export const ENGINE_METADATA = {
     badge: "4.5 Refresh · CINEMA 32³",
     subtitle: "Two-stage Source Normalize → Sigma Style",
     shortTag: "CINEMA 32³",
-    shortcutKey: "4",
+    shortcutKey: "1",
     isFlagship: true,
     usesLut32: true,
     bestFor: "Mismatched lighting, cinema color matching & 1:1 C++ .aex / .kfplug parity",
@@ -147,10 +135,9 @@ export function formatEngineLabel(engineId = DEFAULT_ENGINE_ID) {
 
 export function listEngines() {
   return [
-    ENGINE_METADATA.v2,
-    ENGINE_METADATA.v3,
-    ENGINE_METADATA.altair,
     ENGINE_METADATA.altair_refresh,
+    ENGINE_METADATA.altair,
+    ENGINE_METADATA.v3,
   ];
 }
 

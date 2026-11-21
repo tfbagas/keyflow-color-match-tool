@@ -11,7 +11,11 @@ import {
   Check,
   Package,
 } from "lucide-react";
-import { BUILT_IN_LOOKS } from "../utils/builtInLooks";
+import {
+  BUILT_IN_LOOKS,
+  LOOK_ENGINE_BADGES,
+  LOOK_ENGINE_FILTERS,
+} from "../utils/builtInLooks";
 import {
   DEFAULT_ENGINE_ID,
   formatEngineLabel,
@@ -61,6 +65,7 @@ export default function LooksDrawer({
   const { lang, t } = useLanguage();
   const { isMounted, state: presenceState } = usePresence(isOpen, 160);
   const [activeTab, setActiveTab] = useState("builtin");
+  const [engineFilter, setEngineFilter] = useState("all");
   const {
     containerRef: looksTabContainerRef,
     registerTabRef: registerLooksTabRef,
@@ -87,6 +92,11 @@ export default function LooksDrawer({
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [isOpen, onClose]);
+
+  const visibleBuiltInLooks =
+    engineFilter === "all"
+      ? BUILT_IN_LOOKS
+      : BUILT_IN_LOOKS.filter((look) => look.engine === engineFilter);
 
   const flashFeedback = (msg) => {
     setFeedbackMsg(msg);
@@ -405,6 +415,40 @@ export default function LooksDrawer({
           </div>
         </div>
 
+        {/* Built-in Looks Engine Filter */}
+        {activeTab === "builtin" && (
+          <div
+            role="tablist"
+            aria-label={t("looksDrawer.filterAria")}
+            className="px-4 pb-2 flex flex-wrap items-center gap-1.5 shrink-0"
+          >
+            {LOOK_ENGINE_FILTERS.map((f) => {
+              const isActive = engineFilter === f.id;
+              const count =
+                f.id === "all"
+                  ? BUILT_IN_LOOKS.length
+                  : BUILT_IN_LOOKS.filter((l) => l.engine === f.id).length;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setEngineFilter(f.id)}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors cursor-pointer ${
+                    isActive
+                      ? "bg-[#E2E4E9] text-[#0E0E11] border-transparent font-semibold"
+                      : "bg-white/[0.04] text-[#9CA3AF] border-white/[0.1] hover:text-[#E2E4E9] hover:bg-white/[0.08]"
+                  }`}
+                >
+                  {f.id === "all" ? t("looksDrawer.filterAll") : f.label}
+                  <span className="ml-1 font-mono text-[10px] opacity-70">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Saved Looks Toolbar */}
         {activeTab === "saved" && (
           <div className="px-4 pb-2 flex flex-wrap items-center gap-1.5 shrink-0">
@@ -466,7 +510,12 @@ export default function LooksDrawer({
         {/* Content List */}
         <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2.5">
           {activeTab === "builtin" ? (
-            BUILT_IN_LOOKS.map((look) => (
+            visibleBuiltInLooks.length === 0 ? (
+              <div className="py-12 text-center text-xs text-[#9CA3AF]/70">
+                {t("looksDrawer.filterEmpty")}
+              </div>
+            ) : (
+            visibleBuiltInLooks.map((look) => (
               <div
                 key={look.id}
                 className="p-3 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.08] transition-colors space-y-2"
@@ -479,6 +528,9 @@ export default function LooksDrawer({
                       </span>
                       <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.06] text-[#9CA3AF]">
                         {look.category}
+                      </span>
+                      <span className="text-[9.5px] font-mono font-semibold tracking-[0.06em] px-1.5 py-0.5 rounded border border-[#6EE7B7]/35 bg-[#6EE7B7]/10 text-[#6EE7B7]">
+                        {LOOK_ENGINE_BADGES[look.engine] || formatEngineTag(look.engineId)}
                       </span>
                     </div>
                     <p className="text-[11px] text-[#9CA3AF] mt-0.5 leading-snug">
@@ -509,11 +561,12 @@ export default function LooksDrawer({
                     }}
                   />
                   <span className="text-[10px] font-mono text-[#9CA3AF]">
-                    {formatEngineTag(look.engineId)}
+                    σ {look.sigma} · SKIN {look.skinProtect}
                   </span>
                 </div>
               </div>
             ))
+            )
           ) : savedLooks.length === 0 ? (
             <div className="py-12 text-center text-xs text-[#9CA3AF]/70 space-y-1.5">
               <p>{t("looksDrawer.emptyTitle")}</p>

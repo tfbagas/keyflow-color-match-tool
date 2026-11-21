@@ -26,9 +26,9 @@ const REC709_TICKS = [
 ];
 
 const SOLVER_TIERS = [
-  { id: "sirius", label: "Sirius 2.5", active: false },
-  { id: "polaris", label: "Polaris 3.5 PRO", active: false },
-  { id: "altair", label: "Altair 4.0 ULTRA", active: true },
+  { id: "altair45", label: "Altair 4.5 Refresh", active: true },
+  { id: "altair4", label: "Altair 4.0", active: false },
+  { id: "polaris", label: "Polaris 3.5", active: false },
 ];
 
 /**
@@ -392,21 +392,26 @@ export default function IntroScreen({ onStartExit, onComplete }) {
             </div>
           </div>
 
-          {/* Natural content-sized LCP hero wrapper: renders immediately at opacity: 1 on first paint */}
-          <div className="flex flex-col items-center text-center">
-            <h1 className="intro-kinetic-mask pb-1 text-3xl sm:text-[42px] leading-[1.08] font-semibold font-display tracking-tight text-zinc-100">
-              {t("intro.title")}
-            </h1>
+          {/* Beat 4 (1550ms - 2250ms): Editorial Masked Display Wordmark with Tracking Settle */}
+          <h1
+            className="intro-kinetic-mask pb-1 text-3xl sm:text-[42px] leading-[1.08] font-semibold font-display tracking-tight text-zinc-100"
+            style={{ animationDelay: "1550ms", animationDuration: "700ms" }}
+          >
+            {t("intro.title")}
+          </h1>
 
-            <p className="intro-kinetic-subtitle mt-3 pb-1 max-w-[490px] text-[13px] sm:text-[14.5px] leading-relaxed text-zinc-400 font-normal">
-              {t("intro.subtitle")}
-            </p>
-          </div>
+          {/* Beat 4 (1800ms - 2500ms): Editorial Masked Subtitle (250ms after title) */}
+          <p
+            className="intro-kinetic-subtitle mt-3 pb-1 max-w-[490px] text-[13px] sm:text-[14.5px] leading-relaxed text-zinc-400 font-normal"
+            style={{ animationDelay: "1800ms", animationDuration: "700ms" }}
+          >
+            {t("intro.subtitle")}
+          </p>
 
-          {/* Beat 5 (2250ms - 3000ms): 3-Tier Solver Readiness Strip */}
+          {/* Beat 5 (2250ms - 2950ms): 3-Tier Solver Readiness Strip */}
           <div
             className="m3-intro-item mt-6 max-w-full"
-            style={{ animationDelay: "2250ms", animationDuration: "750ms" }}
+            style={{ animationDelay: "2250ms", animationDuration: "700ms" }}
           >
             <div className="inline-flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 px-3.5 py-1.5 rounded-full bg-white/[0.025] border border-white/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] font-mono text-[10.5px] sm:text-[11px] tracking-[0.02em]">
               {SOLVER_TIERS.map((tier, idx) => (
@@ -436,10 +441,10 @@ export default function IntroScreen({ onStartExit, onComplete }) {
             </div>
           </div>
 
-          {/* Beat 5 (2380ms - 3130ms + 2950ms Final Specular Sheen): Brushed-Silver Tactile CTA + [Enter] Hint */}
+          {/* Beat 5 (2380ms - 3080ms + 2950ms Final Specular Sheen): Brushed-Silver Tactile CTA + [Enter] Hint */}
           <div
             className="m3-intro-item mt-7 flex flex-col items-center"
-            style={{ animationDelay: "2380ms", animationDuration: "750ms" }}
+            style={{ animationDelay: "2380ms", animationDuration: "700ms" }}
           >
             <button
               type="button"
