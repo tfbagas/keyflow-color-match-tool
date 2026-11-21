@@ -11,14 +11,14 @@ import {
 } from "lucide-react";
 import { useLanguage } from "../i18n/LanguageContext";
 
-function fmt(t) {
+function fmtTimecode(t) {
   if (!Number.isFinite(t) || t < 0) t = 0;
   const m = Math.floor(t / 60);
   const s = Math.floor(t % 60);
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  const f = Math.floor((t % 1) * 30);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}:${String(f).padStart(2, "0")}`;
 }
 
-// Minimalist achromatic transport bar bound to the target <video> (zero React re-renders during playback).
 export default function VideoTransportBar({
   videoEl,
   resolution,
@@ -30,11 +30,34 @@ export default function VideoTransportBar({
   const [playing, setPlaying] = useState(false);
   const [loop, setLoop] = useState(true);
   const [muted, setMuted] = useState(true);
-  const rangeRef = useRef(null);
-  const timeTextRef = useRef(null);
+
+  const trackRef = useRef(null);
+  const fillRef = useRef(null);
+  const thumbRef = useRef(null);
+  const curTimeRef = useRef(null);
+  const durTimeRef = useRef(null);
   const scrubbingRef = useRef(false);
   const durationRef = useRef(0);
   const lastUiSyncRef = useRef(0);
+
+  const syncDomTime = (tm, d) => {
+    const safeDur = Number.isFinite(d) && d > 0 ? d : 0;
+    const safeTm = safeDur > 0 ? Math.max(0, Math.min(tm, safeDur)) : 0;
+    durationRef.current = safeDur;
+    const pct = safeDur > 0 ? (safeTm / safeDur) * 100 : 0;
+    if (fillRef.current) {
+      fillRef.current.style.width = `${pct}%`;
+    }
+    if (thumbRef.current) {
+      thumbRef.current.style.left = `${pct}%`;
+    }
+    if (curTimeRef.current) {
+      curTimeRef.current.textContent = fmtTimecode(safeTm);
+    }
+    if (durTimeRef.current) {
+      durTimeRef.current.textContent = fmtTimecode(safeDur);
+    }
+  };
 
   useEffect(() => {
     if (!videoEl) return undefined;
@@ -43,20 +66,6 @@ export default function VideoTransportBar({
     setLoop(true);
     setMuted(true);
     setPlaying(!videoEl.paused);
-
-    const syncDomTime = (tm, d) => {
-      const safeDur = Number.isFinite(d) && d > 0 ? d : 0;
-      durationRef.current = safeDur;
-      if (rangeRef.current) {
-        rangeRef.current.max = String(safeDur);
-        if (!scrubbingRef.current) {
-          rangeRef.current.value = String(Math.min(tm, safeDur));
-        }
-      }
-      if (timeTextRef.current) {
-        timeTextRef.current.textContent = `${fmt(tm)} / ${fmt(safeDur)}`;
-      }
-    };
 
     syncDomTime(videoEl.currentTime || 0, videoEl.duration || 0);
 
@@ -71,7 +80,7 @@ export default function VideoTransportBar({
     const onTime = () => {
       if (scrubbingRef.current) return;
       const now = performance.now();
-      if (now - lastUiSyncRef.current < 150) return;
+      if (now - lastUiSyncRef.current < 80) return;
       lastUiSyncRef.current = now;
       syncDomTime(videoEl.currentTime || 0, videoEl.duration || 0);
     };
@@ -97,8 +106,44 @@ export default function VideoTransportBar({
     else videoEl.pause();
   };
 
-  const endScrub = () => {
+  const seekFromClientX = (clientX) => {
+    const track = trackRef.current;
+    const dur = durationRef.current;
+    if (!track || dur <= 0) return;
+    const rect = track.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const nextTime = pct * dur;
+    videoEl.currentTime = nextTime;
+    syncDomTime(nextTime, dur);
+  };
+
+  const handleTrackPointerDown = (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    scrubbingRef.current = true;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+    seekFromClientX(e.clientX);
+  };
+
+  const handleTrackPointerMove = (e) => {
+    if (!scrubbingRef.current) return;
+    seekFromClientX(e.clientX);
+  };
+
+  const handleTrackPointerUp = (e) => {
     scrubbingRef.current = false;
+    try {
+      if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // ignore
+    }
   };
 
   const stepFrame = (dir) => {
@@ -110,140 +155,148 @@ export default function VideoTransportBar({
       Math.min(dur || Infinity, (videoEl.currentTime || 0) + dir * (1 / 30))
     );
     videoEl.currentTime = next;
-    if (rangeRef.current) rangeRef.current.value = String(next);
-    if (timeTextRef.current) {
-      timeTextRef.current.textContent = `${fmt(next)} / ${fmt(durationRef.current)}`;
-    }
+    syncDomTime(next, durationRef.current);
   };
 
-  const btn =
-    "m3-btn-morph inline-flex items-center justify-center w-7 h-7 rounded-lg border cursor-pointer shrink-0";
-
   return (
-    <div className="mt-2.5 flex flex-wrap items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 rounded-lg bg-[#0A0A0D]/55 border border-white/[0.09]">
-      <button
-        type="button"
-        onClick={togglePlay}
-        aria-label={playing ? t("transport.pause") : t("transport.play")}
-        title={playing ? t("transport.pause") : t("transport.play")}
-        className={`${btn} bg-[#E2E4E9] text-[#0E0E11] border-[#E2E4E9]`}
-      >
-        {playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-      </button>
+    <div className="shrink-0 h-9 px-3 bg-[#0B0C0E] border-t border-white/[0.07] flex items-center gap-2.5 select-none">
+      {/* Play / Pause & Frame Step */}
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          type="button"
+          onClick={togglePlay}
+          aria-label={playing ? t("transport.pause") : t("transport.play")}
+          title={playing ? t("transport.pause") : t("transport.play")}
+          className="w-6 h-6 rounded flex items-center justify-center bg-[#F4F4F5] hover:bg-white text-[#08090A] transition-colors cursor-pointer"
+        >
+          {playing ? (
+            <Pause className="w-3 h-3 fill-current" />
+          ) : (
+            <Play className="w-3 h-3 fill-current ml-0.5" />
+          )}
+        </button>
 
-      <div className="flex items-center gap-0.5 shrink-0">
         <button
           type="button"
           onClick={() => stepFrame(-1)}
           title={t("transport.prevFrameTitle")}
           aria-label={t("transport.prevFrameAria")}
-          className="m3-btn-morph inline-flex items-center justify-center px-1.5 h-7 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] text-[10px] font-mono cursor-pointer"
+          className="hidden sm:inline-flex items-center justify-center w-6 h-6 rounded text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-white/[0.06] transition-colors cursor-pointer"
         >
-          <ChevronLeft className="w-3 h-3" />
-          <span>1f</span>
+          <ChevronLeft className="w-3.5 h-3.5" />
         </button>
         <button
           type="button"
           onClick={() => stepFrame(1)}
           title={t("transport.nextFrameTitle")}
           aria-label={t("transport.nextFrameAria")}
-          className="m3-btn-morph inline-flex items-center justify-center px-1.5 h-7 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] text-[10px] font-mono cursor-pointer"
+          className="hidden sm:inline-flex items-center justify-center w-6 h-6 rounded text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-white/[0.06] transition-colors cursor-pointer"
         >
-          <span>1f</span>
-          <ChevronRight className="w-3 h-3" />
+          <ChevronRight className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      <div className="flex-1 min-w-[80px] py-2 flex items-center">
-        <input
-          ref={rangeRef}
-          type="range"
-          min={0}
-          max={0}
-          step={0.01}
-          defaultValue={0}
-          onPointerDown={() => {
-            scrubbingRef.current = true;
-          }}
-          onPointerUp={endScrub}
-          onPointerCancel={endScrub}
-          onTouchStart={() => {
-            scrubbingRef.current = true;
-          }}
-          onTouchEnd={endScrub}
-          onChange={(e) => {
-            const v = Number(e.target.value);
-            videoEl.currentTime = v;
-            if (timeTextRef.current) {
-              timeTextRef.current.textContent = `${fmt(v)} / ${fmt(durationRef.current)}`;
-            }
-          }}
-          aria-label={t("transport.timelineAria")}
-          className="w-full h-1.5 accent-[#E2E4E9] cursor-pointer"
+      {/* Current Timecode */}
+      <span
+        ref={curTimeRef}
+        className="text-[11px] font-mono tabular-nums text-[#E4E4E7] shrink-0"
+      >
+        00:00:00
+      </span>
+
+      {/* Thin Precision Video Scrubber with Muted Emerald Playhead */}
+      <div
+        ref={trackRef}
+        role="slider"
+        tabIndex={0}
+        aria-label={t("transport.timelineAria")}
+        onPointerDown={handleTrackPointerDown}
+        onPointerMove={handleTrackPointerMove}
+        onPointerUp={handleTrackPointerUp}
+        onPointerCancel={handleTrackPointerUp}
+        style={{ touchAction: "none" }}
+        className="relative flex-1 min-w-[70px] h-5 flex items-center cursor-ew-resize group"
+      >
+        <div className="relative w-full h-[2px] rounded-full bg-white/[0.10] overflow-hidden">
+          <div
+            ref={fillRef}
+            className="absolute top-0 bottom-0 left-0 bg-[#34D399]"
+            style={{ width: "0%" }}
+          />
+        </div>
+        <div
+          ref={thumbRef}
+          aria-hidden="true"
+          className="absolute top-1/2 w-2.5 h-2.5 rounded-full bg-[#34D399] ring-2 ring-[#0B0C0E] group-hover:scale-125 transition-transform pointer-events-none"
+          style={{ left: "0%", transform: "translate(-50%, -50%)" }}
         />
       </div>
 
+      {/* Total Duration */}
       <span
-        ref={timeTextRef}
-        className="text-[11px] font-mono text-[#9CA3AF] tabular-nums whitespace-nowrap"
+        ref={durTimeRef}
+        className="text-[11px] font-mono tabular-nums text-[#A1A1AA] shrink-0"
       >
-        00:00 / 00:00
+        00:00:00
       </span>
 
-      {onMatchCurrentFrame && (
+      {/* Secondary Transport Actions */}
+      <div className="flex items-center gap-1 shrink-0 border-l border-white/[0.07] pl-2">
+        {onMatchCurrentFrame && (
+          <button
+            type="button"
+            onClick={onMatchCurrentFrame}
+            disabled={!canMatchFrame || isAnalyzing}
+            title={t("transport.matchFrameTitle")}
+            className={`hidden md:inline-flex items-center gap-1 px-2 h-6 rounded text-[10px] font-medium transition-colors whitespace-nowrap ${
+              !canMatchFrame || isAnalyzing
+                ? "text-[#52525B] cursor-not-allowed"
+                : "text-[#D4D4D8] hover:text-[#F4F4F5] hover:bg-white/[0.06] cursor-pointer"
+            }`}
+          >
+            <Crosshair className="w-3 h-3" />
+            <span>{t("transport.matchFrame")}</span>
+          </button>
+        )}
+
         <button
           type="button"
-          onClick={onMatchCurrentFrame}
-          disabled={!canMatchFrame || isAnalyzing}
-          title={t("transport.matchFrameTitle")}
-          className={`m3-btn-morph inline-flex items-center gap-1 px-2 h-7 rounded-lg text-[10px] sm:text-[11px] font-medium border whitespace-nowrap ${
-            !canMatchFrame || isAnalyzing
-              ? "bg-white/[0.025] text-[#9CA3AF]/35 border-white/[0.05] cursor-not-allowed"
-              : "bg-white/[0.06] hover:bg-white/[0.12] text-[#E2E4E9] border-white/[0.14] cursor-pointer"
+          onClick={() => {
+            videoEl.loop = !loop;
+            setLoop(!loop);
+          }}
+          aria-pressed={loop}
+          aria-label={t("transport.toggleLoopAria")}
+          title={loop ? t("transport.loopOn") : t("transport.loopOff")}
+          className={`w-6 h-6 rounded flex items-center justify-center transition-colors cursor-pointer ${
+            loop
+              ? "text-[#F4F4F5] bg-white/[0.08]"
+              : "text-[#71717A] hover:text-[#D4D4D8] hover:bg-white/[0.05]"
           }`}
         >
-          <Crosshair className="w-3 h-3 text-[#6EE7B7]" />
-          <span>{t("transport.matchFrame")}</span>
+          <Repeat className="w-3 h-3" />
         </button>
-      )}
 
-      <button
-        type="button"
-        onClick={() => {
-          videoEl.loop = !loop;
-          setLoop(!loop);
-        }}
-        aria-pressed={loop}
-        aria-label={t("transport.toggleLoopAria")}
-        title={loop ? t("transport.loopOn") : t("transport.loopOff")}
-        className={`${btn} ${
-          loop
-            ? "bg-white/[0.12] text-[#E2E4E9] border-white/25"
-            : "bg-white/[0.04] text-[#9CA3AF] border-white/[0.09]"
-        }`}
-      >
-        <Repeat className="w-3.5 h-3.5" />
-      </button>
+        <button
+          type="button"
+          onClick={() => {
+            videoEl.muted = !muted;
+            setMuted(!muted);
+          }}
+          aria-pressed={!muted}
+          aria-label={muted ? t("transport.unmute") : t("transport.mute")}
+          title={muted ? t("transport.unmute") : t("transport.mute")}
+          className="w-6 h-6 rounded flex items-center justify-center text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-white/[0.06] transition-colors cursor-pointer"
+        >
+          {muted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
+        </button>
 
-      <button
-        type="button"
-        onClick={() => {
-          videoEl.muted = !muted;
-          setMuted(!muted);
-        }}
-        aria-pressed={!muted}
-        aria-label={muted ? t("transport.unmute") : t("transport.mute")}
-        title={muted ? t("transport.unmute") : t("transport.mute")}
-        className={`${btn} bg-white/[0.04] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.09]`}
-      >
-        {muted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-      </button>
-
-      {resolution && (
-        <span className="hidden sm:inline text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.04] text-[#9CA3AF] border border-white/[0.09] whitespace-nowrap">
-          {resolution}
-        </span>
-      )}
+        {resolution && (
+          <span className="hidden xl:inline text-[10px] font-mono text-[#71717A] pl-1 tabular-nums">
+            {resolution}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

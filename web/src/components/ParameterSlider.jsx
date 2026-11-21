@@ -1,5 +1,4 @@
 import React, { memo, useEffect, useRef, useState } from "react";
-import { ChevronUp, ChevronDown, RotateCcw, Crosshair } from "lucide-react";
 import { useLanguage } from "../i18n/LanguageContext";
 
 const ParameterSlider = memo(function ParameterSlider({
@@ -12,25 +11,29 @@ const ParameterSlider = memo(function ParameterSlider({
   defaultValue = 0,
   isBipolar = true,
   valueSuffix = "",
+  decimals = 2,
+  showPlusSign = null,
+  colorDot = null,
   onChange,
   onDragChange,
-  icon: Icon,
+  compact = true,
 }) {
   const { t } = useLanguage();
   const [isHovered, setIsHovered] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [shiftHeld, setShiftHeld] = useState(false);
-  const [fineMode, setFineMode] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState("");
-  const editInputRef = useRef(null);
-  const draggingRef = useRef(false);
-  const rafRef = useRef(0);
-  const pendingValRef = useRef(null);
-  const inputRef = useRef(null);
+
+  const trackRef = useRef(null);
   const fillRef = useRef(null);
   const thumbRef = useRef(null);
   const readoutRef = useRef(null);
+  const editInputRef = useRef(null);
+
+  const draggingRef = useRef(false);
+  const rafRef = useRef(0);
+  const pendingValRef = useRef(null);
+  const latestValRef = useRef(value);
   const onChangeRef = useRef(onChange);
   const onDragChangeRef = useRef(onDragChange);
   onChangeRef.current = onChange;
@@ -38,11 +41,18 @@ const ParameterSlider = memo(function ParameterSlider({
 
   const range = max - min || 1;
   const defaultPct = Math.max(0, Math.min(100, ((defaultValue - min) / range) * 100));
+  const usePlus = showPlusSign !== null ? showPlusSign : min < 0;
 
-  const formatReadout = (v) =>
-    v >= 0 && min < 0
-      ? `+${v.toFixed(2)}${valueSuffix}`
-      : `${v.toFixed(2)}${valueSuffix}`;
+  const clampVal = (v) => Math.max(min, Math.min(max, v));
+
+  const formatReadout = (v) => {
+    const safe = Number.isFinite(v) ? v : defaultValue;
+    const fixed = decimals === 0 ? String(Math.round(safe)) : safe.toFixed(decimals);
+    const cleaned = Number(fixed) === 0 ? (decimals === 0 ? "0" : (0).toFixed(decimals)) : fixed;
+    return Number(cleaned) > 0 && usePlus
+      ? `+${cleaned}${valueSuffix}`
+      : `${cleaned}${valueSuffix}`;
+  };
 
   const syncDomVisuals = (v) => {
     const pct = Math.max(0, Math.min(100, ((v - min) / range) * 100));
@@ -61,36 +71,12 @@ const ParameterSlider = memo(function ParameterSlider({
   };
 
   useEffect(() => {
+    latestValRef.current = value;
     if (!draggingRef.current) {
-      if (inputRef.current) {
-        inputRef.current.value = String(value);
-      }
       syncDomVisuals(value);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, min, max, defaultValue, isBipolar, valueSuffix]);
-
-  useEffect(() => {
-    if (!isDragging) {
-      setShiftHeld(false);
-      return undefined;
-    }
-    const onKeyDown = (e) => {
-      if (e.key === "Shift") setShiftHeld(true);
-    };
-    const onKeyUp = (e) => {
-      if (e.key === "Shift") setShiftHeld(false);
-    };
-    const onBlur = () => setShiftHeld(false);
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-      window.removeEventListener("blur", onBlur);
-    };
-  }, [isDragging]);
+  }, [value, min, max, defaultValue, isBipolar, valueSuffix, decimals]);
 
   const flushPending = () => {
     if (rafRef.current) {
@@ -112,31 +98,6 @@ const ParameterSlider = memo(function ParameterSlider({
     onDragChangeRef.current?.(false);
   };
 
-  const startDrag = () => {
-    if (draggingRef.current) return;
-    draggingRef.current = true;
-    setIsDragging(true);
-    onDragChangeRef.current?.(true);
-  };
-
-  useEffect(() => {
-    if (!isDragging) return undefined;
-    const handleEnd = () => endDrag();
-    window.addEventListener("pointerup", handleEnd);
-    window.addEventListener("pointercancel", handleEnd);
-    window.addEventListener("touchend", handleEnd);
-    window.addEventListener("touchcancel", handleEnd);
-    window.addEventListener("mouseup", handleEnd);
-    return () => {
-      window.removeEventListener("pointerup", handleEnd);
-      window.removeEventListener("pointercancel", handleEnd);
-      window.removeEventListener("touchend", handleEnd);
-      window.removeEventListener("touchcancel", handleEnd);
-      window.removeEventListener("mouseup", handleEnd);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDragging]);
-
   useEffect(
     () => () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -148,49 +109,27 @@ const ParameterSlider = memo(function ParameterSlider({
     []
   );
 
-  const isFineActive = shiftHeld || fineMode;
-  const effectiveStep = isFineActive ? 0.01 : step;
+  const computeValueFromClientX = (clientX, shiftKey) => {
+    const track = trackRef.current;
+    if (!track) return latestValRef.current;
+    const rect = track.getBoundingClientRect();
+    if (rect.width <= 0) return latestValRef.current;
+    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const effStep = shiftKey ? Math.min(step, decimals === 0 ? 1 : 0.01) : step;
+    let raw = min + pct * range;
+    raw = Math.round(raw / effStep) * effStep;
+    raw = clampVal(Number(raw.toFixed(4)));
 
-  const clamp = (val) => Math.max(min, Math.min(max, val));
-
-  const startEditing = (e) => {
-    e.stopPropagation();
-    setEditDraft(Number(value).toFixed(2));
-    setIsEditing(true);
-    requestAnimationFrame(() => {
-      editInputRef.current?.select();
-    });
+    // Subtle magnetic snap to center/default on bipolar controls
+    if (isBipolar && !shiftKey && Math.abs(raw - defaultValue) <= range * 0.018) {
+      raw = defaultValue;
+    }
+    return raw;
   };
 
-  const commitEdit = () => {
-    setIsEditing(false);
-    const parsed = parseFloat(editDraft);
-    if (Number.isFinite(parsed)) {
-      const clamped = clamp(Math.round(parsed * 100) / 100);
-      onChange(paramKey, clamped);
-    }
-  };
-
-  const handleEditKeyDown = (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      commitEdit();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      setIsEditing(false);
-    }
-  };
-
-  const handleSliderChange = (e) => {
-    let nextVal = parseFloat(e.target.value);
-
-    // Soft magnetic snap toward center/default value on bipolar sliders
-    if (isBipolar && Math.abs(nextVal - defaultValue) <= range * 0.016) {
-      nextVal = defaultValue;
-    }
-
+  const emitValue = (nextVal) => {
+    latestValRef.current = nextVal;
     syncDomVisuals(nextVal);
-
     if (draggingRef.current) {
       pendingValRef.current = nextVal;
       if (!rafRef.current) {
@@ -208,276 +147,255 @@ const ParameterSlider = memo(function ParameterSlider({
     }
   };
 
-  const handleStep = (delta) => {
-    const next = clamp(Math.round((value + delta) * 100) / 100);
-    onChange(paramKey, next);
+  const handleTrackPointerDown = (e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore if capture unavailable
+    }
+    if (!draggingRef.current) {
+      draggingRef.current = true;
+      setIsDragging(true);
+      onDragChangeRef.current?.(true);
+    }
+    const nextVal = computeValueFromClientX(e.clientX, e.shiftKey);
+    emitValue(nextVal);
   };
 
-  const handleReset = () => {
-    onChange(paramKey, defaultValue);
+  const handleTrackPointerMove = (e) => {
+    if (!draggingRef.current) return;
+    const nextVal = computeValueFromClientX(e.clientX, e.shiftKey);
+    emitValue(nextVal);
+  };
+
+  const handleTrackPointerUp = (e) => {
+    try {
+      if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // ignore
+    }
+    endDrag();
+  };
+
+  const handleKeyDown = (e) => {
+    const effStep = e.shiftKey ? Math.min(step, decimals === 0 ? 1 : 0.01) : step;
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+      e.preventDefault();
+      emitValue(clampVal(Number((value + effStep).toFixed(4))));
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+      e.preventDefault();
+      emitValue(clampVal(Number((value - effStep).toFixed(4))));
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      emitValue(min);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      emitValue(max);
+    } else if (e.key === "0" || e.key === "Backspace") {
+      e.preventDefault();
+      onChangeRef.current(paramKey, defaultValue);
+    }
+  };
+
+  const handleReset = (e) => {
+    e?.stopPropagation?.();
+    onChangeRef.current(paramKey, defaultValue);
+  };
+
+  const startEditing = (e) => {
+    e.stopPropagation();
+    setEditDraft(decimals === 0 ? String(Math.round(value)) : Number(value).toFixed(decimals));
+    setIsEditing(true);
+    requestAnimationFrame(() => {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+    });
+  };
+
+  const commitEdit = () => {
+    setIsEditing(false);
+    const normalized = String(editDraft).replace(/,/g, ".").replace(/%/g, "").trim();
+    const parsed = parseFloat(normalized);
+    if (Number.isFinite(parsed)) {
+      const clamped = clampVal(decimals === 0 ? Math.round(parsed) : Number(parsed.toFixed(2)));
+      onChangeRef.current(paramKey, clamped);
+    }
+  };
+
+  const handleEditKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commitEdit();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setIsEditing(false);
+    }
   };
 
   const valPct = Math.max(0, Math.min(100, ((value - min) / range) * 100));
-  const pctNorm = Math.max(0, Math.min(1, (value - min) / range));
-  const isModified = Math.abs(value - defaultValue) > 0.004;
-  const isNeutral = !isModified;
-  const isActive = isHovered || isDragging;
-
-  let intensityLabel = t("slider.mid");
-  let intensityClass = "bg-white/[0.06] text-[#E2E4E9]/85 border-white/[0.14]";
-  if (isNeutral) {
-    intensityLabel =
-      paramKey === "matchStrength" ? t("slider.normal") : t("slider.neutral");
-    intensityClass = "bg-white/[0.03] text-[#9CA3AF]/75 border-white/[0.08]";
-  } else if (pctNorm <= 0.28) {
-    intensityLabel = t("slider.low");
-    intensityClass = "bg-sky-500/10 text-sky-300/90 border-sky-400/25";
-  } else if (pctNorm >= 0.72) {
-    intensityLabel = t("slider.strong");
-    intensityClass = "bg-[#6EE7B7]/15 text-[#6EE7B7] border-[#6EE7B7]/35";
-  }
-
   const fillLeft = isBipolar ? Math.min(valPct, defaultPct) : 0;
   const fillWidth = isBipolar ? Math.abs(valPct - defaultPct) : valPct;
+  const isModified = Math.abs(value - defaultValue) > (decimals === 0 ? 0.5 : 0.004);
 
-  let trackTintStyle = undefined;
+  // Subtle calibrated track tint only for white balance axes (Temp / Tint)
+  let trackBgStyle = undefined;
   if (paramKey === "temp") {
-    trackTintStyle = {
+    trackBgStyle = {
       background:
-        "linear-gradient(90deg, rgba(56, 189, 248, 0.26) 0%, rgba(14, 15, 20, 0.75) 50%, rgba(251, 191, 36, 0.26) 100%)",
+        "linear-gradient(90deg, rgba(96, 165, 250, 0.32) 0%, rgba(255, 255, 255, 0.09) 50%, rgba(251, 191, 36, 0.32) 100%)",
     };
   } else if (paramKey === "tint") {
-    trackTintStyle = {
+    trackBgStyle = {
       background:
-        "linear-gradient(90deg, rgba(52, 211, 153, 0.26) 0%, rgba(14, 15, 20, 0.75) 50%, rgba(232, 121, 249, 0.26) 100%)",
+        "linear-gradient(90deg, rgba(74, 222, 128, 0.28) 0%, rgba(255, 255, 255, 0.09) 50%, rgba(232, 121, 249, 0.30) 100%)",
     };
   }
 
   return (
     <div
-      onDoubleClick={handleReset}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      title={t("slider.doubleClickReset")}
-      className="flex flex-col min-[480px]:flex-row min-[480px]:items-center gap-1 min-[480px]:gap-2 py-1 min-[480px]:py-[3px] px-2 rounded-lg hover:bg-white/[0.035] transition-colors group select-none touch-pan-y"
+      className={`select-none group ${compact ? "py-1" : "py-1.5"}`}
     >
-      {/* Top row on <480px / Left column on >=480px: Label, Reset, Dynamic Intensity Pill */}
-      <div className="flex items-center justify-between min-[480px]:justify-start gap-1.5 min-[480px]:w-[218px] sm:w-[232px] shrink-0">
-        <div
+      {/* Label & Tabular Numeric Readout */}
+      <div className="flex items-center justify-between gap-1.5 mb-1">
+        <button
+          type="button"
           onDoubleClick={handleReset}
-          className="flex items-center gap-1.5 min-w-0 cursor-pointer"
+          title={t("slider.doubleClickReset")}
+          className="flex items-center gap-1.5 min-w-0 text-left cursor-pointer focus:outline-none"
         >
-          {Icon && (
-            <Icon className="w-3.5 h-3.5 text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors shrink-0" />
+          {colorDot && (
+            <span
+              className="w-2 h-2 rounded-full shrink-0 border border-white/20"
+              style={{ backgroundColor: colorDot }}
+            />
           )}
-          <span className="text-xs font-medium text-[#E2E4E9]/90 min-[480px]:whitespace-nowrap">
+          <span
+            className={`text-[11px] font-medium tracking-[-0.01em] truncate transition-colors ${
+              isDragging || isModified
+                ? "text-[#F4F4F5]"
+                : "text-[#A1A1AA] group-hover:text-[#E4E4E7]"
+            }`}
+          >
             {label}
           </span>
           {isModified && (
             <span
-              className="w-1.5 h-1.5 rounded-full bg-[#6EE7B7] shrink-0 transition-transform duration-200 scale-100"
-              title={t("slider.modifiedTooltip", { val: defaultValue.toFixed(2) })}
+              aria-hidden="true"
+              title={t("slider.modifiedTooltip", { val: defaultValue.toFixed(decimals) })}
+              className="w-1.5 h-1.5 rounded-full bg-[#34D399]/85 shrink-0"
             />
           )}
-        </div>
+        </button>
 
-        <div className="flex items-center gap-1 shrink-0 min-[480px]:ml-auto">
-          {isModified && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleReset();
-              }}
-              title={t("slider.resetLabel", { label })}
-              aria-label={t("slider.resetLabel", { label })}
-              className="p-1 rounded hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] transition-colors cursor-pointer"
-            >
-              <RotateCcw className="w-3 h-3" />
-            </button>
-          )}
-          <span
-            className={`px-1.5 py-0.5 rounded text-[9px] font-mono border transition-colors ${intensityClass}`}
-            title={t("slider.currentLevel", { level: intensityLabel })}
-          >
-            {intensityLabel}
-          </span>
-        </div>
-      </div>
-
-      {/* Track + Value Readout Row */}
-      <div className="flex items-center gap-2 flex-1 min-w-0">
-        {/* Recessed Optical Glass Channel with Bipolar Fill & Droplet Lens Thumb Morph */}
-        <div className="relative flex-1 flex items-center h-6 touch-pan-y">
-          {/* Recessed Optical Glass Channel */}
-          <div
-            className={`liquid-slider-track w-full rounded-full relative overflow-hidden transition-[height,border-color] duration-200 ${
-              isDragging
-                ? "h-2.5 border-white/25"
-                : isActive
-                ? "h-2 border-white/18"
-                : "h-2"
-            }`}
-            style={trackTintStyle}
-          >
-            {/* Bipolar Active Fill Bar (0-lag 60fps drag) */}
-            <div
-              ref={fillRef}
-              className={`absolute top-0 bottom-0 transition-colors duration-150 ${
-                isDragging
-                  ? "bg-gradient-to-r from-[#E2E4E9] via-white to-[#6EE7B7]"
-                  : isActive
-                  ? "bg-[#E2E4E9]/90"
-                  : "bg-[#9CA3AF]/75"
-              }`}
-              style={{
-                left: `${fillLeft}%`,
-                width: `${fillWidth}%`,
-                boxShadow: isDragging
-                  ? "0 0 10px rgba(255, 255, 255, 0.45)"
-                  : undefined,
-              }}
-            />
-          </div>
-
-          {/* Center / Default Optical Tick Mark */}
-          <div
-            className={`absolute top-1/2 -translate-y-1/2 w-[1.5px] pointer-events-none z-10 transition-[height,background-color] duration-200 ${
-              !isModified ? "h-3.5 bg-[#E2E4E9]/65" : "h-3 bg-white/30"
-            }`}
-            style={{ left: `calc(${defaultPct}% - 0.75px)` }}
-          />
-
-          {/* Liquid Glass Droplet Lens Thumb (Morphs via scale3d(1.45, 1.25, 1) on grab/drag with --spring-bouncy release) */}
-          <div
-            ref={thumbRef}
-            className={`liquid-droplet-thumb absolute top-1/2 left-0 w-3.5 h-3.5 rounded-full pointer-events-none z-20 flex items-center justify-center ${
-              isDragging
-                ? "optical-refract-glass bg-white/[0.22] border border-white/95 shadow-[inset_0_1.5px_2px_rgba(255,255,255,0.95),inset_0_-1px_2px_rgba(255,255,255,0.35),0_6px_16px_rgba(0,0,0,0.68),0_0_0_4px_rgba(255,255,255,0.15)]"
-                : isHovered
-                ? "bg-[#F4F5F7] border border-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.9),0_0_12px_rgba(255,255,255,0.48)]"
-                : "bg-[#E2E4E9] border border-white/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.85),0_2px_5px_rgba(0,0,0,0.68)]"
-            }`}
-            style={{
-              left: `${valPct}%`,
-              transform: isDragging
-                ? "translate3d(-50%, -50%, 0) scale3d(1.45, 1.25, 1)"
-                : isHovered
-                ? "translate3d(-50%, -50%, 0) scale3d(1.12, 1.12, 1)"
-                : "translate3d(-50%, -50%, 0) scale3d(1, 1, 1)",
-            }}
-          >
-            {/* Inner Optical Specular Core when morphed into Glass Droplet Lens */}
-            <span
-              className={`w-1.5 h-1 rounded-full transition-opacity duration-150 ${
-                isDragging ? "opacity-95 bg-white/90" : "opacity-0"
-              }`}
-            />
-          </div>
-
-          {/* Native Range Input Overlay for Full Mouse/Touch Accessibility */}
+        {isEditing ? (
           <input
-            ref={inputRef}
-            type="range"
-            min={min}
-            max={max}
-            step={effectiveStep}
-            defaultValue={value}
-            onChange={handleSliderChange}
-            onPointerDown={(e) => {
-              startDrag();
-              setShiftHeld(Boolean(e.shiftKey));
-            }}
-            onPointerMove={(e) => {
-              if (draggingRef.current) setShiftHeld(Boolean(e.shiftKey));
-            }}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
-            onTouchStart={startDrag}
-            onTouchEnd={endDrag}
-            onTouchCancel={endDrag}
-            onDoubleClick={handleReset}
-            aria-label={label}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-30 m-0 touch-pan-y"
+            ref={editInputRef}
+            type="text"
+            inputMode="decimal"
+            value={editDraft}
+            onChange={(e) => setEditDraft(e.target.value)}
+            onBlur={commitEdit}
+            onKeyDown={handleEditKeyDown}
+            aria-label={t("slider.editAria", { label })}
+            className="w-14 text-right px-1 py-0 text-[11px] font-mono tabular-nums text-[#F4F4F5] bg-[#15171C] border border-white/25 rounded outline-none"
           />
-        </div>
-
-        {/* Value Readout (Tap-to-Edit) & Stepper + Fine Toggle */}
-        <div className="flex items-center gap-1 shrink-0">
+        ) : (
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setFineMode((v) => !v);
-            }}
-            title={t("slider.fineStepTitle")}
-            aria-label={t("slider.fineStepAria", { label })}
-            aria-pressed={fineMode}
-            className={`p-1.5 rounded-md border transition-colors cursor-pointer ${
-              fineMode
-                ? "bg-[#6EE7B7]/15 text-[#6EE7B7] border-[#6EE7B7]/40"
-                : "bg-[#0A0A0D]/38 text-[#9CA3AF]/70 hover:text-[#E2E4E9] border-white/[0.09] hover:border-white/20"
+            onClick={startEditing}
+            onDoubleClick={handleReset}
+            title="Click to type exact value · Double-click to reset"
+            className={`text-[11px] font-mono tabular-nums tracking-tight px-1 -mr-1 rounded transition-colors cursor-text ${
+              isDragging
+                ? "text-[#F4F4F5] bg-white/[0.08]"
+                : isModified
+                ? "text-[#F4F4F5] hover:bg-white/[0.07]"
+                : "text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-white/[0.06]"
             }`}
           >
-            <Crosshair className="w-3 h-3" />
+            <span ref={readoutRef}>{formatReadout(value)}</span>
           </button>
+        )}
+      </div>
 
+      {/* Custom Precision 2px Hairline Scrubber Track */}
+      <div
+        ref={trackRef}
+        role="slider"
+        tabIndex={0}
+        aria-label={label}
+        aria-valuemin={min}
+        aria-valuemax={max}
+        aria-valuenow={value}
+        aria-valuetext={formatReadout(value)}
+        onPointerDown={handleTrackPointerDown}
+        onPointerMove={handleTrackPointerMove}
+        onPointerUp={handleTrackPointerUp}
+        onPointerCancel={handleTrackPointerUp}
+        onDoubleClick={handleReset}
+        onKeyDown={handleKeyDown}
+        style={{ touchAction: "none" }}
+        className="relative h-4 flex items-center cursor-ew-resize outline-none focus-visible:ring-1 focus-visible:ring-white/25 rounded"
+      >
+        {/* 2px Neutral Track */}
+        <div
+          className="relative w-full h-[2px] rounded-full bg-[#1F2229] overflow-hidden"
+          style={trackBgStyle}
+        >
+          {/* Active Hairline Fill (Neutral Monochrome — 0ms instant during drag) */}
           <div
-            onDoubleClick={(e) => e.stopPropagation()}
-            className={`flex items-center bg-[#0A0A0D]/38 border rounded-md overflow-hidden shrink-0 transition-colors ${
-              isFineActive
-                ? "border-[#6EE7B7]/60"
-                : isDragging
-                ? "border-white/25"
-                : "border-white/[0.09]"
+            ref={fillRef}
+            className={`absolute top-0 bottom-0 ${
+              isDragging
+                ? "transition-none bg-[#F4F4F5]"
+                : isHovered
+                ? "transition-colors duration-100 bg-[#D4D4D8]"
+                : "transition-colors duration-100 bg-[#A1A1AA]/80"
             }`}
-          >
-            {isEditing ? (
-              <input
-                ref={editInputRef}
-                type="number"
-                step={effectiveStep}
-                min={min}
-                max={max}
-                value={editDraft}
-                onChange={(e) => setEditDraft(e.target.value)}
-                onBlur={commitEdit}
-                onKeyDown={handleEditKeyDown}
-                aria-label={t("slider.editAria", { label })}
-                className="w-14 text-right px-1.5 py-1 text-[11px] font-mono tabular-nums text-[#E2E4E9] bg-white/[0.08] outline-none"
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={startEditing}
-                title={t("slider.tapToEditTitle")}
-                className="w-14 text-right px-1.5 py-1 text-[11px] font-mono tabular-nums text-[#E2E4E9] hover:bg-white/[0.06] cursor-text transition-colors"
-              >
-                <span ref={readoutRef}>{formatReadout(value)}</span>
-              </button>
-            )}
-            <div className="flex flex-col border-l border-white/[0.08]">
-              <button
-                type="button"
-                onClick={() => handleStep(effectiveStep)}
-                className="px-1.5 py-1 hover:bg-white/10 active:scale-90 text-[#9CA3AF] hover:text-[#E2E4E9] transition-all cursor-pointer"
-                title={t("slider.increase")}
-                aria-label={`${t("slider.increase")} ${label}`}
-              >
-                <ChevronUp className="w-2.5 h-2.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => handleStep(-effectiveStep)}
-                className="px-1.5 py-1 hover:bg-white/10 active:scale-90 text-[#9CA3AF] hover:text-[#E2E4E9] transition-all border-t border-white/[0.06] cursor-pointer"
-                title={t("slider.decrease")}
-                aria-label={`${t("slider.decrease")} ${label}`}
-              >
-                <ChevronDown className="w-2.5 h-2.5" />
-              </button>
-            </div>
-          </div>
+            style={{
+              left: `${fillLeft}%`,
+              width: `${fillWidth}%`,
+            }}
+          />
         </div>
+
+        {/* Center-Zero Tick Mark for Bipolar Controls */}
+        {isBipolar && (
+          <div
+            aria-hidden="true"
+            className={`absolute top-1/2 -translate-y-1/2 w-px pointer-events-none transition-colors ${
+              !isModified ? "h-2 bg-white/30" : "h-2 bg-white/20"
+            }`}
+            style={{ left: `${defaultPct}%` }}
+          />
+        )}
+
+        {/* Crisp 10px Circular Thumb (0ms instant during pointer drag) */}
+        <div
+          ref={thumbRef}
+          aria-hidden="true"
+          className={`absolute top-1/2 w-2.5 h-2.5 rounded-full pointer-events-none ${
+            isDragging
+              ? "transition-none bg-white ring-4 ring-white/15"
+              : isHovered
+              ? "transition-[box-shadow,background-color] duration-100 bg-[#F4F4F5] ring-4 ring-white/[0.08]"
+              : isModified
+              ? "transition-[box-shadow,background-color] duration-100 bg-[#E4E4E7]"
+              : "transition-[box-shadow,background-color] duration-100 bg-[#A1A1AA]"
+          }`}
+          style={{
+            left: `${valPct}%`,
+            transform: isDragging
+              ? "translate(-50%, -50%) scale(1.12)"
+              : "translate(-50%, -50%)",
+          }}
+        />
       </div>
     </div>
   );

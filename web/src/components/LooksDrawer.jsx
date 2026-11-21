@@ -25,6 +25,8 @@ import { buildZipBlob } from "../utils/zipBuilder";
 import { sanitizeMetadataText } from "../utils/hostGuard";
 import { useLanguage } from "../i18n/LanguageContext";
 import { BUILT_IN_LOOK_DESCRIPTIONS_ID } from "../i18n/translations";
+import { usePresence } from "../hooks/usePresence";
+import { usePillIndicator } from "../hooks/usePillIndicator";
 
 const SAVED_LOOKS_STORAGE_KEY = "kf_saved_looks_v1";
 
@@ -60,7 +62,13 @@ export default function LooksDrawer({
   authorName = "TFBAGAS",
 }) {
   const { lang, t } = useLanguage();
+  const { isMounted, state: presenceState } = usePresence(isOpen, 160);
   const [activeTab, setActiveTab] = useState("builtin");
+  const {
+    containerRef: looksTabContainerRef,
+    registerTabRef: registerLooksTabRef,
+    pillStyle: looksTabPillStyle,
+  } = usePillIndicator(activeTab, { refreshKey: `${isMounted}-${lang}` });
   const [savedLooks, setSavedLooks] = useState(() => loadSavedLooks());
   const [lookNameInput, setLookNameInput] = useState("");
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -287,19 +295,21 @@ export default function LooksDrawer({
     }
   };
 
-  if (!isOpen) return null;
+  if (!isMounted || typeof document === "undefined") return null;
 
   return createPortal(
     <div
+      data-state={presenceState}
       onClick={onClose}
-      className="fixed inset-0 z-[110] flex justify-end bg-black/70 backdrop-blur-sm"
+      className="studio-backdrop fixed inset-0 z-[110] flex justify-end bg-black/70 backdrop-blur-md"
     >
       <aside
+        data-state={presenceState}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={t("looksDrawer.title")}
-        className="w-full max-w-md h-full bg-[#111217] border-l border-white/[0.14] shadow-2xl flex flex-col text-left"
+        className="studio-drawer-right w-full max-w-md h-full bg-[#101216]/96 backdrop-blur-2xl border-l border-white/[0.12] shadow-[inset_1px_0_0_rgba(255,255,255,0.06),-20px_0_60px_rgba(0,0,0,0.75)] flex flex-col text-left"
       >
         {/* Header */}
         <div className="px-4 py-3.5 border-b border-white/[0.1] flex items-center justify-between gap-2 shrink-0">
@@ -351,29 +361,41 @@ export default function LooksDrawer({
         </form>
 
         {/* Tabs */}
-        <div className="px-4 pt-3 pb-2 flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={() => setActiveTab("builtin")}
-            className={`flex-1 py-1.5 px-2.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-              activeTab === "builtin"
-                ? "bg-[#E2E4E9] text-[#0E0E11] font-semibold"
-                : "bg-white/[0.04] text-[#9CA3AF] hover:text-[#E2E4E9]"
-            }`}
+        <div className="px-4 pt-3 pb-2 shrink-0">
+          <div
+            ref={looksTabContainerRef}
+            className="relative grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-[#08090A] border border-white/[0.07]"
           >
-            {t("looksDrawer.builtinTab", { count: BUILT_IN_LOOKS.length })}
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("saved")}
-            className={`flex-1 py-1.5 px-2.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-              activeTab === "saved"
-                ? "bg-[#E2E4E9] text-[#0E0E11] font-semibold"
-                : "bg-white/[0.04] text-[#9CA3AF] hover:text-[#E2E4E9]"
-            }`}
-          >
-            {t("looksDrawer.savedTab", { count: savedLooks.length })}
-          </button>
+            <div
+              aria-hidden="true"
+              className="studio-sliding-pill pointer-events-none absolute top-0.5 bottom-0.5 left-0 rounded-md bg-[#E2E4E9] shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_1px_6px_rgba(0,0,0,0.4)]"
+              style={looksTabPillStyle}
+            />
+            <button
+              ref={registerLooksTabRef("builtin")}
+              type="button"
+              onClick={() => setActiveTab("builtin")}
+              className={`relative z-10 py-1.5 px-2.5 rounded-md text-xs font-medium transition-[color,transform] duration-150 ease-[var(--ease-shutter)] active:scale-[0.96] cursor-pointer ${
+                activeTab === "builtin"
+                  ? "text-[#0E0E11] font-semibold"
+                  : "text-[#9CA3AF] hover:text-[#E2E4E9]"
+              }`}
+            >
+              {t("looksDrawer.builtinTab", { count: BUILT_IN_LOOKS.length })}
+            </button>
+            <button
+              ref={registerLooksTabRef("saved")}
+              type="button"
+              onClick={() => setActiveTab("saved")}
+              className={`relative z-10 py-1.5 px-2.5 rounded-md text-xs font-medium transition-[color,transform] duration-150 ease-[var(--ease-shutter)] active:scale-[0.96] cursor-pointer ${
+                activeTab === "saved"
+                  ? "text-[#0E0E11] font-semibold"
+                  : "text-[#9CA3AF] hover:text-[#E2E4E9]"
+              }`}
+            >
+              {t("looksDrawer.savedTab", { count: savedLooks.length })}
+            </button>
+          </div>
         </div>
 
         {/* Saved Looks Toolbar */}

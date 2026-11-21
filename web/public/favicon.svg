@@ -1,35 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <!-- Material 3 Achromatic Container -->
-  <rect x="2" y="2" width="60" height="60" rx="16" fill="#151519" stroke="#2E2E36" stroke-width="2" />
-  <rect x="6" y="6" width="52" height="52" rx="12" fill="#1E1E24" />
-
-  <!-- Outer Orbital Ring (Tilted Ellipse) -->
-  <ellipse
-    cx="32"
-    cy="32"
-    rx="22"
-    ry="9.5"
-    transform="rotate(-28 32 32)"
-    stroke="#9CA3AF"
-    stroke-opacity="0.55"
-    stroke-width="2.4"
-  />
-
-  <!-- Central Keyflow Diamond / Prism -->
-  <path
-    d="M32 10L44.5 32L32 54L19.5 32L32 10Z"
-    fill="#E2E4E9"
-  />
-  <!-- Subtle Right Facet Tonal Shade for 3D Prism Depth -->
-  <path
-    d="M32 10L44.5 32L32 54V10Z"
-    fill="#9CA3AF"
-    fill-opacity="0.38"
-  />
-
-  <!-- Satellite Diamond Dot (Bottom-Right) -->
-  <path
-    d="M49 41.5L52.2 46L49 50.5L45.8 46L49 41.5Z"
-    fill="#E2E4E9"
-  />
+  <defs>
+    <linearGradient id="bg" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#232732" />
+      <stop offset="46%" stop-color="#101218" />
+      <stop offset="100%" stop-color="#08090C" />
+    </linearGradient>
+    <linearGradient id="kfOpticalEdge" x1="18" y1="14" x2="46" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.96" />
+      <stop offset="56%" stop-color="#D4D8E2" stop-opacity="0.72" />
+      <stop offset="100%" stop-color="#6EE7B7" stop-opacity="0.82" />
+    </linearGradient>
+    <linearGradient id="kfOpticalFacet" x1="32" y1="15" x2="45" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.22" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.02" />
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#bg)" stroke="rgba(255,255,255,0.16)" stroke-width="1.5" />
+  <polygon points="32,14.5 48.5,45.5 15.5,45.5" fill="url(#kfOpticalFacet)" stroke="url(#kfOpticalEdge)" stroke-width="1.6" stroke-linejoin="round" />
+  <line x1="32" y1="14.5" x2="32" y2="45.5" stroke="rgba(255, 255, 255, 0.36)" stroke-width="1.2" />
+  <path d="M22.5 33L32 29L42.5 34.2" stroke="rgba(110, 231, 183, 0.78)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
 </svg>

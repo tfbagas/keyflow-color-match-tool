@@ -11,7 +11,16 @@ import {
   getLogProfileCode,
   resolveLogProfileId,
 } from "./logProfiles.js";
-import { makeLutSampler } from "./presetImporter.js";
+import {
+  LUT32_SIZE,
+  LUT32_TEX_COLS,
+  LUT32_TEX_ROWS,
+  LUT32_TEX_WIDTH,
+  LUT32_TEX_HEIGHT,
+  GLSL_TETRAHEDRAL_LUT32_512X64,
+  composeLutTo32,
+  encodeLut32ToPng512x64,
+} from "../engine/lut3d.ts";
 
 export { checkAllowedHost, sanitizeMetadataText };
 
@@ -83,109 +92,6 @@ function fmtVec4(arr, offset = 0) {
 
 function fmtVec2(arr, offset = 0) {
   return `vec2(${fmtFloat(arr[offset])}, ${fmtFloat(arr[offset + 1])})`;
-}
-
-function minifyGlsl(code) {
-  return code
-    .replace(/\/\/.*$/gm, "")
-    .replace(/\s+/g, " ")
-    .replace(/\s*([{}();,=+\-*/<>?:[\]])\s*/g, "$1")
-    .trim();
-}
-
-function fmtLutComponent(v) {
-  const n = Math.min(1.0, Math.max(0.0, Number.isFinite(v) ? v : 0.0));
-  const s = n.toFixed(3);
-  if (s === "1.000") return "1.0";
-  if (s === "0.000") return "0.0";
-  return s.replace(/0+$/, "");
-}
-
-function buildLutTernaryExpr(nodes, varName, lo, hi) {
-  if (lo === hi) {
-    return nodes[lo];
-  }
-  const mid = Math.floor((lo + hi + 1) / 2);
-  return `${varName}<${mid}?${buildLutTernaryExpr(nodes, varName, lo, mid - 1)}:${buildLutTernaryExpr(nodes, varName, mid, hi)}`;
-}
-
-function buildLutDecisionTree(nodes, varName, lo, hi) {
-  if (hi - lo + 1 <= 64) {
-    return `v=${buildLutTernaryExpr(nodes, varName, lo, hi)};`;
-  }
-  const mid = Math.floor((lo + hi + 1) / 2);
-  return `if(${varName}<${mid}){${buildLutDecisionTree(nodes, varName, lo, mid - 1)}}else{${buildLutDecisionTree(nodes, varName, mid, hi)}}`;
-}
-
-// Packs an arbitrary 3D or 1D LUT into a compact N^3 pure GLSL ES 1.00 lookup table
-// using normalized vec3 literals in [0.0, 1.0] and a constant-index binary decision tree
-// with trilinear interpolation, compatible with all mobile and desktop GPUs.
-function buildBakedLutGlslFunctions(activeLut, N) {
-  const sample = makeLutSampler(activeLut);
-  const out = [0, 0, 0];
-  const total = N * N * N;
-  const nodes = new Array(total);
-  const denom = Math.max(1, N - 1);
-
-  for (let b = 0; b < N; b++) {
-    const bv = b / denom;
-    for (let g = 0; g < N; g++) {
-      const gv = g / denom;
-      for (let r = 0; r < N; r++) {
-        const rv = r / denom;
-        sample(rv, gv, bv, out);
-        nodes[(b * N + g) * N + r] =
-          `vec3(${fmtLutComponent(out[0])},${fmtLutComponent(out[1])},${fmtLutComponent(out[2])})`;
-      }
-    }
-  }
-
-  const fetchFn =
-    `vec3 fetchLutNode(int i){` +
-    `vec3 v=vec3(0.0);` +
-    buildLutDecisionTree(nodes, "i", 0, total - 1) +
-    `return v;` +
-    `}`;
-
-  const nMinus1 = `${N - 1}.0`;
-  const sampleFn =
-    `vec3 kfSampleBakedLut3D(vec3 rgb){` +
-    `vec3 pos=clamp(rgb,0.0,1.0)*${nMinus1};` +
-    `vec3 i0f=min(floor(pos),vec3(${nMinus1}));` +
-    `vec3 i1f=min(i0f+vec3(1.0),vec3(${nMinus1}));` +
-    `vec3 f=pos-i0f;` +
-    `int r0=int(i0f.r);int g0=int(i0f.g);int b0=int(i0f.b);` +
-    `int r1=int(i1f.r);int g1=int(i1f.g);int b1=int(i1f.b);` +
-    `int g0n=g0*${N};int g1n=g1*${N};` +
-    `int b0n=b0*${N * N};int b1n=b1*${N * N};` +
-    `vec3 c000=fetchLutNode(b0n+g0n+r0);` +
-    `vec3 c100=fetchLutNode(b0n+g0n+r1);` +
-    `vec3 c010=fetchLutNode(b0n+g1n+r0);` +
-    `vec3 c110=fetchLutNode(b0n+g1n+r1);` +
-    `vec3 c001=fetchLutNode(b1n+g0n+r0);` +
-    `vec3 c101=fetchLutNode(b1n+g0n+r1);` +
-    `vec3 c011=fetchLutNode(b1n+g1n+r0);` +
-    `vec3 c111=fetchLutNode(b1n+g1n+r1);` +
-    `vec3 c00=mix(c000,c100,f.r);` +
-    `vec3 c10=mix(c010,c110,f.r);` +
-    `vec3 c01=mix(c001,c101,f.r);` +
-    `vec3 c11=mix(c011,c111,f.r);` +
-    `vec3 c0=mix(c00,c10,f.g);` +
-    `vec3 c1=mix(c01,c11,f.g);` +
-    `return mix(c0,c1,f.b);` +
-    `}`;
-
-  return `${fetchFn}\n${sampleFn}\n`;
-}
-
-const LUT_GRID_CANDIDATES = [10, 9, 8, 7];
-const MAX_FRAG_BYTES = 29500;
-
-function utf8ByteLength(str) {
-  if (typeof TextEncoder !== "undefined") {
-    return new TextEncoder().encode(str).length;
-  }
-  return unescape(encodeURIComponent(str)).length;
 }
 
 function clampFiniteToSpec(raw, spec) {
@@ -484,9 +390,9 @@ export function validateKfplugPackage(manifestData, effectData, shaderPass0) {
   return { valid: errors.length === 0, errors };
 }
 
-// Builds pass0.frag for .kfplug with pure GLSL ES 1.00 and packed vec4 hybrid
-// constants + uAutoGradeMix uniform + optional Camera Log input transform +
-// baked uFilmicShoulder mode so Keyflow Mobile renders 1:1 with preview.
+// Builds pass0.frag for .kfplug with pure GLSL ES 1.00.
+// When an active 32^3 LUT is present, emits the 512x64 uLutTex sampler with
+// exact Tetrahedral Interpolation so Keyflow Mobile renders 100% 1:1 with preview.
 export function buildKfplugFragmentShader(
   safeParams,
   inputProfile = "rec709",
@@ -494,8 +400,13 @@ export function buildKfplugFragmentShader(
   lutMix = 1.0
 ) {
   const hasLut = Boolean(activeLut && activeLut.data && activeLut.size);
+  const preservePostTrims = Boolean(hasLut && activeLut.applyPostGrade);
   const p = sanitizeParams(
-    hasLut ? { ...DEFAULT_PARAMS, autoGradeMix: 0.0, filmicShoulder: 0.0 } : safeParams
+    hasLut
+      ? preservePostTrims
+        ? { ...safeParams, autoGradeMix: 0.0, filmicShoulder: 0.0 }
+        : { ...DEFAULT_PARAMS, autoGradeMix: 0.0, filmicShoulder: 0.0 }
+      : safeParams
   );
   const logCode = getLogProfileCode(inputProfile || safeParams?.inputProfile);
   const polyBlock = [0, 1, 2, 3, 4]
@@ -583,36 +494,34 @@ ${gradeBody}
 `;
   }
 
-  const baseBody = minifyGlsl(`uniform sampler2D uTexture;
+  return `${PRECISION_HEADER}
+uniform sampler2D uTexture;
+uniform sampler2D uLutTex;
 varying vec2 vTex;
-${kfplugUniforms}
-${GRADE_FUNCTION}${logBlock}`);
 
-  const mainFn = minifyGlsl(`void main() {
+${kfplugUniforms}
+${GRADE_FUNCTION}
+${GLSL_TETRAHEDRAL_LUT32_512X64}${logBlock}
+void main() {
     vec4 c = texture2D(uTexture, vTex);
     float a = clamp(c.a, 0.0, 1.0);
     if (a <= 1e-5) {
         gl_FragColor = vec4(0.0);
         return;
     }
+
 ${polyBlock}
+
     vec3 rawRgb = clamp(c.rgb / max(a, 1e-5), 0.0, 1.0);
 ${inputTransformLine}
-    vec3 lutRgb = mix(origRgb, kfSampleBakedLut3D(origRgb), uLutMix);
-    vec3 graded = clamp(mix(origRgb, kfGrade(lutRgb), clamp(uGradeMix, 0.0, 1.0)), 0.0, 1.0);
-    gl_FragColor = vec4(graded * a, a);
-}`);
-
-  let fallbackShader = "";
-  for (const N of LUT_GRID_CANDIDATES) {
-    const lutBlock = buildBakedLutGlslFunctions(activeLut, N);
-    const candidate = `${PRECISION_HEADER}${baseBody}\n${lutBlock}${mainFn}\n`;
-    fallbackShader = candidate;
-    if (utf8ByteLength(candidate) <= MAX_FRAG_BYTES) {
-      return candidate;
-    }
-  }
-  return fallbackShader;
+    float srcLuma = dot(origRgb, vec3(0.2126, 0.7152, 0.0722));
+    vec3 lutRgb = clamp(mix(origRgb, kfSampleLut32Tetrahedral(origRgb), uLutMix), 0.0, 1.0);
+    vec3 graded = kfGrade(lutRgb);
+    float toeProtect = smoothstep(0.0, 0.04, srcLuma);
+    graded = min(graded, lutRgb) + max(graded - lutRgb, vec3(0.0)) * toeProtect;
+    gl_FragColor = vec4(clamp(graded, 0.0, 1.0) * a, a);
+}
+`;
 }
 
 function toScalarValues(sanitized) {
@@ -652,11 +561,18 @@ export function buildKfplugPackageData(
     (words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join("").slice(0, 24) || "Match");
 
   // Strict sanitation: finite, no -0, clamped strictly to Keyflow declared slider ranges.
+  const preservePostTrims = Boolean(hasLut && activeLut.applyPostGrade);
   const fullSafe = sanitizeParams(
-    hasLut ? { ...DEFAULT_PARAMS, autoGradeMix: 0.0, filmicShoulder: 0.0 } : params
+    hasLut
+      ? preservePostTrims
+        ? { ...params, autoGradeMix: 0.0, filmicShoulder: 0.0 }
+        : { ...DEFAULT_PARAMS, autoGradeMix: 0.0, filmicShoulder: 0.0 }
+      : params
   );
   const safeValues = toScalarValues(fullSafe);
   const shaderPass0 = buildKfplugFragmentShader(fullSafe, resolvedProfile, activeLut, lutMix);
+  const lut32Data = hasLut ? composeLutTo32(activeLut, 1.0, null, "rec709") : null;
+  const lut32Png = lut32Data ? encodeLut32ToPng512x64(lut32Data) : null;
 
   const safePresets = PRESETS.map((pr) => {
     const sanPr = sanitizeParams({ ...pr.values });
@@ -691,6 +607,33 @@ export function buildKfplugPackageData(
     newInstanceValues: { ...safeValues },
     thumbnailValues: { ...safeValues },
     passes: safePasses,
+    ...(hasLut
+      ? {
+          textures: [
+            {
+              uniform: "uLutTex",
+              file: "lut32.png",
+              width: LUT32_TEX_WIDTH,
+              height: LUT32_TEX_HEIGHT,
+              filter: "nearest",
+              wrap: "clamp",
+              lutSize: LUT32_SIZE,
+              gridCols: LUT32_TEX_COLS,
+              gridRows: LUT32_TEX_ROWS,
+              interpolation: "tetrahedral",
+            },
+          ],
+          lut3d: {
+            size: LUT32_SIZE,
+            file: "lut32.png",
+            width: LUT32_TEX_WIDTH,
+            height: LUT32_TEX_HEIGHT,
+            cols: LUT32_TEX_COLS,
+            rows: LUT32_TEX_ROWS,
+            interpolation: "tetrahedral",
+          },
+        }
+      : {}),
     cinemaHybrid: {
       polyR: fullSafe.polyR,
       polyG: fullSafe.polyG,
@@ -728,6 +671,7 @@ export function buildKfplugPackageData(
     manifestData,
     effectData,
     shaderPass0,
+    lut32Png,
     effectId,
     displayName,
     fileName,
@@ -752,6 +696,7 @@ export async function generateKfplug(
     manifestData,
     effectData,
     shaderPass0,
+    lut32Png,
     effectId,
     displayName,
     fileName,
@@ -769,6 +714,9 @@ export async function generateKfplug(
   zip.file("manifest.json", JSON.stringify(manifestData, null, 2));
   zip.file(`effects/${effectId}/effect.json`, JSON.stringify(effectData, null, 2));
   zip.file(`effects/${effectId}/pass0.frag`, shaderPass0);
+  if (lut32Png) {
+    zip.file(`effects/${effectId}/lut32.png`, lut32Png);
+  }
 
   const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
 

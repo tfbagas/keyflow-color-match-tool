@@ -1,14 +1,27 @@
-import React from "react";
+import React, { useState } from "react";
 import { CheckCircle2, Heart, X, ExternalLink } from "lucide-react";
 import { useLanguage } from "../i18n/LanguageContext";
+import { usePresence } from "../hooks/usePresence";
 
 export default function SupportToast({ visible, filename, onClose }) {
   const { t } = useLanguage();
-  if (!visible) return null;
+  const { isMounted, state: presenceState } = usePresence(visible, 150);
+  const [lastFilename, setLastFilename] = useState(filename);
+
+  if (filename && filename !== lastFilename) {
+    setLastFilename(filename);
+  }
+
+  if (!isMounted) return null;
+
+  const displayFilename = filename || lastFilename;
 
   return (
     <div className="fixed bottom-4 right-4 left-4 sm:left-auto sm:w-96 z-50">
-      <div className="m3-panel m3-toast-enter rounded-2xl p-4 shadow-[0_16px_40px_rgba(0,0,0,0.75)] bg-[#151519]/95 backdrop-blur-xl">
+      <div
+        data-state={presenceState}
+        className="studio-toast m3-panel rounded-2xl p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_16px_40px_rgba(0,0,0,0.75)] bg-[#101216]/95 backdrop-blur-2xl"
+      >
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-[#1E1E24] border border-white/[0.08] flex items-center justify-center text-[#6EE7B7] shrink-0 mt-0.5">
@@ -18,9 +31,9 @@ export default function SupportToast({ visible, filename, onClose }) {
               <h4 className="text-xs font-bold text-[#E2E4E9]">
                 {t("supportToast.title")}
               </h4>
-              {filename && (
+              {displayFilename && (
                 <p className="text-[11px] font-mono text-[#9CA3AF] truncate max-w-[230px] mt-0.5">
-                  {filename}
+                  {displayFilename}
                 </p>
               )}
               <p className="text-xs text-[#9CA3AF] mt-1.5 leading-relaxed">

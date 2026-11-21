@@ -4,8 +4,6 @@ import {
   RefreshCw,
   Trash2,
   Sparkles,
-  Image as ImageIcon,
-  ChevronDown,
   AlertCircle,
   FileCog,
   X,
@@ -30,7 +28,6 @@ const ImageDropCard = memo(function ImageDropCard({
   onClearImage,
   onTrySample,
   isAnalyzing = false,
-  defaultExpanded = true,
   isPasteTarget = false,
   onHoverChange,
   onFocusSlot,
@@ -49,7 +46,9 @@ const ImageDropCard = memo(function ImageDropCard({
   const { lang, t } = useLanguage();
   const [showSamples, setShowSamples] = useState(false);
   const [copiedHex, setCopiedHex] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
   const copyTimerRef = useRef(0);
+  const inputRef = useRef(null);
 
   useEffect(
     () => () => {
@@ -58,20 +57,13 @@ const ImageDropCard = memo(function ImageDropCard({
     []
   );
 
-  const acceptList = [IMAGE_ACCEPT, allowVideo ? VIDEO_ACCEPT : "", allowPresets ? PRESET_ACCEPT : ""]
+  const acceptList = [
+    IMAGE_ACCEPT,
+    allowVideo ? VIDEO_ACCEPT : "",
+    allowPresets ? PRESET_ACCEPT : "",
+  ]
     .filter(Boolean)
     .join(",");
-  const formatHint =
-    allowVideo && allowPresets
-      ? t("dropCard.hintAll")
-      : allowVideo
-      ? t("dropCard.hintVideo")
-      : allowPresets
-      ? t("dropCard.hintPresets")
-      : t("dropCard.hintBasic");
-  const inputRef = useRef(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   const handleFile = (file) => {
     if (!file) return;
@@ -106,18 +98,11 @@ const ImageDropCard = memo(function ImageDropCard({
   };
 
   return (
-    <div
-      data-open={isExpanded}
+    <section
       onMouseEnter={() => onHoverChange && onHoverChange(true)}
       onMouseLeave={() => onHoverChange && onHoverChange(false)}
       onClick={() => onFocusSlot && onFocusSlot()}
-      className={`capsule-disclosure liquid-glass-card m3-panel rounded-[18px] overflow-hidden flex flex-col justify-between ${
-        isExpanded ? "h-full p-3.5" : "px-4 py-2.5"
-      } ${
-        isPasteTarget
-          ? "border-white/30 shadow-[0_0_0_1px_rgba(255,255,255,0.16)]"
-          : ""
-      }`}
+      className="px-3 py-2.5 select-none"
     >
       <input
         ref={inputRef}
@@ -130,214 +115,152 @@ const ImageDropCard = memo(function ImageDropCard({
         }}
       />
 
-      <div
-        onClick={() => setIsExpanded((prev) => !prev)}
-        className="flex items-center justify-between cursor-pointer select-none group"
-      >
+      {/* Section Header */}
+      <div className="flex items-center justify-between gap-1.5 mb-2">
         <div className="flex items-center gap-1.5 min-w-0">
-          <ImageIcon className="w-3.5 h-3.5 text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors shrink-0" />
-          <h3 className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.06em] sm:tracking-[0.08em] text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors truncate">
+          <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#A1A1AA] truncate">
             {title}
           </h3>
-          {isPasteTarget && (
-            <span className="hidden lg:inline-block text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/[0.04] text-[#9CA3AF] border border-white/[0.09] shrink-0">
-              {t("dropCard.ctrlVTarget")}
+          {isAnalyzing && (
+            <span className="text-[9px] font-mono text-[#E4E4E7] animate-pulse">
+              •
+            </span>
+          )}
+          {isPasteTarget && !isAnalyzing && (
+            <span className="hidden lg:inline text-[9px] font-mono text-[#A1A1AA] px-1 py-0 rounded bg-white/[0.05] border border-white/[0.08]">
+              Ctrl+V
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          <span
-            className={`text-[10px] sm:text-[11px] font-mono px-1.5 sm:px-2 py-0.5 rounded-full border ${
-              isAnalyzing
-                ? "bg-white/[0.06] text-[#E2E4E9] border-white/15 animate-pulse"
-                : imageInfo
-                ? "bg-white/[0.05] text-[#E2E4E9] border-white/[0.11]"
-                : importedLook
-                ? "bg-[#6EE7B7]/12 text-[#6EE7B7] border-[#6EE7B7]/35"
-                : "bg-transparent text-[#9CA3AF]/60 border-white/[0.06]"
-            }`}
-          >
-            {isAnalyzing
-              ? t("dropCard.badgeAnalyzing")
-              : imageInfo
-              ? t("dropCard.badgeLoaded")
-              : importedLook
-              ? t("dropCard.badgePreset")
-              : t("dropCard.badgeEmpty")}
-          </span>
-
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsExpanded((prev) => !prev);
-            }}
-            aria-expanded={isExpanded}
-            aria-label={t("dropCard.togglePanel", { title })}
-            className="m3-btn-morph p-1 rounded-full bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] cursor-pointer"
-          >
-            <ChevronDown
-              className={`w-3.5 h-3.5 transition-transform duration-300 ${
-                isExpanded ? "rotate-180" : "rotate-0"
-              }`}
-            />
-          </button>
-        </div>
-      </div>
-
-      {errorMessage && (
-        <div className="mt-2 px-2.5 py-1.5 rounded-lg bg-red-500/10 border border-red-500/25 flex items-center gap-2 text-[11px] text-red-300">
-          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-          <span>{errorMessage}</span>
-        </div>
-      )}
-
-      {!isExpanded && imageInfo && (
-        <div className="mt-2.5 pt-2.5 border-t border-white/[0.08] flex items-center justify-between gap-2.5 m3-tab-enter">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <img
-              src={imageInfo.thumbUrl || imageInfo.dataUrl}
-              alt={imageInfo.name}
-              className="w-8 h-8 rounded-md object-cover bg-[#0A0A0D]/38 border border-white/10 shrink-0"
-            />
-            <div className="min-w-0">
-              <div className="text-xs font-medium text-[#E2E4E9] truncate">
-                {imageInfo.name}
-              </div>
-              <div className="text-[10px] font-mono text-[#9CA3AF] truncate">
-                {imageInfo.width}x{imageInfo.height} px - {imageInfo.formatBadge || imageInfo.ext} -{" "}
-                {imageInfo.sizeMB} MB
-              </div>
-            </div>
-          </div>
-
+        {/* Inline Micro Actions */}
+        <div className="flex items-center gap-1 shrink-0">
+          {!imageInfo && onTrySample && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (sampleOptions) {
+                  setShowSamples((v) => !v);
+                } else {
+                  onTrySample();
+                }
+              }}
+              className="px-1.5 py-0.5 rounded text-[10px] font-medium text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-white/[0.06] transition-colors cursor-pointer inline-flex items-center gap-1"
+            >
+              <Sparkles className="w-2.5 h-2.5" />
+              <span>{t("dropCard.sample")}</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               inputRef.current?.click();
             }}
-            className="m3-btn-morph inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] text-xs font-medium text-[#E2E4E9] shrink-0 cursor-pointer"
+            title={imageInfo ? t("dropCard.replace") : t("dropCard.browse")}
+            className="p-1 rounded text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-white/[0.06] transition-colors cursor-pointer"
           >
-            <RefreshCw className="w-3 h-3 text-[#9CA3AF]" />
-            <span>{t("dropCard.replace")}</span>
+            <RefreshCw className="w-3 h-3" />
           </button>
+          {imageInfo && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClearImage();
+              }}
+              title={t("dropCard.remove")}
+              className="p-1 rounded text-[#71717A] hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Error Alert */}
+      {errorMessage && (
+        <div className="mb-2 px-2 py-1.5 rounded-md bg-red-500/10 border border-red-500/25 flex items-center gap-1.5 text-[10px] text-red-300 leading-snug">
+          <AlertCircle className="w-3 h-3 shrink-0" />
+          <span className="line-clamp-2">{errorMessage}</span>
         </div>
       )}
 
+      {/* Compact Thumbnail / Dropzone Well */}
       <div
-        className={`m3-collapse-grid ${isExpanded ? "mt-2.5 flex-1 flex flex-col" : "mt-0"}`}
-        data-expanded={isExpanded}
+        onClick={() => inputRef.current?.click()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={handleDrop}
+        className={`relative w-full h-[106px] rounded-md border transition-colors cursor-pointer flex flex-col items-center justify-center overflow-hidden bg-[#08090A] ${
+          isDragging
+            ? "border-white/35 bg-[#15171C]"
+            : isPasteTarget
+            ? "border-white/[0.16]"
+            : imageInfo
+            ? "border-white/[0.07] hover:border-white/[0.16]"
+            : "border-dashed border-white/[0.12] hover:border-white/[0.22] hover:bg-[#0B0C0F]"
+        }`}
       >
-        <div className={`m3-collapse-inner ${isExpanded ? "flex-1 flex flex-col justify-between" : ""}`}>
-          <div className="flex-1 flex flex-col lg:flex-row gap-2 items-stretch">
-            <div
-              onClick={() => inputRef.current?.click()}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDragging(true);
-              }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={handleDrop}
-              className={`relative flex-1 min-h-[84px] lg:min-h-[210px] rounded-xl border transition-all cursor-pointer flex flex-col items-center justify-center overflow-hidden bg-[#0A0A0D]/38 ${
-                isDragging
-                  ? "border-[#E2E4E9]/50 bg-white/[0.06]"
-                  : imageInfo
-                  ? "border-white/[0.09] hover:border-white/20"
-                  : "border-dashed border-white/[0.14] hover:border-white/25 hover:bg-white/[0.03]"
-              }`}
-            >
-              {imageInfo ? (
-                <>
-                  <img
-                    src={imageInfo.thumbUrl || imageInfo.dataUrl}
-                    alt={title}
-                    className="w-full h-[84px] lg:h-[210px] object-contain p-1 lg:p-1.5 select-none"
-                  />
-                  {imageInfo.formatBadge && (
-                    <span className="absolute top-1 left-1 lg:top-1.5 lg:left-1.5 inline-flex items-center gap-1 text-[9px] lg:text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#151519]/90 text-[#E2E4E9] border border-white/[0.12] pointer-events-none">
-                      {(imageInfo.kind === "video" || imageInfo.sourceKind === "video") && (
-                        <Film className="w-2.5 h-2.5" />
-                      )}
-                      {imageInfo.formatBadge}
-                    </span>
-                  )}
-                  {imageInfo.smartSampleBadge && (
-                    <span className="absolute bottom-1 left-1 right-1 lg:bottom-1.5 lg:left-1.5 lg:right-auto inline-flex items-center gap-1 text-[9px] lg:text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#0E0E12]/92 text-[#6EE7B7] border border-[#6EE7B7]/35 pointer-events-none truncate">
-                      <Sparkles className="w-2.5 h-2.5 shrink-0" />
-                      <span className="truncate">{formatSmartBadge(imageInfo.smartSampleBadge)}</span>
-                    </span>
-                  )}
-                </>
-              ) : (
-                <div className="flex flex-col items-center text-center p-2 lg:p-3">
-                  <div className="w-7 h-7 lg:w-8 lg:h-8 rounded-lg bg-white/[0.04] border border-white/[0.09] flex items-center justify-center mb-1 lg:mb-1.5 text-[#E2E4E9]">
-                    <Upload className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
-                  </div>
-                  <p className="text-[11px] lg:text-xs font-medium text-[#E2E4E9] leading-tight">
-                    {allowVideo && allowPresets
-                      ? t("dropCard.dropAll")
-                      : allowVideo
-                      ? t("dropCard.dropVideo")
-                      : allowPresets
-                      ? t("dropCard.dropPresets")
-                      : t("dropCard.dropBasic")}
-                  </p>
-                  <span className="hidden lg:inline text-[10px] text-[#9CA3AF]/70 mt-1 font-mono">
-                    {formatHint}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <div className="flex lg:flex-col gap-1.5 lg:w-24 shrink-0">
-              <button
-                type="button"
-                onClick={() => inputRef.current?.click()}
-                className="m3-btn-morph flex-1 min-w-0 flex items-center justify-center gap-1 px-1.5 sm:px-2 py-1.5 lg:py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] text-[10px] sm:text-[11px] lg:text-xs font-medium text-[#E2E4E9] cursor-pointer"
-              >
-                <RefreshCw className="w-3 h-3 lg:w-3.5 lg:h-3.5 text-[#9CA3AF] shrink-0" />
-                <span className="truncate">
-                  {imageInfo ? t("dropCard.replace") : t("dropCard.browse")}
-                </span>
-              </button>
-
-              {imageInfo ? (
-                <button
-                  type="button"
-                  onClick={onClearImage}
-                  className="m3-btn-morph flex-1 min-w-0 flex items-center justify-center gap-1 px-1.5 sm:px-2 py-1.5 lg:py-2 rounded-lg bg-white/[0.04] hover:bg-red-500/15 border border-white/[0.09] hover:border-red-500/30 text-[10px] sm:text-[11px] lg:text-xs font-medium text-[#9CA3AF] hover:text-red-300 cursor-pointer"
-                >
-                  <Trash2 className="w-3 h-3 lg:w-3.5 lg:h-3.5 shrink-0" />
-                  <span className="truncate">{t("dropCard.remove")}</span>
-                </button>
-              ) : (
-                onTrySample && (
-                  <button
-                    type="button"
-                    onClick={() => (sampleOptions ? setShowSamples((v) => !v) : onTrySample())}
-                    className="m3-btn-morph flex-1 min-w-0 flex items-center justify-center gap-1 px-1.5 sm:px-2 py-1.5 lg:py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.09] text-[10px] sm:text-[11px] lg:text-xs font-medium text-[#9CA3AF] hover:text-[#E2E4E9] cursor-pointer"
-                  >
-                    <Sparkles className="w-3 h-3 lg:w-3.5 lg:h-3.5 shrink-0" />
-                    <span className="truncate">{t("dropCard.sample")}</span>
-                  </button>
-                )
-              )}
-            </div>
+        {imageInfo ? (
+          <>
+            <img
+              src={imageInfo.thumbUrl || imageInfo.dataUrl}
+              alt={title}
+              className="w-full h-full object-contain p-1 select-none"
+            />
+            {imageInfo.formatBadge && (
+              <span className="absolute top-1.5 left-1.5 inline-flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#08090A]/85 text-[#D4D4D8] border border-white/[0.09] pointer-events-none">
+                {(imageInfo.kind === "video" || imageInfo.sourceKind === "video") && (
+                  <Film className="w-2.5 h-2.5" />
+                )}
+                {imageInfo.formatBadge}
+              </span>
+            )}
+            {imageInfo.smartSampleBadge && (
+              <span className="absolute bottom-1.5 left-1.5 right-1.5 inline-flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#08090A]/90 text-[#D4D4D8] border border-white/[0.10] pointer-events-none truncate">
+                <Sparkles className="w-2.5 h-2.5 shrink-0 text-[#A1A1AA]" />
+                <span className="truncate">{formatSmartBadge(imageInfo.smartSampleBadge)}</span>
+              </span>
+            )}
+          </>
+        ) : (
+          <div className="flex flex-col items-center text-center px-3">
+            <Upload className="w-3.5 h-3.5 text-[#A1A1AA] mb-1.5" />
+            <p className="text-[11px] font-medium text-[#E4E4E7] leading-tight">
+              {allowPresets ? "Drop image, video or LUT" : "Drop target photo or video"}
+            </p>
+            <span className="text-[10px] font-mono text-[#A1A1AA] mt-0.5">
+              {allowPresets ? "PNG · JPG · MP4 · .cube · .kfplug" : "PNG · JPG · RAW · MP4 · MOV"}
+            </span>
           </div>
+        )}
+      </div>
 
-          {sampleOptions && showSamples && !imageInfo && (
-            <div className="mt-2 grid grid-cols-2 gap-1.5 m3-tab-enter">
+      {/* Inline Sample Picker (Smooth CSS Grid Collapse) */}
+      {sampleOptions && !imageInfo && (
+        <div
+          className="studio-collapse-grid"
+          data-expanded={showSamples}
+          aria-hidden={!showSamples}
+        >
+          <div className="studio-collapse-inner">
+            <div className="mt-2 grid grid-cols-2 gap-1">
               {sampleOptions.map((opt) => (
                 <button
                   key={opt.id}
                   type="button"
-                  onClick={() => {
+                  tabIndex={showSamples ? 0 : -1}
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setShowSamples(false);
                     onTrySample(opt.id);
                   }}
-                  className="m3-btn-morph px-2 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.1] border border-white/[0.09] text-[11px] font-medium text-[#E2E4E9] cursor-pointer text-left"
+                  className="studio-tactile px-2 py-1 rounded bg-[#15171C] hover:bg-[#1C1F26] border border-white/[0.07] text-[10px] font-medium text-[#D4D4D8] hover:text-[#F4F4F5] cursor-pointer text-left truncate"
                 >
                   {lang === "id" && SAMPLE_LOOK_LABELS_ID[opt.id]
                     ? SAMPLE_LOOK_LABELS_ID[opt.id]
@@ -345,136 +268,109 @@ const ImageDropCard = memo(function ImageDropCard({
                 </button>
               ))}
             </div>
-          )}
+          </div>
+        </div>
+      )}
 
-          {importedLook && (
-            <div className="mt-2 space-y-1.5">
-              <div className="px-2.5 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.09] flex items-center gap-2 text-[11px] text-[#E2E4E9]">
-                <FileCog className="w-3.5 h-3.5 text-[#9CA3AF] shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate">
-                    <span className="font-mono text-[#9CA3AF]">{importedLook.kind}</span>{" "}
-                    <span>{importedLook.name}</span>
-                    {typeof importedLook.rms === "number" && (
-                      <span className="font-mono text-[#9CA3AF]"> (fit {importedLook.rms.toFixed(3)})</span>
-                    )}
-                  </div>
-                  {importedLook.statusSummary && (
-                    <div className="text-[10px] font-mono text-[#9CA3AF] truncate mt-0.5">
-                      {importedLook.statusSummary}
-                    </div>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={onClearImportedLook}
-                  aria-label={t("dropCard.clearImportedLook")}
-                  className="ml-auto p-0.5 rounded text-[#9CA3AF] hover:text-[#E2E4E9] hover:bg-white/10 cursor-pointer shrink-0"
-                >
-                  <X className="w-3 h-3" />
-                </button>
+      {/* Imported Preset Banner (.cube / .kfplug / .ffx) */}
+      {importedLook && (
+        <div className="mt-2 space-y-1">
+          <div className="px-2 py-1.5 rounded-md bg-[#15171C] border border-white/[0.08] flex items-center gap-1.5 text-[10px] text-[#E4E4E7]">
+            <FileCog className="w-3 h-3 text-[#A1A1AA] shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium">
+                {importedLook.kind && (
+                  <span className="font-mono text-[#71717A] mr-1">{importedLook.kind}</span>
+                )}
+                <span>{importedLook.name}</span>
               </div>
-
-              {isDirectConversionReady && (
-                <div className="px-2.5 py-1.5 rounded-lg bg-[#6EE7B7]/10 border border-[#6EE7B7]/30 flex items-center justify-between gap-2 text-[10px] font-mono text-[#6EE7B7]">
-                  <span>{t("dropCard.directConversionReady")}</span>
-                  <span className="text-[#E2E4E9]/80">.kfplug / .ffx / .cube / .lut</span>
-                </div>
-              )}
             </div>
-          )}
-
-          {typeof onInputProfileChange === "function" ? (
-            <>
-              {imageInfo && (
-                <div className="border-t border-white/[0.06] pt-2 mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[10px] sm:text-[11px] text-[#9CA3AF] font-mono">
-                  <span className="truncate max-w-full sm:max-w-[200px] text-[#E2E4E9]/80">
-                    {imageInfo.name}
-                  </span>
-                  <span className="truncate">
-                    {imageInfo.width}x{imageInfo.height} px - {imageInfo.formatBadge || imageInfo.ext} -{" "}
-                    {imageInfo.sizeMB} MB
-                  </span>
-                </div>
-              )}
-
-              <div className="border-t border-white/[0.06] pt-2.5 mt-2.5 flex items-center justify-between gap-2">
-                <span className="text-[10px] font-mono uppercase tracking-[0.06em] text-[#9CA3AF] shrink-0">
-                  {t("dropCard.inputProfileLabel")}
-                </span>
-                <InputProfileDropdown
-                  value={inputProfile || "rec709"}
-                  onChange={onInputProfileChange}
-                  ariaLabel={t("dropCard.targetInputProfileAria")}
-                  className="flex-1 min-w-[140px] max-w-[220px]"
-                />
-              </div>
-            </>
-          ) : imageInfo ? (
-            <div className="border-t border-white/[0.06] pt-2.5 mt-2.5 space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[10px] sm:text-[11px] text-[#9CA3AF] font-mono">
-                <span className="truncate max-w-full sm:max-w-[180px] text-[#E2E4E9]/80">
-                  {imageInfo.name}
-                </span>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {imageInfo.smartSampleBadge && (
-                    <span className="px-1.5 py-0.5 rounded bg-[#6EE7B7]/12 text-[#6EE7B7] border border-[#6EE7B7]/30 text-[9px] font-mono">
-                      {formatSmartBadge(imageInfo.smartSampleBadge)}
-                    </span>
-                  )}
-                  <span className="truncate">
-                    {imageInfo.width}x{imageInfo.height} px - {imageInfo.formatBadge || imageInfo.ext} -{" "}
-                    {imageInfo.sizeMB} MB
-                  </span>
-                </div>
-              </div>
-
-              {/* 5-Swatch Glass Palette Droplets inside REFERENCE card footer */}
-              {Array.isArray(paletteSwatches) && paletteSwatches.length > 0 && (
-                <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-white/[0.05]">
-                  <span className="text-[10px] font-mono uppercase tracking-[0.08em] text-[#9CA3AF]">
-                    {copiedHex ? (
-                      <span className="inline-flex items-center gap-1 text-[#6EE7B7]">
-                        <Check className="w-3 h-3" />
-                        <span>{t("dropCard.copiedHex", { hex: copiedHex })}</span>
-                      </span>
-                    ) : (
-                      t("dropCard.paletteDroplets")
-                    )}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    {paletteSwatches.slice(0, 5).map((hex, idx) => (
-                      <button
-                        key={`${hex}-${idx}`}
-                        type="button"
-                        onClick={(e) => handleSwatchClick(e, hex)}
-                        title={t("dropCard.copyHexTitle", { hex })}
-                        aria-label={t("dropCard.copyHexTitle", { hex })}
-                        className="group/droplet relative w-5 h-5 rounded-full border border-white/30 transition-transform duration-200 hover:scale-[1.2] active:scale-[0.94] cursor-pointer"
-                        style={{
-                          backgroundColor: hex,
-                          boxShadow:
-                            "inset 0 1px 1.5px rgba(255,255,255,0.6), inset 0 -1px 2px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.45)",
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="border-t border-white/[0.06] pt-2.5 mt-2.5 flex items-center justify-between gap-2 text-[11px] text-zinc-400">
-              <span className="text-[10px] font-mono uppercase tracking-[0.06em] text-[#9CA3AF] shrink-0">
-                {t("dropCard.sourceMode")}
-              </span>
-              <span className="text-[11px] text-zinc-400 truncate text-right">
-                {t("dropCard.autoDetectSource")}
-              </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClearImportedLook?.();
+              }}
+              aria-label={t("dropCard.clearImportedLook")}
+              className="p-0.5 rounded text-[#71717A] hover:text-[#F4F4F5] hover:bg-white/10 cursor-pointer shrink-0"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+          {isDirectConversionReady && (
+            <div className="px-2 py-1 rounded bg-[#15171C] border border-white/[0.07] text-[9px] font-mono text-[#A1A1AA] flex items-center justify-between">
+              <span>{t("dropCard.directConversionReady")}</span>
+              <span className="text-[#71717A]">.kfplug / .cube</span>
             </div>
           )}
         </div>
-      </div>
-    </div>
+      )}
+
+      {/* Metadata Row when media is loaded */}
+      {imageInfo && (
+        <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] font-mono text-[#A1A1AA] tabular-nums">
+          <span className="truncate text-[#D4D4D8] max-w-[130px]">{imageInfo.name}</span>
+          <span className="shrink-0">
+            {imageInfo.width}×{imageInfo.height} · {imageInfo.sizeMB}M
+          </span>
+        </div>
+      )}
+
+      {/* Reference: 6-Color Dominant Palette Droplets */}
+      {!onInputProfileChange && (
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <span className="text-[10px] font-mono text-[#A1A1AA] truncate">
+            {copiedHex ? (
+              <span className="inline-flex items-center gap-1 text-[#F4F4F5]">
+                <Check className="w-2.5 h-2.5 text-[#34D399]" />
+                <span>{copiedHex}</span>
+              </span>
+            ) : (
+              "PALETTE"
+            )}
+          </span>
+          <div className="flex items-center gap-1.5">
+            {Array.isArray(paletteSwatches) && paletteSwatches.length > 0
+              ? paletteSwatches.slice(0, 6).map((hex, idx) => (
+                  <button
+                    key={`${hex}-${idx}`}
+                    type="button"
+                    onClick={(e) => handleSwatchClick(e, hex)}
+                    title={t("dropCard.copyHexTitle", { hex })}
+                    aria-label={t("dropCard.copyHexTitle", { hex })}
+                    className="w-4 h-4 rounded-full border border-white/20 hover:scale-115 active:scale-95 transition-transform cursor-pointer"
+                    style={{
+                      backgroundColor: hex,
+                      boxShadow: "inset 0 1px 1px rgba(255,255,255,0.35), 0 1px 3px rgba(0,0,0,0.6)",
+                    }}
+                  />
+                ))
+              : Array.from({ length: 6 }).map((_, idx) => (
+                  <span
+                    key={idx}
+                    className="w-4 h-4 rounded-full bg-[#15171C] border border-white/[0.06]"
+                  />
+                ))}
+          </div>
+        </div>
+      )}
+
+      {/* Target Footage: Input Profile Dropdown */}
+      {typeof onInputProfileChange === "function" && (
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <span className="text-[10px] font-medium text-[#A1A1AA] shrink-0">
+            Input Profile
+          </span>
+          <InputProfileDropdown
+            value={inputProfile || "rec709"}
+            onChange={onInputProfileChange}
+            ariaLabel={t("dropCard.targetInputProfileAria")}
+            compact
+            className="w-[144px]"
+          />
+        </div>
+      )}
+    </section>
   );
 });
 

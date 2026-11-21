@@ -15,8 +15,8 @@ import { getLogProfileCode } from "../utils/logProfiles";
 
 // Matches PREVIEW_FRAGMENT u_viewMode: 0 = Split Slider, 1 = Side by Side, 2 = Graded Only
 const VIEW_MODE_VALUE = { split: 0, side: 1, result: 2 };
-// Matches PREVIEW_FRAGMENT uMonitorMode: 0 = Off, 1 = Zebra/Clipping, 2 = False Color IRE
-const MONITOR_MODE_VALUE = { off: 0, zebra: 1, falsecolor: 2 };
+// Matches PREVIEW_FRAGMENT uMonitorMode: 0 = Off, 1 = Zebra/Clipping, 2 = False Color IRE, 3 = Gamut
+const MONITOR_MODE_VALUE = { off: 0, zebra: 1, falsecolor: 2, gamut: 3 };
 
 function compileShader(gl, type, src) {
   const sh = gl.createShader(type);

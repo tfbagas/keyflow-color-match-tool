@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
 import { LOG_PROFILES, resolveLogProfileId } from "../utils/logProfiles";
 import { useLanguage } from "../i18n/LanguageContext";
+import { usePresence } from "../hooks/usePresence";
 
 export default function InputProfileDropdown({
   value,
@@ -14,7 +15,9 @@ export default function InputProfileDropdown({
 }) {
   const { t } = useLanguage();
   const [open, setOpen] = useState(false);
+  const { isMounted, state: presenceState } = usePresence(open, 130);
   const [menuStyle, setMenuStyle] = useState(null);
+  const [placement, setPlacement] = useState("bottom");
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
 
@@ -35,7 +38,7 @@ export default function InputProfileDropdown({
       const el = triggerRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      const menuWidth = Math.max(rect.width, 224);
+      const menuWidth = Math.max(rect.width, 210);
       const viewportW = window.innerWidth;
       const viewportH = window.innerHeight;
 
@@ -44,17 +47,18 @@ export default function InputProfileDropdown({
         left = Math.max(8, rect.right - menuWidth);
       }
 
-      const estimatedH = LOG_PROFILES.length * 34 + 12;
+      const estimatedH = LOG_PROFILES.length * 32 + 10;
       const openUpward =
         rect.bottom + estimatedH + 8 > viewportH && rect.top > estimatedH + 8;
 
+      setPlacement(openUpward ? "top" : "bottom");
       setMenuStyle({
         position: "fixed",
         left: `${Math.round(left)}px`,
         width: `${Math.round(menuWidth)}px`,
         top: openUpward
-          ? `${Math.max(8, Math.round(rect.top - estimatedH - 6))}px`
-          : `${Math.round(rect.bottom + 6)}px`,
+          ? `${Math.max(8, Math.round(rect.top - estimatedH - 4))}px`
+          : `${Math.round(rect.bottom + 4)}px`,
       });
     };
 
@@ -104,32 +108,36 @@ export default function InputProfileDropdown({
           e.stopPropagation();
           setOpen((prev) => !prev);
         }}
-        className={`bg-[#0c0d10] hover:bg-white/[0.06] border ${
-          isNonDefault ? "border-[#6EE7B7]/40 text-[#6EE7B7]" : "border-white/12 text-zinc-200"
+        className={`bg-[#15171C] hover:bg-[#1C1F26] border ${
+          isNonDefault
+            ? "border-white/20 text-[#F4F4F5]"
+            : "border-white/[0.08] text-[#D4D4D8]"
         } ${
-          compact ? "text-[11px] px-2.5 py-1" : "text-xs px-3 py-1.5"
-        } font-medium rounded-lg flex items-center justify-between gap-2 transition-colors cursor-pointer select-none focus:outline-none focus:border-white/25 ${className}`}
+          compact ? "text-[11px] px-2 py-1" : "text-[11px] px-2.5 py-1.5"
+        } font-medium rounded-md flex items-center justify-between gap-1.5 transition-colors cursor-pointer select-none focus:outline-none focus:border-white/25 ${className}`}
       >
-        <span className="truncate">
-          {compact ? activeProfile.shortLabel : getProfileLabel(activeProfile)}
+        <span className="truncate font-mono text-[11px]">
+          {compact ? activeProfile.shortLabel : activeProfile.shortLabel}
         </span>
         <ChevronDown
-          className={`w-3.5 h-3.5 shrink-0 text-zinc-400 transition-transform duration-150 ${
-            open ? "rotate-180" : "rotate-0"
+          className={`studio-chevron w-3 h-3 shrink-0 text-[#71717A] ${
+            open ? "rotate-180 text-[#F4F4F5]" : "rotate-0"
           }`}
         />
       </button>
 
-      {open &&
+      {isMounted &&
         menuStyle &&
         createPortal(
           <div
             ref={menuRef}
             role="listbox"
             aria-label={ariaLabel}
+            data-state={presenceState}
+            data-placement={placement}
             style={menuStyle}
             onClick={(e) => e.stopPropagation()}
-            className="z-50 bg-[#0d0e12]/95 backdrop-blur-xl border border-white/15 rounded-xl p-1 shadow-[0_16px_40px_rgba(0,0,0,0.85)]"
+            className="studio-popover z-[90] bg-[#121419]/96 backdrop-blur-xl border border-white/[0.11] rounded-lg p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_14px_32px_rgba(0,0,0,0.85)]"
           >
             {LOG_PROFILES.map((prof) => {
               const isSelected = prof.id === activeId;
@@ -144,15 +152,15 @@ export default function InputProfileDropdown({
                     onChange(prof.id);
                     setOpen(false);
                   }}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                  className={`w-full text-left px-2.5 py-1.5 rounded-md text-[11px] flex items-center justify-between gap-2 cursor-pointer transition-colors ${
                     isSelected
-                      ? "bg-white/[0.10] text-white font-medium"
-                      : "text-zinc-300 hover:bg-white/[0.08] hover:text-white"
+                      ? "bg-[#1C1F26] text-[#F4F4F5] font-medium"
+                      : "text-[#A1A1AA] hover:bg-white/[0.05] hover:text-[#F4F4F5]"
                   }`}
                 >
                   <span className="truncate">{getProfileLabel(prof)}</span>
                   {isSelected && (
-                    <Check className="w-3.5 h-3.5 text-zinc-200 shrink-0" />
+                    <Check className="w-3 h-3 text-[#F4F4F5] shrink-0" />
                   )}
                 </button>
               );

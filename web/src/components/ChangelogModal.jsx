@@ -12,8 +12,9 @@ import {
   History,
   Droplets,
 } from "lucide-react";
-import KeyflowLogo from "./KeyflowLogo";
+import BrandLogo from "./BrandLogo";
 import { useLanguage } from "../i18n/LanguageContext";
+import { usePresence } from "../hooks/usePresence";
 
 export const CHANGELOG_HISTORY = [
   {
@@ -214,8 +215,8 @@ export function ReleaseHistoryAccordion() {
             key={release.version}
             className={`rounded-xl border transition-colors ${
               release.isLatest
-                ? "bg-[#1E1E24] border-white/15"
-                : "bg-[#1E1E24]/70 border-white/[0.08] hover:border-white/15"
+                ? "bg-[#0B0C0F] border-white/[0.08]"
+                : "bg-[#0B0C0F] border-white/[0.06] hover:border-white/[0.12]"
             }`}
           >
             <button
@@ -225,7 +226,7 @@ export function ReleaseHistoryAccordion() {
               className="w-full flex items-center justify-between gap-3 p-3.5 text-left cursor-pointer select-none"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-[#151519] border border-white/[0.08] flex items-center justify-center text-[#E2E4E9] shrink-0">
+                <div className="w-8 h-8 rounded-lg bg-white/[0.05] border border-white/[0.07] flex items-center justify-center text-[#E2E4E9] shrink-0">
                   <Icon
                     className={`w-4 h-4 ${
                       release.isLatest ? "text-[#6EE7B7]" : "text-[#9CA3AF]"
@@ -238,7 +239,7 @@ export function ReleaseHistoryAccordion() {
                       {release.version}
                     </span>
                     {release.isLatest && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#151519] text-[#6EE7B7] border border-[#6EE7B7]/30">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-black/40 text-[#6EE7B7] border border-[#6EE7B7]/30">
                         <Sparkles className="w-2.5 h-2.5" />
                         {t("changelogModal.latest")}
                       </span>
@@ -251,10 +252,9 @@ export function ReleaseHistoryAccordion() {
               </div>
 
               <ChevronDown
-                className={`w-4 h-4 text-[#9CA3AF] shrink-0 transition-transform duration-300 ${
+                className={`studio-chevron w-4 h-4 text-[#9CA3AF] shrink-0 ${
                   isExpanded ? "rotate-180 text-[#E2E4E9]" : "rotate-0"
                 }`}
-                style={{ transitionTimingFunction: "var(--ease-m3-spring)" }}
               />
             </button>
 
@@ -284,6 +284,7 @@ export function ReleaseHistoryAccordion() {
 
 export default function ChangelogModal({ open, onClose, onViewFullHistory }) {
   const { t, dict } = useLanguage();
+  const { isMounted, state: presenceState } = usePresence(open, 160);
   const v095Items = dict?.about?.v095Items || [];
 
   useEffect(() => {
@@ -300,30 +301,32 @@ export default function ChangelogModal({ open, onClose, onViewFullHistory }) {
     };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!isMounted || typeof document === "undefined") return null;
 
   return createPortal(
     <div
+      data-state={presenceState}
       onClick={onClose}
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm transition-opacity"
+      className="studio-backdrop fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
     >
       <div
+        data-state={presenceState}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="changelog-modal-title"
-        className="m3-panel m3-modal-enter w-full max-w-2xl max-h-[85dvh] flex flex-col rounded-2xl p-5 sm:p-6 shadow-[0_24px_60px_rgba(0,0,0,0.85)] bg-[#151519]/95"
+        className="studio-modal m3-panel w-full max-w-2xl max-h-[85dvh] flex flex-col rounded-2xl p-5 sm:p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_24px_64px_rgba(0,0,0,0.85)] bg-[#101216]/96 backdrop-blur-2xl"
       >
         <div className="flex items-start justify-between gap-3 pb-4 border-b border-white/[0.08] shrink-0">
           <div className="flex items-center gap-3">
-            <KeyflowLogo size={38} />
+            <BrandLogo size={38} />
             <div>
               <div className="flex items-center gap-2">
                 <h2
                   id="changelog-modal-title"
                   className="text-base sm:text-lg font-bold font-display text-[#E2E4E9]"
                 >
-                  {t("changelogModal.whatsNewIn", { version: "v0.9.5 Beta" })}
+                  {t("changelogModal.whatsNewIn", { version: "v0.9.6a" })}
                 </h2>
                 <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#1E1E24] text-[#6EE7B7] border border-white/10">
                   <Sparkles className="w-2.5 h-2.5" />

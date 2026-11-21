@@ -2,9 +2,11 @@ import React, { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X, Keyboard } from "lucide-react";
 import { useLanguage } from "../i18n/LanguageContext";
+import { usePresence } from "../hooks/usePresence";
 
 export default function ShortcutsModal({ isOpen, onClose }) {
   const { t, dict } = useLanguage();
+  const { isMounted, state: presenceState } = usePresence(isOpen, 160);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -20,18 +22,20 @@ export default function ShortcutsModal({ isOpen, onClose }) {
     };
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  if (!isMounted || typeof document === "undefined") return null;
 
   const shortcuts = dict?.shortcutsModal?.shortcuts || [];
   const touchTips = dict?.shortcutsModal?.touchTips || [];
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
+      data-state={presenceState}
+      className="studio-backdrop fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl max-h-[85dvh] flex flex-col rounded-2xl bg-[#131419] border border-white/[0.12] shadow-2xl overflow-hidden m3-modal-panel"
+        data-state={presenceState}
+        className="studio-modal w-full max-w-2xl max-h-[85dvh] flex flex-col rounded-2xl bg-[#101216]/95 backdrop-blur-2xl border border-white/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_24px_64px_rgba(0,0,0,0.85)] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.08] shrink-0">

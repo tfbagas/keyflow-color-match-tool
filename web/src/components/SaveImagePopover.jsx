@@ -5,6 +5,7 @@ import { DEFAULT_ENGINE_ID, getEngineCodename } from "../utils/engineRegistry";
 import { encodeGradeToHash } from "../utils/shareCodec";
 import { fetchCloudQuota, isCloudRenderConfigured } from "../utils/cloudVideoExporter";
 import { useLanguage } from "../i18n/LanguageContext";
+import { usePresence } from "../hooks/usePresence";
 
 const PROMO_QR_STORAGE_KEY = "cmk_promo_qr_url";
 
@@ -42,11 +43,15 @@ export default function SaveImagePopover({
 }) {
   const { t } = useLanguage();
   const [isExportOpen, setIsExportOpen] = useState(false);
+  const { isMounted: isExportMounted, state: exportPresenceState } = usePresence(
+    isExportOpen,
+    160
+  );
   const [mediaMode, setMediaMode] = useState("video"); // "video" | "frame"
   const [exportFormat, setExportFormat] = useState("png");
   const [exportQuality, setExportQuality] = useState(95);
   const [exportLayout, setExportLayout] = useState("graded"); // "graded" | "split" | "promo"
-  const [promoAspect, setPromoAspect] = useState("16:9"); // "16:9" | "4:5" | "9:16"
+  const [promoAspect, setPromoAspect] = useState("16:9"); // "16:9" | "4:5" | "1:1" | "9:16"
   const [includeQr, setIncludeQr] = useState(true);
   const [promoQrMode, setPromoQrMode] = useState("grade"); // "grade" | "custom"
   const [promoQrCustomUrl, setPromoQrCustomUrl] = useState(readStoredPromoQrUrl);
@@ -271,20 +276,22 @@ export default function SaveImagePopover({
         </span>
       </button>
 
-      {isExportOpen &&
+      {isExportMounted &&
         createPortal(
           <div
+            data-state={exportPresenceState}
             onClick={() => {
               if (!isExportingVideo) setIsExportOpen(false);
             }}
-            className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-sm"
+            className="studio-backdrop fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-md"
           >
             <div
+              data-state={exportPresenceState}
               onClick={(e) => e.stopPropagation()}
               role="dialog"
               aria-modal="true"
               aria-label={t("savePopover.exportNativeRes")}
-              className="w-full sm:max-w-md max-h-[88dvh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-[#131419] border border-white/[0.16] shadow-2xl p-4 space-y-3 text-left"
+              className="studio-modal w-full sm:max-w-md max-h-[88dvh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-[#101216]/96 backdrop-blur-2xl border border-white/[0.12] shadow-2xl p-4 space-y-3 text-left"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[10px] font-mono uppercase tracking-[0.12em] text-[#9CA3AF]">
@@ -625,10 +632,11 @@ export default function SaveImagePopover({
                         <span className="text-[10px] text-[#9CA3AF]">
                           {t("savePopover.promoAspectRatio")}
                         </span>
-                        <div className="grid grid-cols-3 gap-1 p-0.5 rounded-lg bg-[#0A0A0D]/70 border border-white/[0.08]">
+                        <div className="grid grid-cols-4 gap-1 p-0.5 rounded-lg bg-[#0A0A0D]/70 border border-white/[0.08]">
                           {[
                             { id: "16:9", label: t("savePopover.aspect169") },
                             { id: "4:5", label: t("savePopover.aspect45") },
+                            { id: "1:1", label: t("savePopover.aspect11") },
                             { id: "9:16", label: t("savePopover.aspect916") },
                           ].map((ar) => (
                             <button

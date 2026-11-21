@@ -1,7 +1,8 @@
 import { useRef, useCallback, useEffect } from "react";
-import { getEngine, DEFAULT_ENGINE_ID } from "../utils/engineRegistry";
+import { runEngineAnalysis, DEFAULT_ENGINE_ID } from "../utils/engineRegistry";
 import { parseLutText } from "../utils/presetImporter";
 import { fitPolarisV3ToLut } from "../utils/polarisV3Engine";
+import { createLut32Object } from "../engine/lut3d.ts";
 
 const ANALYSIS_TIMEOUT_MS = 6000;
 const LUT_FIT_TIMEOUT_MS = 15000;
@@ -28,6 +29,7 @@ export function useColorMatchWorker({
   setReferenceError,
   setGradingParams,
   setLastMatchedParams,
+  setActiveLut,
 }) {
   const workerRef = useRef(null);
   const analysisTimeoutRef = useRef(null);
@@ -64,8 +66,8 @@ export function useColorMatchWorker({
 
       if (recRef && recRef.numPixels > 0) {
         try {
-          const engine = getEngine(pending?.engineId || DEFAULT_ENGINE_ID);
-          const fallbackParams = engine.analyze(
+          const { params: fallbackParams, lut32, lutMeta } = runEngineAnalysis(
+            pending?.engineId || DEFAULT_ENGINE_ID,
             recRef.data,
             recTgt ? recTgt.data : null,
             {
@@ -74,8 +76,20 @@ export function useColorMatchWorker({
               mediaType: pending?.mediaType || "image",
               autoNormalizeTarget: Boolean(pending?.autoNormalizeTarget),
               inputProfile: pending?.inputProfile || "rec709",
+              normalizeWeight: pending?.normalizeWeight ?? 1.0,
+              sigmaWeight: pending?.sigmaWeight ?? 1.0,
+              skinProtect: pending?.skinProtect ?? 0.75,
             }
           );
+          const nextLut =
+            lut32 instanceof Float32Array
+              ? createLut32Object(lut32, {
+                  title: lutMeta?.title || "Keyflow_Altair_Refresh",
+                  sourceEngine: lutMeta?.sourceEngine,
+                  applyPostGrade: Boolean(lutMeta?.applyPostGrade),
+                })
+              : null;
+          setActiveLut?.(nextLut);
           setIsAnalyzing(false);
           setGradingParams({ ...fallbackParams });
           setLastMatchedParams({ ...fallbackParams });
@@ -101,6 +115,7 @@ export function useColorMatchWorker({
       setIsAnalyzing,
       setGradingParams,
       setLastMatchedParams,
+      setActiveLut,
       setReferenceError,
       setStatusText,
     ]
@@ -117,7 +132,20 @@ export function useColorMatchWorker({
     );
 
     worker.onmessage = (e) => {
-      const { type, jobId, params, stage, error, rms, kind, title, lut } = e.data || {};
+      const {
+        type,
+        jobId,
+        params,
+        lutBuffer,
+        lutMeta,
+        bakeMs,
+        stage,
+        error,
+        rms,
+        kind,
+        title,
+        lut,
+      } = e.data || {};
       if (jobId !== undefined && jobId !== analysisJobIdRef.current) {
         return;
       }
@@ -133,10 +161,23 @@ export function useColorMatchWorker({
       } else if (type === "success" && params) {
         clearAnalysisTimeout();
         pendingAnalysisRef.current = null;
+        const nextLut =
+          lutBuffer instanceof ArrayBuffer
+            ? createLut32Object(new Float32Array(lutBuffer), {
+                title: lutMeta?.title || "Keyflow_Altair_Refresh",
+                sourceEngine: lutMeta?.sourceEngine,
+                applyPostGrade: Boolean(lutMeta?.applyPostGrade),
+              })
+            : null;
+        setActiveLut?.(nextLut);
         setIsAnalyzing(false);
         setGradingParams({ ...params });
         setLastMatchedParams({ ...params });
-        setStatusText("Matched");
+        const bakeLabel =
+          nextLut && Number.isFinite(bakeMs) && bakeMs > 0
+            ? `Matched · 32³ (${bakeMs.toFixed(1)}ms)`
+            : "Matched";
+        setStatusText(bakeLabel);
       } else if (type === "error") {
         const pendingLut = pendingLutFitRef.current;
         if (pendingLut && pendingLut.jobId === jobId) {
@@ -188,6 +229,7 @@ export function useColorMatchWorker({
     setGradingParams,
     setIsAnalyzing,
     setLastMatchedParams,
+    setActiveLut,
     setReferenceError,
     setStatusText,
   ]);
@@ -217,6 +259,9 @@ export function useColorMatchWorker({
       engineId = DEFAULT_ENGINE_ID,
       autoNormalizeTarget = false,
       inputProfile = "rec709",
+      normalizeWeight = 1.0,
+      sigmaWeight = 1.0,
+      skinProtect = 0.75,
       preserveBuffers = true,
     }) => {
       if (!ref || !ref.data || !ref.numPixels) return;
@@ -227,6 +272,9 @@ export function useColorMatchWorker({
         engineId,
         autoNormalizeTarget: Boolean(autoNormalizeTarget),
         inputProfile: inputProfile || "rec709",
+        normalizeWeight,
+        sigmaWeight,
+        skinProtect,
       };
 
       clearAnalysisTimeout();
@@ -264,6 +312,9 @@ export function useColorMatchWorker({
             mediaType,
             autoNormalizeTarget: Boolean(autoNormalizeTarget),
             inputProfile: inputProfile || "rec709",
+            normalizeWeight,
+            sigmaWeight,
+            skinProtect,
           },
           transferables
         );

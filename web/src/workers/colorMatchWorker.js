@@ -1,4 +1,4 @@
-import { getEngine, resolveEngineId, DEFAULT_ENGINE_ID } from "../utils/engineRegistry.js";
+import { runEngineAnalysis, resolveEngineId, DEFAULT_ENGINE_ID } from "../utils/engineRegistry.js";
 import { parseLutText } from "../utils/presetImporter.js";
 import { fitPolarisV3ToLut } from "../utils/polarisV3Engine.js";
 
@@ -17,6 +17,9 @@ self.onmessage = function (e) {
     mediaType,
     autoNormalizeTarget,
     inputProfile,
+    normalizeWeight,
+    sigmaWeight,
+    skinProtect,
     lutText,
   } = data;
 
@@ -46,19 +49,36 @@ self.onmessage = function (e) {
         mediaType: mediaType || "image",
         autoNormalizeTarget: Boolean(autoNormalizeTarget),
         inputProfile: inputProfile || "rec709",
+        normalizeWeight: Number.isFinite(normalizeWeight) ? normalizeWeight : 1.0,
+        sigmaWeight: Number.isFinite(sigmaWeight) ? sigmaWeight : 1.0,
+        skinProtect: Number.isFinite(skinProtect) ? skinProtect : 0.75,
         onStage: (stageText) => {
           self.postMessage({ type: "stage", jobId, stage: stageText });
         },
       };
 
-      const params = getEngine(resolvedEngineId).analyze(refView, tgtView, stageOpts);
+      const { params, lut32, lutMeta, bakeMs } = runEngineAnalysis(
+        resolvedEngineId,
+        refView,
+        tgtView,
+        stageOpts
+      );
 
       self.postMessage({
         type: "stage",
         jobId,
         stage: "Finalizing grading parameters...",
       });
-      self.postMessage({ type: "success", jobId, params });
+
+      if (lut32 instanceof Float32Array) {
+        const lutBuffer = lut32.buffer;
+        self.postMessage(
+          { type: "success", jobId, params, lutBuffer, lutMeta, bakeMs },
+          [lutBuffer]
+        );
+      } else {
+        self.postMessage({ type: "success", jobId, params, lutBuffer: null, lutMeta: null, bakeMs });
+      }
     } catch (err) {
       self.postMessage({
         type: "error",

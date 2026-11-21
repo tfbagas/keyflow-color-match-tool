@@ -8,22 +8,47 @@ import React, {
   useState,
 } from "react";
 import { Activity, ChevronDown } from "lucide-react";
-import { usePillIndicator } from "../hooks/usePillIndicator";
 import { useLanguage } from "../i18n/LanguageContext";
+import { usePillIndicator } from "../hooks/usePillIndicator";
 
-const SCOPE_W = 320;
-const SCOPE_H = 68;
-const SCOPE_DPR = 1; // Locked to 1x DPR to eliminate 3x retina 2D canvas fill-rate overhead
-const VIDEO_SCOPE_INTERVAL_MS = 165; // Max ~6 FPS during video playback
+// Fixed studio scope canvas resolution (crisp & undistorted at h-[188px])
+const SCOPE_W = 264;
+const SCOPE_H = 188;
+const VIDEO_SCOPE_INTERVAL_MS = 165;
+
+function drawIreGraticules(ctx, w, h) {
+  ctx.save();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.065)";
+  ctx.lineWidth = 1;
+  ctx.font = "500 8px 'JetBrains Mono', monospace";
+  ctx.fillStyle = "rgba(161, 161, 170, 0.72)";
+
+  const marks = [
+    { label: "100", frac: 0.04, yOff: 8 },
+    { label: "75", frac: 0.27, yOff: 3 },
+    { label: "50", frac: 0.5, yOff: 3 },
+    { label: "25", frac: 0.73, yOff: 3 },
+    { label: "0", frac: 0.96, yOff: -2 },
+  ];
+
+  marks.forEach(({ label, frac, yOff }) => {
+    const y = Math.round(h * frac) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(20, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+    ctx.fillText(label, 2, y + yOff);
+  });
+  ctx.restore();
+}
 
 function drawVectorscopeGraticuleAndSkinLine(ctx, w, h) {
   const cx = w * 0.5;
   const cy = h * 0.5;
-  const radius = Math.min(w, h) * 0.44;
+  const radius = Math.min(w, h) * 0.43;
 
-  // Outer & 50% saturation graticule rings
   ctx.save();
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.14)";
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -31,10 +56,9 @@ function drawVectorscopeGraticuleAndSkinLine(ctx, w, h) {
 
   ctx.beginPath();
   ctx.arc(cx, cy, radius * 0.5, 0, Math.PI * 2);
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.07)";
   ctx.stroke();
 
-  // Crosshair axes
   ctx.beginPath();
   ctx.moveTo(cx - radius, cy);
   ctx.lineTo(cx + radius, cy);
@@ -42,32 +66,31 @@ function drawVectorscopeGraticuleAndSkinLine(ctx, w, h) {
   ctx.lineTo(cx, cy + radius);
   ctx.stroke();
 
-  // Standard Rec.709 Skin-Tone Reference I-Line (~123 deg in Cb/Cr plane)
+  // Rec.709 Skin-Tone Reference I-Line (~123 deg)
   const skinAngle = (123 * Math.PI) / 180;
   const endX = cx + Math.cos(skinAngle) * radius;
   const endY = cy - Math.sin(skinAngle) * radius;
 
   ctx.setLineDash([3, 2]);
   ctx.strokeStyle = "rgba(251, 191, 36, 0.72)";
-  ctx.lineWidth = 1.25;
+  ctx.lineWidth = 1.15;
   ctx.beginPath();
   ctx.moveTo(cx, cy);
   ctx.lineTo(endX, endY);
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Rim target marker on the I-Line
-  ctx.fillStyle = "rgba(251, 191, 36, 0.88)";
+  ctx.fillStyle = "rgba(251, 191, 36, 0.9)";
   ctx.beginPath();
   ctx.arc(endX, endY, 1.8, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.font = "600 8px monospace";
+  ctx.font = "500 8px 'JetBrains Mono', monospace";
   ctx.fillStyle = "rgba(251, 191, 36, 0.85)";
   ctx.fillText(
     "I-LINE",
-    cx + Math.cos(skinAngle) * (radius * 0.72) - 30,
-    cy - Math.sin(skinAngle) * (radius * 0.72) + 2
+    cx + Math.cos(skinAngle) * (radius * 0.68) - 26,
+    cy - Math.sin(skinAngle) * (radius * 0.68) + 2
   );
   ctx.restore();
 }
@@ -79,38 +102,42 @@ const ProScopes = memo(
       isDragging = false,
       isVideoPlaying = false,
       isDesktopRealtime = false,
-      isCollapsed: controlledCollapsed,
-      onToggleCollapse,
+      isCollapsed = false,
+      skinSafe = true,
+      skinProtect = 75,
     },
     ref
   ) {
     const { t } = useLanguage();
-    const [mode, setMode] = useState("histogram");
-    const [fading, setFading] = useState(false);
-    const [localCollapsed, setLocalCollapsed] = useState(false);
-    const isCollapsed =
-      typeof controlledCollapsed === "boolean"
-        ? controlledCollapsed
-        : localCollapsed;
-
-    const scopeModes = [
-      { id: "histogram", label: t("scopes.histogram") },
-      { id: "parade", label: t("scopes.parade") },
-      { id: "vectorscope", label: t("scopes.vectorscope") },
-    ];
-
+    const [mode, setMode] = useState("parade");
+    const [isTelemetryOpen, setIsTelemetryOpen] = useState(true);
     const {
       containerRef: scopeTabContainerRef,
       registerTabRef: registerScopeTabRef,
-      pillStyle: scopePillStyle,
+      pillStyle: scopeTabPillStyle,
     } = usePillIndicator(mode);
+
+    const scopeModes = [
+      { id: "parade", label: "Parade", title: "RGB Parade" },
+      { id: "waveform", label: "Wave", title: "Luma Waveform" },
+      { id: "histogram", label: "Hist", title: "RGB Histogram" },
+      { id: "vectorscope", label: "Vector", title: "Vectorscope (Skin I-Line)" },
+    ];
 
     const canvasRef = useRef(null);
     const offscreenRef = useRef(null);
     const binsRef = useRef(null);
     const lastDrawAtRef = useRef(0);
     const latestFrameRef = useRef(null);
-    const modeTimerRef = useRef(null);
+
+    // Direct DOM refs for 60fps zero-rerender Signal Telemetry readouts
+    const peakIreRef = useRef(null);
+    const blackIreRef = useRef(null);
+    const dynamicRangeRef = useRef(null);
+    const avgChromaRef = useRef(null);
+    const gamutStatusRef = useRef(null);
+    const gamutDotRef = useRef(null);
+
     const stateRef = useRef({
       mode,
       isCollapsed,
@@ -126,276 +153,378 @@ const ProScopes = memo(
       isDesktopRealtime,
     };
     const prevStateRef = useRef({
-      mode: "histogram",
+      mode: "parade",
       isCollapsed: false,
       isDragging: false,
     });
 
-    const handleToggleCollapse = () => {
-      if (onToggleCollapse) {
-        onToggleCollapse();
-      } else {
-        setLocalCollapsed((v) => !v);
-      }
-    };
-
-    const handleModeChange = (nextMode) => {
-      if (nextMode === mode) return;
-      if (modeTimerRef.current) clearTimeout(modeTimerRef.current);
-      setFading(true);
-      modeTimerRef.current = setTimeout(() => {
-        modeTimerRef.current = null;
-        setMode(nextMode);
-        setFading(false);
-      }, 70);
-    };
-
-    useEffect(
-      () => () => {
-        if (modeTimerRef.current) clearTimeout(modeTimerRef.current);
-      },
-      []
-    );
-
-    const drawScope = useCallback((imageData, force = false) => {
-      const {
-        mode: curMode,
-        isCollapsed: collapsed,
-        isDragging: dragging,
-        isVideoPlaying: playing,
-        isDesktopRealtime: desktopRealtime,
-      } = stateRef.current;
-
-      const prev = prevStateRef.current;
-      const modeChanged = prev.mode !== curMode;
-      const justExpanded = prev.isCollapsed && !collapsed;
-      const justReleasedDrag = prev.isDragging && !dragging;
-      prevStateRef.current = {
-        mode: curMode,
-        isCollapsed: collapsed,
-        isDragging: dragging,
-      };
-
-      if (collapsed || (dragging && !desktopRealtime) || document.hidden) {
-        return;
-      }
-
-      const now = performance.now();
-      if (
-        !force &&
-        !desktopRealtime &&
-        playing &&
-        !modeChanged &&
-        !justExpanded &&
-        !justReleasedDrag &&
-        now - lastDrawAtRef.current < VIDEO_SCOPE_INTERVAL_MS
-      ) {
-        return;
-      }
-
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      const targetW = SCOPE_W * SCOPE_DPR;
-      const targetH = SCOPE_H * SCOPE_DPR;
-      if (canvas.width !== targetW || canvas.height !== targetH) {
-        canvas.width = targetW;
-        canvas.height = targetH;
-      }
-
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      const w = canvas.width;
-      const h = canvas.height;
-      ctx.clearRect(0, 0, w, h);
-
-      // Subtle background grid
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
-      ctx.lineWidth = 1;
-      if (curMode !== "vectorscope") {
-        [0.25, 0.5, 0.75].forEach((frac) => {
-          const y = Math.round(h * frac) + 0.5;
-          ctx.beginPath();
-          ctx.moveTo(0, y);
-          ctx.lineTo(w, y);
-          ctx.stroke();
-        });
-      }
-
+    const syncTelemetryDom = useCallback((imageData) => {
       if (!imageData || !imageData.data || imageData.data.length === 0) {
-        if (curMode === "vectorscope") {
-          drawVectorscopeGraticuleAndSkinLine(ctx, w, h);
-        }
+        if (peakIreRef.current) peakIreRef.current.textContent = "—";
+        if (blackIreRef.current) blackIreRef.current.textContent = "—";
+        if (dynamicRangeRef.current) dynamicRangeRef.current.textContent = "—";
+        if (avgChromaRef.current) avgChromaRef.current.textContent = "—";
+        if (gamutStatusRef.current) gamutStatusRef.current.textContent = "Standby";
+        if (gamutDotRef.current) gamutDotRef.current.style.backgroundColor = "#52525B";
         return;
       }
 
-      lastDrawAtRef.current = now;
-      const { data, width: imgW, height: imgH } = imageData;
+      const data = imageData.data;
+      const totalPixels = data.length >> 2;
+      const step = Math.max(1, (totalPixels / 2048) | 0);
+      const lumaHist = new Uint32Array(256);
+      let sampled = 0;
+      let chromaSum = 0;
+      let clippedPixels = 0;
 
-      if (curMode === "histogram") {
-        if (!binsRef.current) {
-          binsRef.current = {
-            r: new Uint32Array(256),
-            g: new Uint32Array(256),
-            b: new Uint32Array(256),
-            l: new Uint32Array(256),
-          };
+      for (let i = 0; i < totalPixels; i += step) {
+        const idx = i << 2;
+        const r = data[idx];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+        const luma = (r * 54 + g * 183 + b * 19) >> 8;
+        lumaHist[luma]++;
+
+        const maxC = r > g ? (r > b ? r : b) : g > b ? g : b;
+        const minC = r < g ? (r < b ? r : b) : g < b ? g : b;
+        const span = maxC - minC;
+        chromaSum += maxC > 0 ? span / maxC : 0;
+
+        if ((maxC >= 253 || minC <= 1) && span > 56) {
+          clippedPixels++;
         }
-        const { r: rBins, g: gBins, b: bBins, l: lBins } = binsRef.current;
-        rBins.fill(0);
-        gBins.fill(0);
-        bBins.fill(0);
-        lBins.fill(0);
+        sampled++;
+      }
 
-        const totalPixels = data.length >> 2;
-        const step = Math.max(1, (totalPixels / 6000) | 0);
-        for (let i = 0; i < totalPixels; i += step) {
-          const idx = i << 2;
-          const r = data[idx];
-          const g = data[idx + 1];
-          const b = data[idx + 2];
-          const l = (r * 77 + g * 150 + b * 29) >> 8;
-          rBins[r]++;
-          gBins[g]++;
-          bBins[b]++;
-          lBins[l]++;
+      if (sampled === 0) return;
+
+      const p01Target = Math.max(1, Math.floor(sampled * 0.01));
+      const p99Target = Math.max(1, Math.floor(sampled * 0.99));
+      let acc = 0;
+      let blackBin = 0;
+      let peakBin = 255;
+      let foundBlack = false;
+      for (let b = 0; b < 256; b++) {
+        acc += lumaHist[b];
+        if (!foundBlack && acc >= p01Target) {
+          blackBin = b;
+          foundBlack = true;
         }
-
-        let maxBin = 1;
-        for (let i = 2; i < 254; i++) {
-          if (rBins[i] > maxBin) maxBin = rBins[i];
-          if (gBins[i] > maxBin) maxBin = gBins[i];
-          if (bBins[i] > maxBin) maxBin = bBins[i];
-          if (lBins[i] > maxBin) maxBin = lBins[i];
+        if (acc >= p99Target) {
+          peakBin = b;
+          break;
         }
+      }
 
-        const drawChannel = (bins, stroke, fill) => {
-          ctx.beginPath();
-          ctx.moveTo(0, h);
-          for (let i = 0; i < 256; i++) {
-            const x = (i / 255) * w;
-            const norm = Math.min(1, bins[i] / maxBin);
-            const y = h - norm * (h - 6);
-            ctx.lineTo(x, y);
-          }
-          ctx.lineTo(w, h);
-          ctx.closePath();
-          ctx.fillStyle = fill;
-          ctx.fill();
-          ctx.strokeStyle = stroke;
-          ctx.lineWidth = 1.1;
-          ctx.stroke();
+      const peakIre = ((peakBin / 255) * 100).toFixed(1);
+      const blackIre = ((blackBin / 255) * 100).toFixed(1);
+      const peakLin = Math.max(Math.pow(peakBin / 255, 2.2), 0.001);
+      const blackLin = Math.max(Math.pow(blackBin / 255, 2.2), 0.0005);
+      const evStops = Math.max(0, Math.min(14, Math.log2(peakLin / blackLin))).toFixed(1);
+      const avgChromaPct = Math.round((chromaSum / sampled) * 100);
+      const clipRatio = clippedPixels / sampled;
+
+      if (peakIreRef.current) peakIreRef.current.textContent = `${peakIre} IRE`;
+      if (blackIreRef.current) blackIreRef.current.textContent = `${blackIre} IRE`;
+      if (dynamicRangeRef.current) dynamicRangeRef.current.textContent = `${evStops} EV`;
+      if (avgChromaRef.current) avgChromaRef.current.textContent = `${avgChromaPct}%`;
+
+      if (gamutStatusRef.current && gamutDotRef.current) {
+        if (clipRatio > 0.04) {
+          gamutStatusRef.current.textContent = "Gamut Clip";
+          gamutDotRef.current.style.backgroundColor = "#F59E0B";
+        } else if (peakBin >= 253) {
+          gamutStatusRef.current.textContent = "Peak >99";
+          gamutDotRef.current.style.backgroundColor = "#FBBF24";
+        } else {
+          gamutStatusRef.current.textContent = "Rec.709 Safe";
+          gamutDotRef.current.style.backgroundColor = "#34D399";
+        }
+      }
+    }, []);
+
+    const drawScope = useCallback(
+      (imageData, force = false) => {
+        const {
+          mode: curMode,
+          isCollapsed: collapsed,
+          isDragging: dragging,
+          isVideoPlaying: playing,
+          isDesktopRealtime: desktopRealtime,
+        } = stateRef.current;
+
+        const prev = prevStateRef.current;
+        const modeChanged = prev.mode !== curMode;
+        const justExpanded = prev.isCollapsed && !collapsed;
+        const justReleasedDrag = prev.isDragging && !dragging;
+        prevStateRef.current = {
+          mode: curMode,
+          isCollapsed: collapsed,
+          isDragging: dragging,
         };
 
-        ctx.globalCompositeOperation = "screen";
-        drawChannel(rBins, "rgba(248, 113, 113, 0.75)", "rgba(248, 113, 113, 0.16)");
-        drawChannel(gBins, "rgba(110, 231, 183, 0.75)", "rgba(110, 231, 183, 0.16)");
-        drawChannel(bBins, "rgba(96, 165, 250, 0.75)", "rgba(96, 165, 250, 0.16)");
-        ctx.globalCompositeOperation = "source-over";
-        drawChannel(lBins, "rgba(244, 245, 247, 0.65)", "rgba(244, 245, 247, 0.06)");
-        return;
-      }
+        if (collapsed || (dragging && !desktopRealtime) || document.hidden) {
+          return;
+        }
 
-      if (!offscreenRef.current) {
-        const oc = document.createElement("canvas");
-        oc.width = w;
-        oc.height = h;
-        const octx = oc.getContext("2d");
-        const imgBuf = octx.createImageData(w, h);
-        const buf32 = new Uint32Array(imgBuf.data.buffer);
-        offscreenRef.current = { oc, octx, imgBuf, buf32 };
-      }
-      const { oc, octx, imgBuf, buf32 } = offscreenRef.current;
-      const out = imgBuf.data;
-      buf32.fill(0);
+        const now = performance.now();
+        if (
+          !force &&
+          !desktopRealtime &&
+          playing &&
+          !modeChanged &&
+          !justExpanded &&
+          !justReleasedDrag &&
+          now - lastDrawAtRef.current < VIDEO_SCOPE_INTERVAL_MS
+        ) {
+          return;
+        }
 
-      if (curMode === "parade") {
-        const gap = 6;
-        const colW = Math.floor((w - gap * 2) / 3);
-        const off0 = 0;
-        const off1 = colW + gap;
-        const off2 = (colW + gap) * 2;
+        syncTelemetryDom(imageData);
 
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
-        ctx.beginPath();
-        ctx.moveTo(colW + gap / 2, 0);
-        ctx.lineTo(colW + gap / 2, h);
-        ctx.moveTo(colW * 2 + gap * 1.5, 0);
-        ctx.lineTo(colW * 2 + gap * 1.5, h);
-        ctx.stroke();
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        if (canvas.width !== SCOPE_W || canvas.height !== SCOPE_H) {
+          canvas.width = SCOPE_W;
+          canvas.height = SCOPE_H;
+        }
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        const w = canvas.width;
+        const h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+
+        if (curMode !== "vectorscope") {
+          drawIreGraticules(ctx, w, h);
+        }
+
+        if (!imageData || !imageData.data || imageData.data.length === 0) {
+          if (curMode === "vectorscope") {
+            drawVectorscopeGraticuleAndSkinLine(ctx, w, h);
+          }
+          return;
+        }
+
+        lastDrawAtRef.current = now;
+        const { data, width: imgW, height: imgH } = imageData;
+        const plotLeft = 20;
+        const plotW = w - plotLeft - 2;
+        const plotTop = Math.round(h * 0.04);
+        const plotBottom = Math.round(h * 0.96);
+        const plotH = Math.max(8, plotBottom - plotTop);
+
+        if (curMode === "histogram") {
+          if (!binsRef.current) {
+            binsRef.current = {
+              r: new Uint32Array(256),
+              g: new Uint32Array(256),
+              b: new Uint32Array(256),
+              l: new Uint32Array(256),
+            };
+          }
+          const { r: rBins, g: gBins, b: bBins, l: lBins } = binsRef.current;
+          rBins.fill(0);
+          gBins.fill(0);
+          bBins.fill(0);
+          lBins.fill(0);
+
+          const totalPixels = data.length >> 2;
+          const step = Math.max(1, (totalPixels / 6000) | 0);
+          for (let i = 0; i < totalPixels; i += step) {
+            const idx = i << 2;
+            const r = data[idx];
+            const g = data[idx + 1];
+            const b = data[idx + 2];
+            const l = (r * 77 + g * 150 + b * 29) >> 8;
+            rBins[r]++;
+            gBins[g]++;
+            bBins[b]++;
+            lBins[l]++;
+          }
+
+          let maxBin = 1;
+          for (let i = 2; i < 254; i++) {
+            if (rBins[i] > maxBin) maxBin = rBins[i];
+            if (gBins[i] > maxBin) maxBin = gBins[i];
+            if (bBins[i] > maxBin) maxBin = bBins[i];
+            if (lBins[i] > maxBin) maxBin = lBins[i];
+          }
+
+          const drawChannel = (bins, stroke, fill) => {
+            ctx.beginPath();
+            ctx.moveTo(plotLeft, plotBottom);
+            for (let i = 0; i < 256; i++) {
+              const x = plotLeft + (i / 255) * plotW;
+              const norm = Math.min(1, bins[i] / maxBin);
+              const y = plotBottom - norm * (plotH - 4);
+              ctx.lineTo(x, y);
+            }
+            ctx.lineTo(plotLeft + plotW, plotBottom);
+            ctx.closePath();
+            ctx.fillStyle = fill;
+            ctx.fill();
+            ctx.strokeStyle = stroke;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          };
+
+          ctx.globalCompositeOperation = "screen";
+          drawChannel(rBins, "rgba(239, 68, 68, 0.8)", "rgba(239, 68, 68, 0.16)");
+          drawChannel(gBins, "rgba(52, 211, 153, 0.76)", "rgba(52, 211, 153, 0.16)");
+          drawChannel(bBins, "rgba(96, 165, 250, 0.8)", "rgba(96, 165, 250, 0.16)");
+          ctx.globalCompositeOperation = "source-over";
+          drawChannel(lBins, "rgba(244, 244, 245, 0.58)", "rgba(244, 244, 245, 0.05)");
+          return;
+        }
+
+        if (
+          !offscreenRef.current ||
+          offscreenRef.current.oc.width !== w ||
+          offscreenRef.current.oc.height !== h
+        ) {
+          const oc = document.createElement("canvas");
+          oc.width = w;
+          oc.height = h;
+          const octx = oc.getContext("2d");
+          const imgBuf = octx.createImageData(w, h);
+          const buf32 = new Uint32Array(imgBuf.data.buffer);
+          offscreenRef.current = { oc, octx, imgBuf, buf32 };
+        }
+        const { oc, octx, imgBuf, buf32 } = offscreenRef.current;
+        const out = imgBuf.data;
+        buf32.fill(0);
 
         const safeW = Math.max(1, imgW || 1);
         const safeH = Math.max(1, imgH || Math.round((data.length >> 2) / safeW));
-        const xStep = Math.max(1, Math.floor(safeW / colW));
-        const yStep = Math.max(1, Math.floor(safeH / 54));
-        const hSpan = h - 2;
 
-        for (let py = 0; py < safeH; py += yStep) {
-          const rowOffset = py * safeW;
-          for (let px = 0; px < safeW; px += xStep) {
-            const idx = (rowOffset + px) << 2;
-            if (idx + 2 >= data.length) continue;
-            const localX = Math.min(colW - 1, ((px * colW) / safeW) | 0);
+        if (curMode === "parade") {
+          const gap = 4;
+          const colW = Math.floor((plotW - gap * 2) / 3);
+          const off0 = plotLeft;
+          const off1 = plotLeft + colW + gap;
+          const off2 = plotLeft + (colW + gap) * 2;
 
-            const yr = Math.max(1, Math.min(hSpan, h - 1 - ((data[idx] * hSpan) >> 8)));
-            const pr = (yr * w + (off0 + localX)) << 2;
-            out[pr] = Math.min(255, out[pr] + 92);
-            out[pr + 1] = Math.min(255, out[pr + 1] + 40);
-            out[pr + 2] = Math.min(255, out[pr + 2] + 40);
-            out[pr + 3] = Math.min(255, out[pr + 3] + 100);
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.07)";
+          ctx.beginPath();
+          ctx.moveTo(off0 + colW + gap / 2, plotTop);
+          ctx.lineTo(off0 + colW + gap / 2, plotBottom);
+          ctx.moveTo(off1 + colW + gap / 2, plotTop);
+          ctx.lineTo(off1 + colW + gap / 2, plotBottom);
+          ctx.stroke();
 
-            const yg = Math.max(1, Math.min(hSpan, h - 1 - ((data[idx + 1] * hSpan) >> 8)));
-            const pg = (yg * w + (off1 + localX)) << 2;
-            out[pg] = Math.min(255, out[pg] + 40);
-            out[pg + 1] = Math.min(255, out[pg + 1] + 88);
-            out[pg + 2] = Math.min(255, out[pg + 2] + 68);
-            out[pg + 3] = Math.min(255, out[pg + 3] + 100);
+          const xStep = Math.max(1, Math.floor(safeW / colW));
+          const yStep = Math.max(1, Math.floor(safeH / 88));
 
-            const yb = Math.max(1, Math.min(hSpan, h - 1 - ((data[idx + 2] * hSpan) >> 8)));
-            const pb = (yb * w + (off2 + localX)) << 2;
-            out[pb] = Math.min(255, out[pb] + 36);
-            out[pb + 1] = Math.min(255, out[pb + 1] + 62);
-            out[pb + 2] = Math.min(255, out[pb + 2] + 94);
-            out[pb + 3] = Math.min(255, out[pb + 3] + 100);
+          for (let py = 0; py < safeH; py += yStep) {
+            const rowOffset = py * safeW;
+            for (let px = 0; px < safeW; px += xStep) {
+              const idx = (rowOffset + px) << 2;
+              if (idx + 2 >= data.length) continue;
+              const localX = Math.min(colW - 1, ((px * colW) / safeW) | 0);
+
+              const yr = Math.max(
+                plotTop,
+                Math.min(plotBottom, plotBottom - ((data[idx] * plotH) >> 8))
+              );
+              const pr = (yr * w + (off0 + localX)) << 2;
+              out[pr] = Math.min(255, out[pr] + 95);
+              out[pr + 1] = Math.min(255, out[pr + 1] + 34);
+              out[pr + 2] = Math.min(255, out[pr + 2] + 34);
+              out[pr + 3] = Math.min(255, out[pr + 3] + 108);
+
+              const yg = Math.max(
+                plotTop,
+                Math.min(plotBottom, plotBottom - ((data[idx + 1] * plotH) >> 8))
+              );
+              const pg = (yg * w + (off1 + localX)) << 2;
+              out[pg] = Math.min(255, out[pg] + 32);
+              out[pg + 1] = Math.min(255, out[pg + 1] + 92);
+              out[pg + 2] = Math.min(255, out[pg + 2] + 66);
+              out[pg + 3] = Math.min(255, out[pg + 3] + 108);
+
+              const yb = Math.max(
+                plotTop,
+                Math.min(plotBottom, plotBottom - ((data[idx + 2] * plotH) >> 8))
+              );
+              const pb = (yb * w + (off2 + localX)) << 2;
+              out[pb] = Math.min(255, out[pb] + 36);
+              out[pb + 1] = Math.min(255, out[pb + 1] + 64);
+              out[pb + 2] = Math.min(255, out[pb + 2] + 104);
+              out[pb + 3] = Math.min(255, out[pb + 3] + 108);
+            }
           }
+
+          octx.putImageData(imgBuf, 0, 0);
+          ctx.drawImage(oc, 0, 0);
+          return;
         }
 
-        octx.putImageData(imgBuf, 0, 0);
-        ctx.drawImage(oc, 0, 0);
-        return;
-      }
+        if (curMode === "waveform") {
+          const xStep = Math.max(1, Math.floor(safeW / plotW));
+          const yStep = Math.max(1, Math.floor(safeH / 88));
 
-      if (curMode === "vectorscope") {
-        const cx = w * 0.5;
-        const cy = h * 0.5;
-        const radius = Math.min(w, h) * 0.44;
-        const scale2R = (2 * radius) / 255;
+          for (let py = 0; py < safeH; py += yStep) {
+            const rowOffset = py * safeW;
+            for (let px = 0; px < safeW; px += xStep) {
+              const idx = (rowOffset + px) << 2;
+              if (idx + 2 >= data.length) continue;
+              const sx = plotLeft + Math.min(plotW - 1, ((px * plotW) / safeW) | 0);
+              const r = data[idx];
+              const g = data[idx + 1];
+              const b = data[idx + 2];
+              const luma = (r * 54 + g * 183 + b * 19) >> 8;
+              const sy = Math.max(
+                plotTop,
+                Math.min(plotBottom, plotBottom - ((luma * plotH) >> 8))
+              );
+              const p = (sy * w + sx) << 2;
+              out[p] = Math.min(255, out[p] + ((r + 185) >> 2));
+              out[p + 1] = Math.min(255, out[p + 1] + ((g + 195) >> 2));
+              out[p + 2] = Math.min(255, out[p + 2] + ((b + 205) >> 2));
+              out[p + 3] = Math.min(255, out[p + 3] + 112);
+            }
+          }
 
-        const totalPixels = data.length >> 2;
-        const step = Math.max(1, (totalPixels / 5184) | 0);
-        for (let i = 0; i < totalPixels; i += step) {
-          const idx = i << 2;
-          const r8 = data[idx];
-          const g8 = data[idx + 1];
-          const b8 = data[idx + 2];
-          const cb = -0.1687 * r8 - 0.3313 * g8 + 0.5 * b8;
-          const cr = 0.5 * r8 - 0.4187 * g8 - 0.0813 * b8;
-          const px = (cx + cb * scale2R) | 0;
-          const py = (cy - cr * scale2R) | 0;
-          if (px < 0 || px >= w || py < 0 || py >= h) continue;
-          const p = (py * w + px) << 2;
-          out[p] = out[p] ? (out[p] + r8) >> 1 : r8;
-          out[p + 1] = out[p + 1] ? (out[p + 1] + g8) >> 1 : g8;
-          out[p + 2] = out[p + 2] ? (out[p + 2] + b8) >> 1 : b8;
-          const a = out[p + 3] + 115;
-          out[p + 3] = a > 255 ? 255 : a;
+          octx.putImageData(imgBuf, 0, 0);
+          ctx.drawImage(oc, 0, 0);
+          return;
         }
 
-        octx.putImageData(imgBuf, 0, 0);
-        ctx.drawImage(oc, 0, 0);
-        drawVectorscopeGraticuleAndSkinLine(ctx, w, h);
-      }
-    }, []);
+        if (curMode === "vectorscope") {
+          const cx = w * 0.5;
+          const cy = h * 0.5;
+          const radius = Math.min(w, h) * 0.43;
+          const scale2R = (2 * radius) / 255;
+
+          const totalPixels = data.length >> 2;
+          const step = Math.max(1, (totalPixels / 5184) | 0);
+          for (let i = 0; i < totalPixels; i += step) {
+            const idx = i << 2;
+            const r8 = data[idx];
+            const g8 = data[idx + 1];
+            const b8 = data[idx + 2];
+            const cb = -0.1687 * r8 - 0.3313 * g8 + 0.5 * b8;
+            const cr = 0.5 * r8 - 0.4187 * g8 - 0.0813 * b8;
+            const px = (cx + cb * scale2R) | 0;
+            const py = (cy - cr * scale2R) | 0;
+            if (px < 0 || px >= w || py < 0 || py >= h) continue;
+            const p = (py * w + px) << 2;
+            out[p] = out[p] ? (out[p] + r8) >> 1 : r8;
+            out[p + 1] = out[p + 1] ? (out[p + 1] + g8) >> 1 : g8;
+            out[p + 2] = out[p + 2] ? (out[p + 2] + b8) >> 1 : b8;
+            const a = out[p + 3] + 118;
+            out[p + 3] = a > 255 ? 255 : a;
+          }
+
+          octx.putImageData(imgBuf, 0, 0);
+          ctx.drawImage(oc, 0, 0);
+          drawVectorscopeGraticuleAndSkinLine(ctx, w, h);
+        }
+      },
+      [syncTelemetryDom]
+    );
 
     useImperativeHandle(
       ref,
@@ -415,106 +544,152 @@ const ProScopes = memo(
       drawScope(latestFrameRef.current, true);
     }, [mode, isCollapsed, isDragging, isVideoPlaying, hasMedia, drawScope]);
 
+    const skinLockLabel =
+      !hasMedia
+        ? "Standby"
+        : skinProtect <= 0
+        ? "Bypassed"
+        : skinSafe
+        ? `Locked ${skinProtect}%`
+        : `Shift (${skinProtect}%)`;
+    const skinLockColor =
+      !hasMedia || skinProtect <= 0
+        ? "#52525B"
+        : skinSafe
+        ? "#34D399"
+        : "#F59E0B";
+
     return (
       <div
-        data-open={!isCollapsed}
-        className="capsule-disclosure rounded-[18px] overflow-hidden bg-white/[0.04] border border-white/[0.13] shadow-[inset_0_1px_1px_rgba(255,255,255,0.24)] px-3.5 py-2.5"
+        className="flex-1 min-h-0 flex flex-col gap-3 px-3 py-2.5 select-none"
         style={{ contain: "layout paint" }}
       >
-        <div className="flex items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={handleToggleCollapse}
-            aria-expanded={!isCollapsed}
-            aria-label={
-              isCollapsed ? t("scopes.expandScopes") : t("scopes.collapseScopes")
-            }
-            className="flex items-center gap-1.5 text-left cursor-pointer group select-none"
-          >
-            <Activity className="w-3.5 h-3.5 text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors" />
-            <span className="text-[10px] font-mono uppercase tracking-[0.14em] text-[#9CA3AF] group-hover:text-[#E2E4E9] transition-colors">
-              {t("scopes.title")}
-            </span>
-            {mode === "vectorscope" && !isCollapsed && (
-              <span className="hidden sm:inline-flex items-center px-1.5 py-0.2 rounded bg-amber-400/12 border border-amber-400/30 text-[9px] font-mono text-amber-300">
-                I-Line
+        <div className="flex flex-col shrink-0">
+          {/* Header */}
+          <div className="flex items-center justify-between gap-1.5 mb-2 shrink-0">
+            <div className="flex items-center gap-1.5">
+              <Activity className="w-3 h-3 text-[#A1A1AA]" />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#A1A1AA]">
+                {t("scopes.title")}
               </span>
+            </div>
+            {mode === "vectorscope" ? (
+              <span className="text-[9px] font-mono text-amber-300/85">I-LINE</span>
+            ) : (
+              <span className="text-[9px] font-mono text-[#A1A1AA]">IRE 0–100</span>
             )}
-          </button>
+          </div>
 
-          <div className="flex items-center gap-1.5">
-            {!isCollapsed && (
-              <div
-                ref={scopeTabContainerRef}
-                className="relative inline-flex items-center p-0.5 rounded-lg bg-[#0A0A0E] border border-white/[0.09]"
-              >
-                <div
-                  aria-hidden="true"
-                  className="m3-pill-indicator optical-refract-glass pointer-events-none absolute top-0.5 bottom-0.5 left-0 rounded-md bg-white/[0.16] border border-white/[0.24]"
-                  style={{
-                    transform: `translate3d(${scopePillStyle.left}px, 0, 0)`,
-                    width: `${scopePillStyle.width}px`,
-                    opacity: scopePillStyle.opacity,
-                  }}
-                />
-                {scopeModes.map((m) => (
-                  <button
-                    key={m.id}
-                    ref={registerScopeTabRef(m.id)}
-                    type="button"
-                    onClick={() => handleModeChange(m.id)}
-                    className={`relative z-10 px-2 py-0.5 rounded-md text-[10px] font-medium transition-colors cursor-pointer ${
-                      mode === m.id
-                        ? "text-[#F4F5F7] font-semibold"
-                        : "text-[#9CA3AF] hover:text-[#F4F5F7]"
-                    }`}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={handleToggleCollapse}
-              aria-expanded={!isCollapsed}
-              aria-label={
-                isCollapsed ? t("scopes.expandScopes") : t("scopes.collapseScopes")
-              }
-              title={
-                isCollapsed ? t("scopes.expandScopes") : t("scopes.collapseScopes")
-              }
-              className="m3-btn-morph p-1 rounded-full bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] cursor-pointer"
-            >
-              <ChevronDown
-                className={`w-3 h-3 transition-transform duration-300 ${
-                  !isCollapsed ? "rotate-180" : "rotate-0"
-                }`}
-              />
-            </button>
+          {/* 4 Equal-Width Unclipped Scope Tabs with Sliding Hardware Indicator Pill: Parade / Wave / Hist / Vector */}
+          <div
+            ref={scopeTabContainerRef}
+            className="relative grid grid-cols-4 gap-0.5 p-0.5 rounded-md bg-[#08090A] border border-white/[0.07] shrink-0"
+          >
+            <div
+              aria-hidden="true"
+              className="studio-sliding-pill pointer-events-none absolute top-0.5 bottom-0.5 left-0 rounded-[4px] bg-[#1C1F26] border border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_1px_6px_rgba(0,0,0,0.5)]"
+              style={scopeTabPillStyle}
+            />
+            {scopeModes.map((m) => {
+              const active = mode === m.id;
+              return (
+                <button
+                  key={m.id}
+                  ref={registerScopeTabRef(m.id)}
+                  type="button"
+                  title={m.title}
+                  onClick={() => setMode(m.id)}
+                  className={`relative z-10 py-1 rounded-[4px] text-[10px] font-medium transition-[color,transform] duration-150 ease-[var(--ease-shutter)] active:scale-[0.96] cursor-pointer whitespace-nowrap text-center ${
+                    active
+                      ? "text-[#F4F4F5]"
+                      : "text-[#A1A1AA] hover:text-[#F4F4F5]"
+                  }`}
+                >
+                  {m.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        <div
-          className={`m3-collapse-grid ${!isCollapsed ? "mt-1.5" : "mt-0"}`}
-          data-expanded={!isCollapsed}
-        >
-          <div className="m3-collapse-inner">
-            <div className="relative w-full h-[68px] rounded-xl bg-[#09090C] border border-white/[0.07] overflow-hidden flex items-center justify-center">
-              <canvas
-                ref={canvasRef}
-                width={SCOPE_W}
-                height={SCOPE_H}
-                className={`w-full h-full object-fill transition-opacity duration-[160ms] ${
-                  fading ? "opacity-0" : "opacity-100"
+        {/* Flexible Studio Scope Well (Fills naturally, zero gap above Signal Telemetry) */}
+        <div className="relative w-full flex-1 min-h-[172px] max-h-[220px] rounded-md bg-[#08090A] border border-white/[0.07] overflow-hidden flex items-center justify-center">
+          <canvas
+            ref={canvasRef}
+            width={SCOPE_W}
+            height={SCOPE_H}
+            className="w-full h-full block"
+          />
+          {!hasMedia && mode !== "vectorscope" && (
+            <span className="absolute text-[10px] font-mono text-[#A1A1AA]/80 pointer-events-none text-center px-3">
+              {t("scopes.emptyHint")}
+            </span>
+          )}
+        </div>
+
+        {/* Compact Collapsible Signal Telemetry Readout (CSS Grid 0fr -> 1fr) */}
+        <div className="pt-2.5 border-t border-white/[0.07] shrink-0">
+          <button
+            type="button"
+            aria-expanded={isTelemetryOpen}
+            onClick={() => setIsTelemetryOpen((v) => !v)}
+            className="w-full flex items-center justify-between text-[9px] font-semibold uppercase tracking-[0.08em] text-[#A1A1AA] hover:text-[#E4E4E7] transition-colors duration-150 cursor-pointer"
+          >
+            <span>Signal Telemetry</span>
+            <span className="inline-flex items-center gap-1.5 font-mono font-normal text-[#71717A]">
+              <span>Rec.709</span>
+              <ChevronDown
+                className={`studio-chevron w-3 h-3 text-[#71717A] ${
+                  isTelemetryOpen ? "rotate-180" : "rotate-0"
                 }`}
               />
-              {!hasMedia && mode !== "vectorscope" && (
-                <span className="absolute text-[10px] font-mono text-[#9CA3AF]/50 pointer-events-none">
-                  {t("scopes.emptyHint")}
-                </span>
-              )}
+            </span>
+          </button>
+          <div
+            className="studio-collapse-grid"
+            data-expanded={isTelemetryOpen}
+            aria-hidden={!isTelemetryOpen}
+          >
+            <div className="studio-collapse-inner">
+              <div className="mt-1.5 rounded-md bg-[#08090A] border border-white/[0.07] divide-y divide-white/[0.06] text-[10px] font-mono tabular-nums">
+                <div className="flex items-center justify-between px-2.5 py-1.5">
+                  <span className="text-[#A1A1AA]">Peak Luma</span>
+                  <span ref={peakIreRef} className="text-[#F4F4F5]">—</span>
+                </div>
+                <div className="flex items-center justify-between px-2.5 py-1.5">
+                  <span className="text-[#A1A1AA]">Black Floor</span>
+                  <span ref={blackIreRef} className="text-[#F4F4F5]">—</span>
+                </div>
+                <div className="flex items-center justify-between px-2.5 py-1.5">
+                  <span className="text-[#A1A1AA]">Dynamic Range</span>
+                  <span ref={dynamicRangeRef} className="text-[#F4F4F5]">—</span>
+                </div>
+                <div className="flex items-center justify-between px-2.5 py-1.5">
+                  <span className="text-[#A1A1AA]">Avg Chroma</span>
+                  <span ref={avgChromaRef} className="text-[#F4F4F5]">—</span>
+                </div>
+                <div className="flex items-center justify-between px-2.5 py-1.5">
+                  <span className="text-[#A1A1AA]">Skin-Tone Lock</span>
+                  <span className="inline-flex items-center gap-1.5 text-[#F4F4F5]">
+                    <span
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ backgroundColor: skinLockColor }}
+                    />
+                    <span>{skinLockLabel}</span>
+                  </span>
+                </div>
+                <div className="flex items-center justify-between px-2.5 py-1.5">
+                  <span className="text-[#A1A1AA]">Gamut Status</span>
+                  <span className="inline-flex items-center gap-1.5 text-[#F4F4F5]">
+                    <span
+                      ref={gamutDotRef}
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ backgroundColor: "#52525B" }}
+                    />
+                    <span ref={gamutStatusRef}>Standby</span>
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>

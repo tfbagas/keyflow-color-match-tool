@@ -3,9 +3,11 @@ import { X, Download, Sparkles, Loader2 } from "lucide-react";
 import { renderReleasePosterBlob } from "../utils/releaseKitGenerator";
 import { downloadBlob } from "../utils/kfplugPackager";
 import { useLanguage } from "../i18n/LanguageContext";
+import { usePresence } from "../hooks/usePresence";
 
 export default function ReleaseMediaKitModal({ isOpen, onClose }) {
   const { lang, setLang, t } = useLanguage();
+  const { isMounted, state: presenceState } = usePresence(isOpen, 160);
   const [posterData, setPosterData] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [isRendering, setIsRendering] = useState(false);
@@ -62,18 +64,20 @@ export default function ReleaseMediaKitModal({ isOpen, onClose }) {
     downloadBlob(posterData.blob, posterData.fileName);
   }, [posterData]);
 
-  if (!isOpen) return null;
+  if (!isMounted) return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-md"
+      data-state={presenceState}
+      className="studio-backdrop fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-md"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-labelledby="release-poster-modal-title"
     >
       <div
-        className="optical-refract-glass m3-modal-enter relative w-full max-w-5xl rounded-2xl bg-[#0C0E13]/92 border border-white/[0.14] p-4 sm:p-6 space-y-4 shadow-2xl"
+        data-state={presenceState}
+        className="studio-modal optical-refract-glass relative w-full max-w-5xl rounded-2xl bg-[#0C0E13]/92 border border-white/[0.14] p-4 sm:p-6 space-y-4 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

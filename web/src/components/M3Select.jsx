@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { ChevronDown, Check } from "lucide-react";
+import { usePresence } from "../hooks/usePresence";
 
 export default function M3Select({ value, onChange, options = [], ariaLabel }) {
   const [open, setOpen] = useState(false);
+  const { isMounted, state: presenceState } = usePresence(open, 130);
   const [openUpward, setOpenUpward] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const containerRef = useRef(null);
@@ -111,25 +113,22 @@ export default function M3Select({ value, onChange, options = [], ariaLabel }) {
       >
         <span className="truncate font-medium">{selectedOption.label}</span>
         <ChevronDown
-          className={`w-4 h-4 text-[#9CA3AF] shrink-0 transition-transform duration-300 ${
-            open ? "rotate-180 text-[#E2E4E9]" : ""
+          className={`studio-chevron w-4 h-4 text-[#9CA3AF] shrink-0 ${
+            open ? "rotate-180 text-[#E2E4E9]" : "rotate-0"
           }`}
-          style={{ transitionTimingFunction: "var(--ease-m3-spring)" }}
         />
       </button>
 
-      {/* Dropdown Menu with Smooth Grid Height & Liquid Morph Transition */}
-      <div
-        aria-hidden={!open}
-        data-expanded={open}
-        className={`m3-collapse-grid absolute left-0 right-0 z-50 ${
-          openUpward ? "bottom-full mb-2" : "top-full mt-1.5"
-        }`}
-      >
+      {/* Dropdown Menu with Crisp 190ms Optical Unfold Transition */}
+      {isMounted && (
         <div
           ref={menuRef}
           role="listbox"
-          className="m3-collapse-inner rounded-xl bg-[#15151B] border border-white/[0.14] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_14px_34px_rgba(0,0,0,0.75)]"
+          data-state={presenceState}
+          data-placement={openUpward ? "top" : "bottom"}
+          className={`studio-popover absolute left-0 right-0 z-50 rounded-xl bg-[#15151B]/98 backdrop-blur-xl border border-white/[0.14] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_14px_34px_rgba(0,0,0,0.75)] ${
+            openUpward ? "bottom-full mb-2" : "top-full mt-1.5"
+          }`}
         >
           <div className="p-1 space-y-0.5">
             {options.map((opt, idx) => {
@@ -164,7 +163,7 @@ export default function M3Select({ value, onChange, options = [], ariaLabel }) {
             })}
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

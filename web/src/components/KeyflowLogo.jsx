@@ -9,7 +9,7 @@ export default function KeyflowLogo({ size = 32, className = "" }) {
   return (
     <div
       style={{ width: size, height: size }}
-      className={`relative rounded-lg bg-[#1E1E24] border border-white/10 flex items-center justify-center shrink-0 select-none ${className}`}
+      className={`relative rounded-md bg-[#15171C] border border-white/[0.09] flex items-center justify-center shrink-0 select-none ${className}`}
     >
       <svg
         viewBox="0 0 40 40"

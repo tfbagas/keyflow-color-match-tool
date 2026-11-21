@@ -5,6 +5,7 @@ import { encodeGradeToHash, generateQrMatrix } from "../utils/shareCodec";
 import { formatEngineLabel } from "../utils/engineRegistry";
 import { getLogProfile } from "../utils/logProfiles";
 import { useLanguage } from "../i18n/LanguageContext";
+import { usePresence } from "../hooks/usePresence";
 
 function formatEngineName(engineId) {
   return formatEngineLabel(engineId);
@@ -21,14 +22,15 @@ export default function ShareModal({
   canShareFile = false,
 }) {
   const { t } = useLanguage();
+  const { isMounted, state: presenceState } = usePresence(isOpen, 160);
   const [copied, setCopied] = useState(false);
   const canvasRef = useRef(null);
 
-  const hash = isOpen
+  const hash = isMounted
     ? encodeGradeToHash({ engineId, logProfile, matchStrength, params })
     : "";
   const shareUrl =
-    isOpen && typeof window !== "undefined"
+    isMounted && typeof window !== "undefined"
       ? `${window.location.origin}${window.location.pathname}${hash}`
       : "";
 
@@ -91,19 +93,21 @@ export default function ShareModal({
     }
   };
 
-  if (!isOpen) return null;
+  if (!isMounted || typeof document === "undefined") return null;
 
   return createPortal(
     <div
+      data-state={presenceState}
       onClick={onClose}
-      className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
+      className="studio-backdrop fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
     >
       <div
+        data-state={presenceState}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={t("shareModal.title")}
-        className="w-full max-w-sm rounded-2xl bg-[#131419] border border-white/[0.16] shadow-2xl p-4 space-y-3.5 text-left"
+        className="studio-modal w-full max-w-sm rounded-2xl bg-[#101216]/95 backdrop-blur-2xl border border-white/[0.12] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_24px_64px_rgba(0,0,0,0.85)] p-4 space-y-3.5 text-left"
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

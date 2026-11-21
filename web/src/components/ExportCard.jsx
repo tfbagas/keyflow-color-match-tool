@@ -38,7 +38,7 @@ const ExportCard = memo(function ExportCard({
   const { t } = useLanguage();
   const [isExpanded, setIsExpanded] = useState(true);
   const [isMetaExpanded, setIsMetaExpanded] = useState(false);
-  const [cubeSize, setCubeSize] = useState(33);
+  const [cubeSize, setCubeSize] = useState(32);
   const [exportedKey, setExportedKey] = useState(null);
   const timerRef = useRef(null);
   const canShare = typeof onShare === "function";
@@ -47,7 +47,7 @@ const ExportCard = memo(function ExportCard({
   const safeBase = rawBase.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "Custom_Look";
   const codename = getEngineCodename(engineId);
   const engineSuffix = codename ? `_${codename}` : "";
-  const previewFilename = /_(altair|vega|sirius|polaris|v[1234])$/i.test(safeBase)
+  const previewFilename = /_(altair45|altair_refresh|altair|vega|sirius|polaris|v[1234])$/i.test(safeBase)
     ? `${safeBase}.kfplug`
     : `${safeBase}${engineSuffix}.kfplug`;
 
@@ -129,10 +129,9 @@ const ExportCard = memo(function ExportCard({
             className="m3-btn-morph p-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.09] text-[#9CA3AF] hover:text-[#E2E4E9] border border-white/[0.09] cursor-pointer"
           >
             <ChevronDown
-              className={`w-3.5 h-3.5 transition-transform duration-300 ${
+              className={`studio-chevron w-3.5 h-3.5 ${
                 isExpanded ? "rotate-180" : "rotate-0"
               }`}
-              style={{ transitionTimingFunction: "var(--ease-m3-spring)" }}
             />
           </button>
         </div>
@@ -340,7 +339,7 @@ const ExportCard = memo(function ExportCard({
                   title={t("exportCard.cubeGridTitle")}
                   className="inline-flex items-center p-0.5 rounded-lg bg-[#0A0A0D]/70 border border-white/[0.09] text-[10px] font-mono shrink-0"
                 >
-                  {[17, 33, 65].map((sz) => (
+                  {[17, 32, 33, 65].map((sz) => (
                     <button
                       key={sz}
                       type="button"

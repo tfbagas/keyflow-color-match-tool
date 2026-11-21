@@ -1,21 +1,20 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
-  Columns,
   MoveHorizontal,
   MoveVertical,
   Eye,
-  Pin,
-  PinOff,
   Pipette,
-  ScanEye,
-  Search,
   RotateCcw,
+  Sparkles,
+  Camera,
+  Check,
+  ChevronDown,
+  Undo2,
+  Redo2,
+  RefreshCw,
 } from "lucide-react";
-import { usePillIndicator } from "../hooks/usePillIndicator";
 import { usePixelReadout } from "../hooks/usePixelReadout";
 import WebGLPreviewCanvas from "./WebGLPreviewCanvas";
-import SaveImagePopover from "./SaveImagePopover";
-import InputProfileDropdown from "./InputProfileDropdown";
 import { useLanguage } from "../i18n/LanguageContext";
 
 const LOUPE_SIZE = 132;
@@ -38,23 +37,23 @@ function SplitDivider({
       }}
     >
       {isHorizontal ? (
-        <div className="absolute left-0 right-0 top-0 h-0.5 -translate-y-1/2 bg-[#E2E4E9] shadow-[0_0_8px_rgba(0,0,0,0.85)]">
+        <div className="absolute left-0 right-0 top-0 h-px bg-white/80 shadow-[0_0_6px_rgba(0,0,0,0.9)]">
           <div
             ref={splitHandleRef}
-            className="absolute top-1/2 left-1/2 w-7 h-7 rounded-full bg-[#16171D]/90 border border-[#E2E4E9] flex items-center justify-center shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_4px_14px_rgba(0,0,0,0.65)] transition-transform duration-150"
+            className="absolute top-1/2 left-1/2 w-6 h-6 rounded-full bg-[#0E0F12]/90 border border-white/60 flex items-center justify-center shadow-[0_4px_14px_rgba(0,0,0,0.75)] transition-transform duration-120"
             style={{ transform: "translate(-50%, -50%) scale3d(1, 1, 1)" }}
           >
-            <MoveVertical className="w-3.5 h-3.5 text-[#E2E4E9]" />
+            <MoveVertical className="w-3 h-3 text-[#F4F4F5]" />
           </div>
         </div>
       ) : (
-        <div className="absolute top-0 bottom-0 left-0 w-0.5 -translate-x-1/2 bg-[#E2E4E9] shadow-[0_0_8px_rgba(0,0,0,0.85)]">
+        <div className="absolute top-0 bottom-0 left-0 w-px bg-white/80 shadow-[0_0_6px_rgba(0,0,0,0.9)]">
           <div
             ref={splitHandleRef}
-            className="absolute top-1/2 left-1/2 w-7 h-7 rounded-full bg-[#16171D]/90 border border-[#E2E4E9] flex items-center justify-center shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_4px_14px_rgba(0,0,0,0.65)] transition-transform duration-150"
+            className="absolute top-1/2 left-1/2 w-6 h-6 rounded-full bg-[#0E0F12]/90 border border-white/60 flex items-center justify-center shadow-[0_4px_14px_rgba(0,0,0,0.75)] transition-transform duration-120"
             style={{ transform: "translate(-50%, -50%) scale3d(1, 1, 1)" }}
           >
-            <MoveHorizontal className="w-3.5 h-3.5 text-[#E2E4E9]" />
+            <MoveHorizontal className="w-3 h-3 text-[#F4F4F5]" />
           </div>
         </div>
       )}
@@ -62,26 +61,22 @@ function SplitDivider({
   );
 }
 
-function CornerBadges({ mode, isHoldingBefore, splitDirection, t }) {
+function CornerBadges({ mode, isHoldingBefore, splitDirection }) {
   const isHorizSplit = mode === "split" && splitDirection === "horizontal";
   return (
     <>
       {mode !== "result" && (
-        <span className="absolute top-2.5 left-2.5 z-10 bg-[#151519]/90 text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#9CA3AF] border border-white/[0.08] pointer-events-none">
-          {isHoldingBefore ? t("preview.beforeHoldPeek") : t("preview.before")}
+        <span className="absolute top-4 left-4 z-20 bg-[#08090A]/80 backdrop-blur-sm text-[10px] font-mono uppercase tracking-[0.1em] px-2 py-0.5 rounded text-[#A1A1AA] border border-white/[0.09] pointer-events-none select-none">
+          {isHoldingBefore ? "BEFORE (PEEK)" : "BEFORE"}
         </span>
       )}
       {!isHoldingBefore && (
         <span
           className={`absolute ${
-            isHorizSplit ? "bottom-2.5 right-2.5" : "top-2.5 right-2.5"
-          } z-10 bg-[#1E1E24]/90 text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#E2E4E9] border border-white/15 pointer-events-none`}
+            isHorizSplit ? "bottom-14 right-4" : "top-4 right-4"
+          } z-20 bg-[#08090A]/80 backdrop-blur-sm text-[10px] font-mono uppercase tracking-[0.1em] px-2 py-0.5 rounded text-[#F4F4F5] border border-white/[0.12] pointer-events-none select-none`}
         >
-          {mode === "result"
-            ? t("preview.gradedResult")
-            : mode === "side"
-            ? t("preview.after")
-            : t("preview.graded")}
+          {mode === "result" ? "GRADED" : "MATCHED"}
         </span>
       )}
     </>
@@ -105,74 +100,91 @@ export default function ComparisonSlider({
   lutMix = 1.0,
   onVideoError,
   onSplitDragChange,
-  isPinned = true,
-  onTogglePin,
-  onSaveImage,
+  onSplitPosChange,
+  onQuickSaveFrame,
   isSavingImage = false,
-  onExportVideo,
-  isExportingVideo = false,
-  videoExportProgress = 0,
-  videoExportStatusText = "",
-  onCancelVideoExport,
-  targetVideoSrc = "",
-  targetFile = null,
-  videoDurationSec = 0,
   onTryInstantDemo,
   nativeWidth = 0,
   nativeHeight = 0,
-  targetBaseName = "Target",
-  engineId = "altair",
   simulateLogInput = false,
-  onToggleSimulateLogInput,
   isTabActive = true,
+  scanlineKey = 0,
   footer = null,
+  canUndo = false,
+  canRedo = false,
+  onUndo = null,
+  onRedo = null,
+  onRematch = null,
+  canRematch = false,
+  isAnalyzing = false,
+  reloadedFeedback = false,
 }) {
   const { t } = useLanguage();
+  const [completedScanKey, setCompletedScanKey] = useState(0);
   const [splitPos, setSplitPos] = useState(50);
   const [splitDirection, setSplitDirection] = useState("vertical");
   const [isHoldingBefore, setIsHoldingBefore] = useState(false);
   const [isContextLost, setIsContextLost] = useState(false);
-  const [monitorMode, setMonitorMode] = useState("off");
+  const [monitorMode, setMonitorMode] = useState("off"); // "off" | "zebra" | "falsecolor" | "gamut"
   const [isEyedropperActive, setIsEyedropperActive] = useState(false);
-  const [loupeZoom, setLoupeZoom] = useState(0); // 0 = Off, 2 = 2x, 4 = 4x
-  const [loupePos, setLoupePos] = useState(null); // { x, y } relative to containerRef
-  const [reticlePos, setReticlePos] = useState(null); // { x, y } relative to containerRef
+  const [loupeZoom, setLoupeZoom] = useState(0); // 0 | 2 | 4
+  const [loupePos, setLoupePos] = useState(null);
+  const [reticlePos, setReticlePos] = useState(null);
   const [zoom, setZoom] = useState(1.0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [quickSaved, setQuickSaved] = useState(false);
+  const [isMobileViewOpen, setIsMobileViewOpen] = useState(false);
+  const quickSaveTimerRef = useRef(0);
+  const mobileViewRef = useRef(null);
 
-  const previewModes = useMemo(
-    () => [
-      { id: "split", label: t("preview.splitSlider") },
-      { id: "side", label: t("preview.sideBySide") },
-      { id: "result", label: t("preview.gradedOnly") },
-    ],
-    [t]
+  useEffect(() => {
+    if (!isMobileViewOpen) return undefined;
+    const onPointerDown = (e) => {
+      if (mobileViewRef.current && !mobileViewRef.current.contains(e.target)) {
+        setIsMobileViewOpen(false);
+      }
+    };
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setIsMobileViewOpen(false);
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isMobileViewOpen]);
+
+  useEffect(
+    () => () => {
+      if (quickSaveTimerRef.current) clearTimeout(quickSaveTimerRef.current);
+    },
+    []
   );
 
-  const monitorModes = useMemo(
-    () => [
-      { id: "off", label: t("preview.off") },
-      { id: "zebra", label: t("preview.zebra") },
-      { id: "falsecolor", label: t("preview.ire") },
-    ],
-    [t]
-  );
-
-  const loupeModes = useMemo(
-    () => [
-      { id: 0, label: t("preview.off") },
-      { id: 2, label: "2x" },
-      { id: 4, label: "4x" },
-    ],
-    [t]
-  );
+  const handleQuickSaveClick = async () => {
+    if (!hasImage || !onQuickSaveFrame || isSavingImage) return;
+    const ok = await onQuickSaveFrame({
+      format: "png",
+      layout: mode === "split" ? "split" : "graded",
+      splitPos: splitPosRef.current,
+    });
+    if (ok !== false) {
+      if (quickSaveTimerRef.current) clearTimeout(quickSaveTimerRef.current);
+      setQuickSaved(true);
+      quickSaveTimerRef.current = setTimeout(() => {
+        setQuickSaved(false);
+        quickSaveTimerRef.current = 0;
+      }, 1200);
+    }
+  };
 
   const containerRef = useRef(null);
+  const stageRef = useRef(null);
   const mediaBoxRef = useRef(null);
   const [mediaBox, setMediaBox] = useState(null);
   const loupeCanvasRef = useRef(null);
 
-  // Strict Multi-Touch & Pointer State Machine refs
   const activePointersRef = useRef(new Map());
   const pinchLockUntilAllUpRef = useRef(false);
   const pinchStartRef = useRef({
@@ -183,7 +195,7 @@ export default function ComparisonSlider({
     panX: 0,
     panY: 0,
   });
-  const singleDragModeRef = useRef(null); // "eyedropper" | "loupe" | "split" | "pan" | null
+  const singleDragModeRef = useRef(null);
   const panDragStartRef = useRef({
     startX: 0,
     startY: 0,
@@ -210,6 +222,8 @@ export default function ComparisonSlider({
   const activeGLRef = glPreviewRef || internalGLRef;
   const onSplitDragChangeRef = useRef(onSplitDragChange);
   onSplitDragChangeRef.current = onSplitDragChange;
+  const onSplitPosChangeRef = useRef(onSplitPosChange);
+  onSplitPosChangeRef.current = onSplitPosChange;
 
   const { pixelReadout, samplePixelAt, clearPixelReadout } = usePixelReadout({
     hasImage,
@@ -220,12 +234,6 @@ export default function ComparisonSlider({
     gradingParams,
     simulateLogInput,
   });
-
-  const {
-    containerRef: modeContainerRef,
-    registerTabRef: registerModeTabRef,
-    pillStyle: modePillStyle,
-  } = usePillIndicator(mode);
 
   const clampPan = useCallback((nx, ny, nextZoom) => {
     if (nextZoom <= 1.001 || !containerRef.current) {
@@ -248,30 +256,42 @@ export default function ComparisonSlider({
   }, []);
 
   useEffect(() => {
-    const el = containerRef.current;
+    const el = stageRef.current || containerRef.current;
     if (!el || !nativeWidth || !nativeHeight || mode === "side") {
       setMediaBox(null);
       return undefined;
     }
     const computeBox = () => {
-      const rect = el.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
-      const containerAspect = rect.width / rect.height;
+      const targetEl = stageRef.current || containerRef.current;
+      if (!targetEl) return;
+      const cs = window.getComputedStyle(targetEl);
+      const padX =
+        (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+      const padY =
+        (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+      const availW = Math.max(0, targetEl.clientWidth - padX);
+      const availH = Math.max(0, targetEl.clientHeight - padY);
+      if (availW <= 0 || availH <= 0) return;
+
+      const containerAspect = availW / availH;
       const mediaAspect = nativeWidth / nativeHeight;
-      let w = rect.width;
-      let h = rect.height;
+      let w = availW;
+      let h = availH;
       if (mediaAspect > containerAspect) {
-        h = rect.width / mediaAspect;
+        h = availW / mediaAspect;
       } else {
-        w = rect.height * mediaAspect;
+        w = availH * mediaAspect;
       }
       setMediaBox({ width: Math.round(w), height: Math.round(h) });
     };
     computeBox();
     const ro = new ResizeObserver(computeBox);
-    ro.observe(el);
+    if (containerRef.current) ro.observe(containerRef.current);
+    if (stageRef.current && stageRef.current !== containerRef.current) {
+      ro.observe(stageRef.current);
+    }
     return () => ro.disconnect();
-  }, [nativeWidth, nativeHeight, isPinned, mode]);
+  }, [nativeWidth, nativeHeight, mode, hasImage]);
 
   const applySplitPositionDirect = useCallback(
     (clientX, clientY) => {
@@ -304,7 +324,8 @@ export default function ComparisonSlider({
     [mode, activeGLRef]
   );
 
-  const handleToggleSplitDirection = (nextDir) => {
+  const handleToggleSplitDirection = () => {
+    const nextDir = splitDirection === "vertical" ? "horizontal" : "vertical";
     splitDirectionRef.current = nextDir;
     setSplitDirection(nextDir);
     activeGLRef.current?.setSplitDirection?.(nextDir);
@@ -322,7 +343,6 @@ export default function ComparisonSlider({
     }
   };
 
-  // Draw magnified pixels into the Optical Glass Pixel Loupe (2x / 4x)
   const renderLoupeAt = useCallback(
     (sampleClientX, sampleClientY) => {
       const container = containerRef.current;
@@ -379,7 +399,7 @@ export default function ComparisonSlider({
       const sx = u * srcW - patchW * 0.5;
       const sy = v * srcH - patchH * 0.5;
 
-      ctx.fillStyle = "#08080B";
+      ctx.fillStyle = "#08090A";
       ctx.fillRect(0, 0, LOUPE_SIZE, LOUPE_SIZE);
 
       try {
@@ -401,7 +421,6 @@ export default function ComparisonSlider({
     [hasImage, loupeZoom, activeGLRef, gradedCanvasRef, imageEl, videoEl]
   );
 
-  // Re-render loupe when grading params change while loupe is visible
   useEffect(() => {
     if (loupePos && loupeZoom > 0 && containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
@@ -440,6 +459,7 @@ export default function ComparisonSlider({
           "translate(-50%, -50%) scale3d(1, 1, 1)";
       }
       setSplitPos(splitPosRef.current);
+      onSplitPosChangeRef.current?.(splitPosRef.current);
       onSplitDragChangeRef.current?.(false);
     }
     singleDragModeRef.current = null;
@@ -461,10 +481,9 @@ export default function ComparisonSlider({
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
-      // Ignore if pointer capture is unavailable
+      // ignore
     }
 
-    // 1. Strict 2-Finger Priority: Pinch-to-Zoom (1.0x - 4.0x) & 2-Finger Pan
     if (pointers.size === 2) {
       e.preventDefault();
       pinchLockUntilAllUpRef.current = true;
@@ -488,7 +507,6 @@ export default function ComparisonSlider({
       return;
     }
 
-    // Double-Tap on touch to reset zoom when zoomed > 1.0x
     if (e.pointerType === "touch" && zoomRef.current > 1.001) {
       const now = performance.now();
       if (now - lastTapTimeRef.current < 280) {
@@ -503,8 +521,6 @@ export default function ComparisonSlider({
     const sampleX = e.clientX;
     const sampleY = e.clientY + touchOffsetY;
 
-    // 2. 1-Finger / Mouse Hierarchy:
-    // Priority 1: Eyedropper active -> moves RGB/IRE reticle (+36px vertical offset on touch)
     if (isEyedropperActive && mode !== "side") {
       e.preventDefault();
       singleDragModeRef.current = "eyedropper";
@@ -519,7 +535,6 @@ export default function ComparisonSlider({
       return;
     }
 
-    // Priority 2: Optical Loupe (2x / 4x) active -> moves circular magnifying glass loupe (+36px vertical offset on touch)
     if (loupeZoom > 0 && mode !== "side") {
       e.preventDefault();
       singleDragModeRef.current = "loupe";
@@ -528,7 +543,6 @@ export default function ComparisonSlider({
       return;
     }
 
-    // Priority 3: Split Slider active
     if (mode === "split") {
       const targetEl = mediaBoxRef.current || containerRef.current;
       if (!targetEl) return;
@@ -540,7 +554,6 @@ export default function ComparisonSlider({
       const pointerPos = isHoriz ? e.clientY : e.clientX;
       const distFromSplit = Math.abs(pointerPos - splitLineScreenPos);
 
-      // At > 1.0x zoom: within +-28px moves split wipe, outside pans the zoomed image
       if (zoomRef.current > 1.001 && distFromSplit > 28) {
         e.preventDefault();
         singleDragModeRef.current = "pan";
@@ -553,20 +566,18 @@ export default function ComparisonSlider({
         return;
       }
 
-      // At 1.0x zoom (or within +-28px of split line when zoomed): dragging moves the split wipe
       e.preventDefault();
       singleDragModeRef.current = "split";
       isDraggingSplitRef.current = true;
       if (splitHandleRef.current) {
         splitHandleRef.current.style.transform =
-          "translate(-50%, -50%) scale3d(1.16, 1.16, 1)";
+          "translate(-50%, -50%) scale3d(1.12, 1.12, 1)";
       }
       onSplitDragChangeRef.current?.(true);
       applySplitPositionDirect(e.clientX, e.clientY);
       return;
     }
 
-    // In Graded Only / Side by Side mode when zoomed > 1.0x: drag pans the zoomed image
     if (zoomRef.current > 1.001) {
       e.preventDefault();
       singleDragModeRef.current = "pan";
@@ -589,7 +600,6 @@ export default function ComparisonSlider({
       });
     }
 
-    // 1. 2-Finger Pinch-to-Zoom & 2-Finger Pan
     if (pointers.size === 2) {
       const pts = Array.from(pointers.values());
       const dist = Math.max(12, Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y));
@@ -618,7 +628,6 @@ export default function ComparisonSlider({
     const sampleX = e.clientX;
     const sampleY = e.clientY + touchOffsetY;
 
-    // 2. Active 1-Finger / Mouse Drag Modes
     if (singleDragModeRef.current === "eyedropper") {
       if (containerRef.current) {
         const cRect = containerRef.current.getBoundingClientRect();
@@ -664,7 +673,6 @@ export default function ComparisonSlider({
       return;
     }
 
-    // Passive mouse hover over viewport
     if (e.pointerType === "mouse" && hasImage && mode !== "side") {
       if (loupeZoom > 0) {
         renderLoupeAt(e.clientX, e.clientY);
@@ -676,7 +684,9 @@ export default function ComparisonSlider({
           y: Math.max(0, Math.min(cRect.height, e.clientY - cRect.top)),
         });
       }
-      samplePixelAt(e.clientX, e.clientY);
+      if (isEyedropperActive || loupeZoom > 0) {
+        samplePixelAt(e.clientX, e.clientY);
+      }
     }
   };
 
@@ -688,7 +698,7 @@ export default function ComparisonSlider({
         e.currentTarget.releasePointerCapture(e.pointerId);
       }
     } catch {
-      // Ignore
+      // ignore
     }
 
     if (pointers.size === 0) {
@@ -713,6 +723,7 @@ export default function ComparisonSlider({
           "translate(-50%, -50%) scale3d(1, 1, 1)";
       }
       setSplitPos(splitPosRef.current);
+      onSplitPosChangeRef.current?.(splitPosRef.current);
       onSplitDragChangeRef.current?.(false);
     }
 
@@ -759,250 +770,33 @@ export default function ComparisonSlider({
   const showWebGL = canUseWebGL && !isContextLost;
   const isHorizSplit = splitDirection === "horizontal";
 
+  const toggleMonitor = (target) => {
+    setMonitorMode((cur) => (cur === target ? "off" : target));
+  };
+
+  const toggleLoupe = (level) => {
+    setLoupeZoom((cur) => {
+      const next = cur === level ? 0 : level;
+      if (next === 0) setLoupePos(null);
+      return next;
+    });
+  };
+
+  const dockBtnBase =
+    "studio-tactile px-1.5 2xl:px-2 py-0.5 2xl:py-1 rounded-full text-[10px] 2xl:text-[11px] font-medium whitespace-nowrap cursor-pointer select-none inline-flex items-center gap-1";
+
+  const hasSecondaryViewActive =
+    mode === "side" ||
+    loupeZoom > 0 ||
+    monitorMode !== "off" ||
+    isEyedropperActive;
+
+  const mobilePillBtn =
+    "min-h-[36px] px-2.5 rounded-full text-[11px] font-medium whitespace-nowrap cursor-pointer select-none inline-flex items-center justify-center gap-1 transition-colors active:scale-[0.97]";
+
   return (
-    <div
-      className={`liquid-glass-card m3-panel rounded-[18px] overflow-hidden p-3 lg:p-4 flex-1 flex flex-col ${
-        isPinned
-          ? "max-lg:!bg-[#0d0f12] max-lg:backdrop-blur-md max-lg:shadow-[0_12px_28px_rgba(0,0,0,0.85)]"
-          : ""
-      }`}
-    >
-      {/* Header Row */}
-      <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2.5 shrink-0">
-        <div className="flex items-center gap-2">
-          <Columns className="w-3.5 h-3.5 text-[#9CA3AF]" />
-          <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#9CA3AF]">
-            {t("preview.title")}
-          </h3>
-          {zoom > 1.001 && (
-            <button
-              type="button"
-              onClick={handleResetZoom}
-              title={t("preview.resetZoomTitle")}
-              className="liquid-droplet-badge m3-btn-morph inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#6EE7B7]/15 hover:bg-[#6EE7B7]/25 text-[#6EE7B7] border border-[#6EE7B7]/40 text-[10px] font-mono cursor-pointer"
-            >
-              <RotateCcw className="w-2.5 h-2.5" />
-              <span>{t("preview.resetZoom", { zoom: zoom.toFixed(1) })}</span>
-            </button>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5">
-          {onTogglePin && (
-            <button
-              type="button"
-              onClick={onTogglePin}
-              title={isPinned ? t("preview.unpinTitle") : t("preview.pinTitle")}
-              className={`lg:hidden m3-btn-morph inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium border cursor-pointer select-none ${
-                isPinned
-                  ? "bg-white/[0.12] text-[#F4F5F7] border-white/25"
-                  : "bg-white/[0.04] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.09]"
-              }`}
-            >
-              {isPinned ? <Pin className="w-3 h-3" /> : <PinOff className="w-3 h-3" />}
-              <span>{isPinned ? t("preview.pinned") : t("preview.pin")}</span>
-            </button>
-          )}
-
-          {hasImage && onSaveImage && (
-            <SaveImagePopover
-              onSaveImage={onSaveImage}
-              isSavingImage={isSavingImage}
-              isVideo={Boolean(videoEl)}
-              onExportVideo={onExportVideo}
-              isExportingVideo={isExportingVideo}
-              videoExportProgress={videoExportProgress}
-              videoExportStatusText={videoExportStatusText}
-              onCancelVideoExport={onCancelVideoExport}
-              targetVideoSrc={targetVideoSrc}
-              targetFile={targetFile}
-              videoDurationSec={videoDurationSec}
-              nativeWidth={nativeWidth}
-              nativeHeight={nativeHeight}
-              targetBaseName={targetBaseName}
-              engineId={engineId}
-              splitPos={splitPos}
-              params={gradingParams}
-              logProfile={simulateLogInput}
-            />
-          )}
-
-          {/* Split Orientation Toggle: Vertical | vs Horizontal - */}
-          {hasImage && mode === "split" && (
-            <div
-              title={t("preview.splitOrientationTitle")}
-              className="inline-flex items-center gap-0.5 bg-[#0A0A0D]/55 border border-white/[0.09] rounded-lg p-0.5 text-[10px] font-mono"
-            >
-              <button
-                type="button"
-                onClick={() => handleToggleSplitDirection("vertical")}
-                className={`px-1.5 py-0.5 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-                  splitDirection === "vertical"
-                    ? "bg-white/[0.15] text-[#F4F5F7] font-semibold"
-                    : "text-[#9CA3AF] hover:text-[#E2E4E9]"
-                }`}
-              >
-                {t("preview.vertical")}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleToggleSplitDirection("horizontal")}
-                className={`px-1.5 py-0.5 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-                  splitDirection === "horizontal"
-                    ? "bg-white/[0.15] text-[#F4F5F7] font-semibold"
-                    : "text-[#9CA3AF] hover:text-[#E2E4E9]"
-                }`}
-              >
-                {t("preview.horizontal")}
-              </button>
-            </div>
-          )}
-
-          {/* Optical Glass Pixel Loupe Toggle (Off / 2x / 4x) */}
-          {hasImage && mode !== "side" && (
-            <div
-              title={t("preview.loupeTitle")}
-              className="inline-flex items-center gap-0.5 bg-[#0A0A0D]/55 border border-white/[0.09] rounded-lg p-0.5 text-[10px] font-mono"
-            >
-              <Search className="w-3 h-3 text-[#9CA3AF] mx-1 shrink-0 hidden sm:block" />
-              {loupeModes.map((lm) => (
-                <button
-                  key={lm.id}
-                  type="button"
-                  onClick={() => {
-                    setLoupeZoom(lm.id);
-                    if (lm.id === 0) setLoupePos(null);
-                  }}
-                  className={`px-1.5 py-0.5 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-                    loupeZoom === lm.id
-                      ? lm.id === 0
-                        ? "bg-white/[0.14] text-[#F4F5F7] font-semibold"
-                        : "bg-[#6EE7B7]/20 text-[#6EE7B7] font-semibold"
-                      : "text-[#9CA3AF] hover:text-[#E2E4E9]"
-                  }`}
-                >
-                  {lm.label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {hasImage && showWebGL && (
-            <div
-              title={t("preview.monitorTitle")}
-              className="inline-flex items-center gap-0.5 bg-[#0A0A0D]/55 border border-white/[0.09] rounded-lg p-0.5 text-[10px] font-mono"
-            >
-              <ScanEye className="w-3 h-3 text-[#9CA3AF] mx-1 shrink-0 hidden sm:block" />
-              {monitorModes.map((mm) => (
-                <button
-                  key={mm.id}
-                  type="button"
-                  onClick={() => setMonitorMode(mm.id)}
-                  className={`px-1.5 py-0.5 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-                    monitorMode === mm.id
-                      ? mm.id === "off"
-                        ? "bg-white/[0.14] text-[#F4F5F7] font-semibold"
-                        : "bg-[#6EE7B7]/20 text-[#6EE7B7] font-semibold"
-                      : "text-[#9CA3AF] hover:text-[#E2E4E9]"
-                  }`}
-                >
-                  {mm.label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {hasImage && mode !== "side" && (
-            <button
-              type="button"
-              onClick={() => {
-                setIsEyedropperActive((v) => {
-                  if (v) {
-                    clearPixelReadout();
-                    setReticlePos(null);
-                  }
-                  return !v;
-                });
-              }}
-              aria-pressed={isEyedropperActive}
-              title={t("preview.eyedropperTitle")}
-              className={`m3-btn-morph inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium border cursor-pointer select-none ${
-                isEyedropperActive
-                  ? "bg-[#6EE7B7]/20 text-[#6EE7B7] border-[#6EE7B7]/40"
-                  : "bg-white/[0.04] hover:bg-white/[0.08] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.09]"
-              }`}
-            >
-              <Pipette className="w-3 h-3" />
-              <span>RGB</span>
-            </button>
-          )}
-
-          {hasImage && onToggleSimulateLogInput && (
-            <InputProfileDropdown
-              value={simulateLogInput}
-              onChange={onToggleSimulateLogInput}
-              ariaLabel={t("dropCard.targetInputProfileAria")}
-              title={t("preview.inputProfileTitle")}
-              compact
-            />
-          )}
-
-          {hasImage && (
-            <button
-              type="button"
-              onMouseDown={() => setIsHoldingBefore(true)}
-              onMouseUp={() => setIsHoldingBefore(false)}
-              onMouseLeave={() => setIsHoldingBefore(false)}
-              onTouchStart={() => setIsHoldingBefore(true)}
-              onTouchEnd={() => setIsHoldingBefore(false)}
-              onTouchCancel={() => setIsHoldingBefore(false)}
-              onContextMenu={(e) => e.preventDefault()}
-              title={t("preview.holdBeforeTitle")}
-              className={`m3-btn-morph inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-medium border cursor-pointer select-none ${
-                isHoldingBefore
-                  ? "bg-[#E2E4E9] text-[#0E0E11] border-[#E2E4E9]"
-                  : "bg-white/[0.04] text-[#9CA3AF] hover:text-[#E2E4E9] border-white/[0.09]"
-              }`}
-            >
-              <Eye className="w-3.5 h-3.5" />
-              <span className="whitespace-nowrap">{t("preview.holdBefore")}</span>
-            </button>
-          )}
-
-          {/* Morphing Segmented Pills for Preview Modes */}
-          <div
-            ref={modeContainerRef}
-            className="relative flex items-center gap-0.5 bg-[#080A12]/65 border border-white/[0.14] rounded-full p-0.5 text-xs"
-          >
-            <div
-              aria-hidden="true"
-              className="m3-pill-indicator optical-refract-glass pointer-events-none absolute top-0.5 bottom-0.5 left-0 rounded-full bg-[#E2E4E9] shadow-[0_2px_10px_rgba(255,255,255,0.28),inset_0_1px_1px_rgba(255,255,255,0.85)]"
-              style={{
-                transform: `translate3d(${modePillStyle.left}px, 0, 0)`,
-                width: `${modePillStyle.width}px`,
-                opacity: modePillStyle.opacity,
-              }}
-            />
-            {previewModes.map((m) => (
-              <button
-                key={m.id}
-                ref={registerModeTabRef(m.id)}
-                type="button"
-                onClick={() => onModeChange && onModeChange(m.id)}
-                className={`relative z-10 px-2.5 py-1 rounded-full font-medium transition-colors duration-200 active:scale-[0.96] cursor-pointer whitespace-nowrap ${
-                  mode === m.id
-                    ? "text-[#0E0E11] font-semibold"
-                    : "text-[#9CA3AF] hover:text-[#E2E4E9]"
-                }`}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Preview Viewport - Solid Neutral #07080a Isolation Matte for 100% Accurate Color Grading Judgment */}
+    <div className="flex-1 min-h-0 flex flex-col bg-[#07080A] lg:bg-[#08090A] select-none">
+      {/* Full-Bleed Neutral Cinema Viewport Well (Compact Sticky Stage on <lg) */}
       <div
         ref={containerRef}
         onPointerDown={handleViewportPointerDown}
@@ -1018,9 +812,7 @@ export default function ComparisonSlider({
             ? { touchAction: "none", userSelect: "none" }
             : undefined
         }
-        className={`relative isolate w-full flex-1 ${
-          isPinned ? "h-[30vh] min-h-[200px] max-h-[245px]" : "min-h-[210px]"
-        } lg:h-auto lg:min-h-[300px] lg:max-h-none rounded-[18px] bg-[#07080a] border border-white/[0.12] shadow-[inset_0_2px_14px_rgba(0,0,0,0.88)] overflow-hidden flex items-center justify-center select-none ${
+        className={`relative isolate w-full h-[36vh] min-h-[220px] max-h-[300px] lg:h-auto lg:flex-1 lg:min-h-0 lg:max-h-none bg-[#07080A] lg:bg-[#08090A] overflow-hidden flex items-center justify-center ${
           isEyedropperActive && hasImage
             ? "cursor-crosshair"
             : loupeZoom > 0 && hasImage
@@ -1034,27 +826,26 @@ export default function ComparisonSlider({
             : ""
         }`}
       >
-        {/* Solid Neutral #07080a Isolation Matte Behind Media Frame */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 -z-10 bg-[#07080a]"
-        />
         {!hasImage ? (
-          <div className="text-center p-6 text-[#9CA3AF]/60 text-xs space-y-3">
-            <p>{t("preview.emptyHint")}</p>
+          <div className="text-center px-6 py-8 max-w-sm space-y-3">
+            <p className="text-xs text-[#A1A1AA] leading-relaxed">
+              {t("preview.emptyHint")}
+            </p>
             {onTryInstantDemo && (
               <button
                 type="button"
                 onClick={onTryInstantDemo}
-                className="m3-btn-morph inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#6EE7B7] hover:bg-[#86EFAC] text-[#042F1E] text-xs font-semibold cursor-pointer shadow-lg"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md bg-[#15171C] hover:bg-[#1C1F26] text-[#F4F4F5] border border-white/[0.10] text-xs font-medium cursor-pointer transition-colors"
               >
+                <Sparkles className="w-3.5 h-3.5 text-[#34D399]" />
                 <span>{t("preview.tryInstantDemo")}</span>
               </button>
             )}
           </div>
         ) : (
           <div
-            className="relative w-full h-full flex items-center justify-center"
+            ref={stageRef}
+            className="relative w-full h-full flex items-center justify-center p-1.5 lg:p-4 lg:pb-14"
             style={{
               transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale3d(${zoom}, ${zoom}, 1)`,
               transformOrigin: "center center",
@@ -1109,33 +900,24 @@ export default function ComparisonSlider({
                       splitHandleRef={splitHandleRef}
                     />
                   )}
-                  <CornerBadges
-                    mode={mode}
-                    isHoldingBefore={isHoldingBefore}
-                    splitDirection={splitDirection}
-                    t={t}
-                  />
                 </div>
               </div>
             )}
 
-            {!showWebGL && (
-              mode === "side" ? (
-                <div className="grid grid-cols-2 gap-1.5 w-full h-full min-h-[240px] sm:min-h-[280px] p-2 items-center">
-                  <div className="relative h-full flex items-center justify-center bg-black/40 rounded-md overflow-hidden border border-white/[0.06]">
+            {!showWebGL &&
+              (mode === "side" ? (
+                <div className="grid grid-cols-2 gap-1.5 w-full h-full items-center">
+                  <div className="relative h-full flex items-center justify-center bg-black/40 overflow-hidden border border-white/[0.06]">
                     <img
                       src={originalImage}
                       alt={t("preview.before")}
-                      className="w-full h-full max-h-[360px] object-contain"
+                      className="w-full h-full max-h-full object-contain"
                     />
-                    <span className="absolute top-2 left-2 bg-[#151519]/90 text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#9CA3AF] border border-white/[0.08]">
-                      {t("preview.before")}
-                    </span>
                   </div>
-                  <div className="relative h-full flex items-center justify-center bg-black/40 rounded-md overflow-hidden border border-white/[0.06]">
+                  <div className="relative h-full flex items-center justify-center bg-black/40 overflow-hidden border border-white/[0.06]">
                     <canvas
                       ref={gradedCanvasRef}
-                      className={`w-full h-full max-h-[360px] object-contain ${
+                      className={`w-full h-full max-h-full object-contain ${
                         isHoldingBefore ? "hidden" : "block"
                       }`}
                     />
@@ -1143,19 +925,16 @@ export default function ComparisonSlider({
                       <img
                         src={originalImage}
                         alt={t("preview.beforePeek")}
-                        className="w-full h-full max-h-[360px] object-contain"
+                        className="w-full h-full max-h-full object-contain"
                       />
                     )}
-                    <span className="absolute top-2 right-2 bg-[#1E1E24]/90 text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded text-[#E2E4E9] border border-white/15">
-                      {isHoldingBefore ? t("preview.beforePeek") : t("preview.after")}
-                    </span>
                   </div>
                 </div>
               ) : mode === "result" ? (
-                <div className="relative w-full h-full min-h-[240px] sm:min-h-[280px] flex items-center justify-center p-2">
+                <div className="relative w-full h-full flex items-center justify-center">
                   <canvas
                     ref={gradedCanvasRef}
-                    className={`w-full h-full max-h-[360px] object-contain rounded ${
+                    className={`w-full h-full max-h-full object-contain ${
                       isHoldingBefore ? "hidden" : "block"
                     }`}
                   />
@@ -1163,15 +942,9 @@ export default function ComparisonSlider({
                     <img
                       src={originalImage}
                       alt={t("preview.beforePeek")}
-                      className="w-full h-full max-h-[360px] object-contain rounded"
+                      className="w-full h-full max-h-full object-contain"
                     />
                   )}
-                  <CornerBadges
-                    mode="result"
-                    isHoldingBefore={isHoldingBefore}
-                    splitDirection={splitDirection}
-                    t={t}
-                  />
                 </div>
               ) : (
                 <div className="relative w-full h-full flex items-center justify-center">
@@ -1213,34 +986,46 @@ export default function ComparisonSlider({
                         splitHandleRef={splitHandleRef}
                       />
                     )}
-                    <CornerBadges
-                      mode="split"
-                      isHoldingBefore={isHoldingBefore}
-                      splitDirection={splitDirection}
-                      t={t}
-                    />
                   </div>
                 </div>
-              )
-            )}
+              ))}
           </div>
         )}
 
-        {/* Optical Eyedropper Reticle Overlay */}
+        {/* Single Unified Viewport Corner Badges (Never Duplicated Across WebGL / CPU / Zoom) */}
+        {hasImage && (
+          <CornerBadges
+            mode={mode}
+            isHoldingBefore={isHoldingBefore}
+            splitDirection={splitDirection}
+          />
+        )}
+
+        {/* Optical Silver-Emerald Calibration Scanline Sweep (420ms on Look/Preset/Import/Reset) */}
+        {scanlineKey > 0 && scanlineKey !== completedScanKey && (
+          <div key={scanlineKey} aria-hidden="true" className="studio-scanline-overlay">
+            <div
+              className="studio-scanline-sweep"
+              onAnimationEnd={() => setCompletedScanKey(scanlineKey)}
+            />
+          </div>
+        )}
+
+        {/* Eyedropper Reticle */}
         {isEyedropperActive && reticlePos && hasImage && mode !== "side" && (
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute z-30 w-7 h-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#6EE7B7] shadow-[0_0_12px_rgba(0,0,0,0.85),inset_0_1px_1px_rgba(255,255,255,0.6)] flex items-center justify-center"
+            className="pointer-events-none absolute z-30 w-6 h-6 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/90 shadow-[0_0_8px_rgba(0,0,0,0.85)] flex items-center justify-center"
             style={{
               left: `${reticlePos.x}px`,
               top: `${reticlePos.y}px`,
             }}
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-[#6EE7B7]" />
+            <span className="w-1 h-1 rounded-full bg-white" />
           </div>
         )}
 
-        {/* Optical Glass Pixel Loupe (2x / 4x) Magnifying Lens Overlay + Soft-Edge Diffusion Aura */}
+        {/* Optical Pixel Loupe (2x / 4x) */}
         {loupeZoom > 0 && loupePos && hasImage && mode !== "side" && (
           <div
             aria-hidden="true"
@@ -1253,18 +1038,7 @@ export default function ComparisonSlider({
               transform: "translate3d(-50%, -50%, 0)",
             }}
           >
-            {/* Outer Optical Diffusion Aura with Frosted Soft Edges */}
-            <div
-              className="frosted-soft-edge pointer-events-none absolute -inset-6 rounded-full bg-white/[0.10]"
-            />
-            <div
-              className="optical-refract-glass relative w-full h-full rounded-full overflow-hidden flex items-center justify-center"
-              style={{
-                border: "1.5px solid rgba(255, 255, 255, 0.72)",
-                boxShadow:
-                  "inset 0 2px 3px rgba(255, 255, 255, 0.65), inset 0 -2px 6px rgba(0, 0, 0, 0.7), 0 16px 38px rgba(0, 0, 0, 0.75)",
-              }}
-            >
+            <div className="relative w-full h-full rounded-full overflow-hidden border border-white/60 shadow-[0_12px_32px_rgba(0,0,0,0.8)]">
               <canvas
                 ref={loupeCanvasRef}
                 width={LOUPE_SIZE}
@@ -1272,12 +1046,11 @@ export default function ComparisonSlider({
                 className="w-full h-full block"
                 style={{ imageRendering: "pixelated" }}
               />
-              {/* Optical Crosshair & Specular Rim Inside Lens */}
               <div className="absolute inset-0 pointer-events-none">
-                <div className="absolute inset-x-0 top-1/2 h-px bg-white/35" />
-                <div className="absolute inset-y-0 left-1/2 w-px bg-white/35" />
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 border border-[#6EE7B7]/90 rounded-[2px]" />
-                <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 px-1.5 py-0.2 rounded-full bg-[#09090D]/85 border border-white/25 text-[9px] font-mono font-semibold text-[#6EE7B7]">
+                <div className="absolute inset-x-0 top-1/2 h-px bg-white/30" />
+                <div className="absolute inset-y-0 left-1/2 w-px bg-white/30" />
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 border border-white/85" />
+                <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 px-1.5 py-0 rounded-full bg-[#08090A]/85 border border-white/20 text-[9px] font-mono text-[#F4F4F5]">
                   {loupeZoom}x
                 </span>
               </div>
@@ -1285,7 +1058,7 @@ export default function ComparisonSlider({
           </div>
         )}
 
-        {/* Floating Reset Zoom Glass Pill inside Viewport */}
+        {/* Reset Zoom Pill when pinched > 1.0x */}
         {zoom > 1.001 && hasImage && (
           <button
             type="button"
@@ -1294,25 +1067,514 @@ export default function ComparisonSlider({
               handleResetZoom();
             }}
             onPointerDown={(e) => e.stopPropagation()}
-            className="absolute top-2.5 left-1/2 -translate-x-1/2 z-30 px-3 py-1 rounded-full bg-[#0E0E13]/85 hover:bg-[#181920] border border-white/25 text-[10px] font-mono font-semibold text-[#F4F5F7] shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_8px_20px_rgba(0,0,0,0.6)] flex items-center gap-1.5 cursor-pointer"
+            className="absolute top-3 left-1/2 -translate-x-1/2 z-30 px-2.5 py-1 rounded-full bg-[#0B0C0E]/85 hover:bg-[#15171C] border border-white/15 text-[10px] font-mono text-[#F4F4F5] flex items-center gap-1.5 cursor-pointer backdrop-blur-md"
           >
-            <RotateCcw className="w-3 h-3 text-[#6EE7B7]" />
-            <span>{t("preview.resetZoom", { zoom: zoom.toFixed(1) })}</span>
+            <RotateCcw className="w-3 h-3 text-[#A1A1AA]" />
+            <span>{zoom.toFixed(1)}x · Reset</span>
           </button>
         )}
 
+        {/* RGB / IRE Pixel Readout (positioned cleanly above dock) */}
         {pixelReadout && hasImage && mode !== "side" && (
-          <div className="pointer-events-none absolute bottom-2 left-2 z-20 px-2 py-1 rounded-md bg-[#0E0E12]/88 border border-white/[0.12] text-[10px] font-mono tabular-nums text-[#E2E4E9] flex flex-wrap items-center gap-x-2 gap-y-0.5">
-            <span className="text-[#9CA3AF]">
-              {t("preview.before")} {pixelReadout.r}/{pixelReadout.g}/{pixelReadout.b} ({pixelReadout.beforeIre} IRE)
+          <div className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 z-20 px-2.5 py-1 rounded-full bg-[#0B0C0E]/85 backdrop-blur-md border border-white/10 text-[10px] font-mono tabular-nums text-[#D4D4D8] flex items-center gap-2 whitespace-nowrap">
+            <span className="text-[#71717A]">
+              IN {pixelReadout.r}/{pixelReadout.g}/{pixelReadout.b} · {pixelReadout.beforeIre} IRE
             </span>
-            <span className="text-white/25">|</span>
-            <span className="text-[#6EE7B7]">
-              {t("preview.graded")} {pixelReadout.gr}/{pixelReadout.gg}/{pixelReadout.gb} ({pixelReadout.gradedIre} IRE)
+            <span className="text-white/15">|</span>
+            <span className="text-[#F4F4F5]">
+              OUT {pixelReadout.gr}/{pixelReadout.gg}/{pixelReadout.gb} · {pixelReadout.gradedIre} IRE
             </span>
           </div>
         )}
+
+        {/* Floating Translucent Dark-Glass Dock (Desktop lg+) */}
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+          className="hidden lg:block absolute bottom-3 left-1/2 -translate-x-1/2 z-20 max-w-[calc(100%-20px)] overflow-x-auto no-scrollbar rounded-full backdrop-blur-md bg-[#0B0C0E]/80 border border-white/10 px-1.5 py-1 shadow-[0_10px_28px_rgba(0,0,0,0.65)]"
+        >
+          <div className="flex items-center gap-0.5 w-max">
+            {/* View Mode Group */}
+            <button
+              type="button"
+              onClick={() => onModeChange?.("split")}
+              className={`${dockBtnBase} ${
+                mode === "split"
+                  ? "bg-[#F4F4F5] text-[#08090A] font-semibold"
+                  : "text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-white/[0.06]"
+              }`}
+            >
+              <span className="hidden sm:inline">Split Slider</span>
+              <span className="sm:hidden">Split</span>
+            </button>
+            {mode === "split" && hasImage && (
+              <button
+                type="button"
+                onClick={handleToggleSplitDirection}
+                title={t("preview.splitOrientationTitle")}
+                aria-label={t("preview.splitOrientationTitle")}
+                className="w-6 h-6 rounded-full inline-flex items-center justify-center text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-white/[0.08] transition-colors cursor-pointer"
+              >
+                {splitDirection === "vertical" ? (
+                  <MoveHorizontal className="w-3 h-3" />
+                ) : (
+                  <MoveVertical className="w-3 h-3" />
+                )}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onModeChange?.("side")}
+              className={`${dockBtnBase} ${
+                mode === "side"
+                  ? "bg-[#F4F4F5] text-[#08090A] font-semibold"
+                  : "text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-white/[0.06]"
+              }`}
+            >
+              <span className="hidden sm:inline">Side-by-Side</span>
+              <span className="sm:hidden">Side</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onModeChange?.("result")}
+              className={`${dockBtnBase} ${
+                mode === "result"
+                  ? "bg-[#F4F4F5] text-[#08090A] font-semibold"
+                  : "text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-white/[0.06]"
+              }`}
+            >
+              <span className="hidden sm:inline">Graded Only</span>
+              <span className="sm:hidden">Graded</span>
+            </button>
+
+            <span className="w-px h-3.5 bg-white/10 mx-1 shrink-0" />
+
+            {/* Loupe Magnification: 2x / 4x */}
+            {[2, 4].map((lvl) => (
+              <button
+                key={lvl}
+                type="button"
+                disabled={!hasImage || mode === "side"}
+                onClick={() => toggleLoupe(lvl)}
+                title={`${lvl}x Pixel Loupe`}
+                className={`${dockBtnBase} font-mono ${
+                  !hasImage || mode === "side"
+                    ? "text-[#52525B] cursor-not-allowed"
+                    : loupeZoom === lvl
+                    ? "bg-white/[0.16] text-[#F4F4F5]"
+                    : "text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-white/[0.06]"
+                }`}
+              >
+                {lvl}x
+              </button>
+            ))}
+
+            <span className="w-px h-3.5 bg-white/10 mx-1 shrink-0" />
+
+            {/* GPU Monitor Overlays: Zebra / IRE / Gamut */}
+            <button
+              type="button"
+              disabled={!hasImage || !showWebGL}
+              onClick={() => toggleMonitor("zebra")}
+              title="Zebra Clipping Overlay (>98 / <2 IRE)"
+              className={`${dockBtnBase} ${
+                !hasImage || !showWebGL
+                  ? "text-[#52525B] cursor-not-allowed"
+                  : monitorMode === "zebra"
+                  ? "bg-white/[0.16] text-[#F4F4F5]"
+                  : "text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-white/[0.06]"
+              }`}
+            >
+              Zebra
+            </button>
+            <button
+              type="button"
+              disabled={!hasImage || !showWebGL}
+              onClick={() => toggleMonitor("falsecolor")}
+              title="False Color IRE Exposure Map"
+              className={`${dockBtnBase} ${
+                !hasImage || !showWebGL
+                  ? "text-[#52525B] cursor-not-allowed"
+                  : monitorMode === "falsecolor"
+                  ? "bg-white/[0.16] text-[#F4F4F5]"
+                  : "text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-white/[0.06]"
+              }`}
+            >
+              IRE
+            </button>
+            <button
+              type="button"
+              disabled={!hasImage || !showWebGL}
+              onClick={() => toggleMonitor("gamut")}
+              title="Rec.709 Gamut Warning Overlay"
+              className={`${dockBtnBase} ${
+                !hasImage || !showWebGL
+                  ? "text-[#52525B] cursor-not-allowed"
+                  : monitorMode === "gamut"
+                  ? "bg-white/[0.16] text-[#F4F4F5]"
+                  : "text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-white/[0.06]"
+              }`}
+            >
+              Gamut
+            </button>
+
+            <button
+              type="button"
+              disabled={!hasImage || mode === "side"}
+              onClick={() => {
+                setIsEyedropperActive((v) => {
+                  if (v) {
+                    clearPixelReadout();
+                    setReticlePos(null);
+                  }
+                  return !v;
+                });
+              }}
+              aria-pressed={isEyedropperActive}
+              title={t("preview.eyedropperTitle")}
+              className={`${dockBtnBase} ${
+                !hasImage || mode === "side"
+                  ? "text-[#52525B] cursor-not-allowed"
+                  : isEyedropperActive
+                  ? "bg-white/[0.16] text-[#F4F4F5]"
+                  : "text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-white/[0.06]"
+              }`}
+            >
+              <Pipette className="w-3 h-3" />
+            </button>
+
+            <span className="w-px h-3.5 bg-white/10 mx-1 shrink-0" />
+
+            {/* Hold Before Peek */}
+            <button
+              type="button"
+              disabled={!hasImage}
+              onMouseDown={() => hasImage && setIsHoldingBefore(true)}
+              onMouseUp={() => setIsHoldingBefore(false)}
+              onMouseLeave={() => setIsHoldingBefore(false)}
+              onTouchStart={() => hasImage && setIsHoldingBefore(true)}
+              onTouchEnd={() => setIsHoldingBefore(false)}
+              onTouchCancel={() => setIsHoldingBefore(false)}
+              onContextMenu={(e) => e.preventDefault()}
+              title={t("preview.holdBeforeTitle")}
+              className={`${dockBtnBase} ${
+                !hasImage
+                  ? "text-[#52525B] cursor-not-allowed"
+                  : isHoldingBefore
+                  ? "bg-[#F4F4F5] text-[#08090A] font-semibold"
+                  : "text-[#D4D4D8] hover:text-[#F4F4F5] hover:bg-white/[0.06]"
+              }`}
+            >
+              <Eye className="w-3 h-3" />
+              <span>Hold Before</span>
+            </button>
+
+            {/* 1-Click Quick Save Frame */}
+            {onQuickSaveFrame && (
+              <button
+                type="button"
+                disabled={!hasImage || isSavingImage}
+                onClick={handleQuickSaveClick}
+                title="Quick Save Frame (PNG)"
+                aria-label="Quick Save Frame (PNG)"
+                className={`w-6 h-6 rounded-full inline-flex items-center justify-center transition-colors ${
+                  !hasImage || isSavingImage
+                    ? "text-[#52525B] cursor-not-allowed"
+                    : quickSaved
+                    ? "bg-[#34D399]/20 text-[#34D399] cursor-pointer"
+                    : "text-[#A1A1AA] hover:text-[#F4F4F5] hover:bg-white/[0.08] cursor-pointer"
+                }`}
+              >
+                {quickSaved ? (
+                  <Check className="w-3 h-3 stroke-[2.5]" />
+                ) : (
+                  <Camera className="w-3 h-3" />
+                )}
+              </button>
+            )}
+          </div>
+        </div>
       </div>
+
+      {/* Mobile (<lg) Thumb-Friendly Essential Control Bar + View Popover */}
+      <div
+        ref={mobileViewRef}
+        className="lg:hidden relative z-30 shrink-0 bg-[#0B0C0E] border-t border-white/[0.08] px-2.5 pt-1.5 pb-2"
+      >
+        <div className="flex items-center justify-between gap-1 min-h-[36px] overflow-x-auto no-scrollbar">
+          {/* Primary Essentials: Split, Graded, Hold Before, View ▾ */}
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => onModeChange?.("split")}
+              className={`${mobilePillBtn} ${
+                mode === "split"
+                  ? "bg-[#F4F4F5] text-[#08090A] font-semibold"
+                  : "bg-[#15171C] text-[#A1A1AA] hover:text-[#F4F4F5] border border-white/[0.07]"
+              }`}
+            >
+              Split
+            </button>
+            <button
+              type="button"
+              onClick={() => onModeChange?.("result")}
+              className={`${mobilePillBtn} ${
+                mode === "result"
+                  ? "bg-[#F4F4F5] text-[#08090A] font-semibold"
+                  : "bg-[#15171C] text-[#A1A1AA] hover:text-[#F4F4F5] border border-white/[0.07]"
+              }`}
+            >
+              Graded
+            </button>
+            <button
+              type="button"
+              disabled={!hasImage}
+              onMouseDown={() => hasImage && setIsHoldingBefore(true)}
+              onMouseUp={() => setIsHoldingBefore(false)}
+              onMouseLeave={() => setIsHoldingBefore(false)}
+              onTouchStart={() => hasImage && setIsHoldingBefore(true)}
+              onTouchEnd={() => setIsHoldingBefore(false)}
+              onTouchCancel={() => setIsHoldingBefore(false)}
+              onContextMenu={(e) => e.preventDefault()}
+              className={`${mobilePillBtn} touch-none ${
+                !hasImage
+                  ? "bg-[#15171C]/50 text-[#52525B] border border-white/[0.04] cursor-not-allowed"
+                  : isHoldingBefore
+                  ? "bg-[#F4F4F5] text-[#08090A] font-semibold"
+                  : "bg-[#15171C] text-[#E4E4E7] hover:text-[#F4F4F5] border border-white/[0.08]"
+              }`}
+            >
+              <Eye className="w-3 h-3 shrink-0" />
+              <span>Hold Before</span>
+            </button>
+            <button
+              type="button"
+              aria-expanded={isMobileViewOpen}
+              aria-haspopup="true"
+              onClick={() => setIsMobileViewOpen((v) => !v)}
+              className={`${mobilePillBtn} relative border ${
+                isMobileViewOpen || hasSecondaryViewActive
+                  ? "bg-[#1C1F26] text-[#F4F4F5] border-white/[0.18]"
+                  : "bg-[#15171C] text-[#A1A1AA] hover:text-[#F4F4F5] border-white/[0.07]"
+              }`}
+            >
+              <span>View</span>
+              {hasSecondaryViewActive && (
+                <span className="w-1.5 h-1.5 rounded-full bg-[#34D399]" aria-hidden="true" />
+              )}
+              <ChevronDown
+                className={`w-3 h-3 transition-transform duration-150 ${
+                  isMobileViewOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* History + Re-match Essentials */}
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => onUndo?.()}
+              disabled={!canUndo}
+              aria-label={t("paramsCard.undoTitle")}
+              title={t("paramsCard.undoTitle")}
+              className={`min-h-[36px] w-8 rounded-full inline-flex items-center justify-center border transition-colors ${
+                canUndo
+                  ? "bg-[#15171C] text-[#E4E4E7] hover:text-[#F4F4F5] border-white/[0.08] cursor-pointer"
+                  : "bg-transparent text-[#52525B] border-white/[0.04] cursor-not-allowed"
+              }`}
+            >
+              <Undo2 className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onRedo?.()}
+              disabled={!canRedo}
+              aria-label={t("paramsCard.redoTitle")}
+              title={t("paramsCard.redoTitle")}
+              className={`min-h-[36px] w-8 rounded-full inline-flex items-center justify-center border transition-colors ${
+                canRedo
+                  ? "bg-[#15171C] text-[#E4E4E7] hover:text-[#F4F4F5] border-white/[0.08] cursor-pointer"
+                  : "bg-transparent text-[#52525B] border-white/[0.04] cursor-not-allowed"
+              }`}
+            >
+              <Redo2 className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onRematch?.()}
+              disabled={!canRematch || isAnalyzing}
+              className={`min-h-[36px] px-2.5 rounded-full text-[11px] font-medium inline-flex items-center gap-1 border transition-colors whitespace-nowrap ${
+                !canRematch || isAnalyzing
+                  ? "bg-[#15171C]/50 text-[#52525B] border-white/[0.04] cursor-not-allowed"
+                  : reloadedFeedback
+                  ? "bg-[#F4F4F5] text-[#08090A] border-[#F4F4F5] cursor-pointer"
+                  : "bg-[#15171C] text-[#E4E4E7] hover:text-[#F4F4F5] border-white/[0.09] cursor-pointer"
+              }`}
+            >
+              {reloadedFeedback ? (
+                <>
+                  <Check className="w-3 h-3" />
+                  <span>Matched</span>
+                </>
+              ) : (
+                <>
+                  <RefreshCw className={`w-3 h-3 ${isAnalyzing ? "animate-spin" : ""}`} />
+                  <span>Re-match</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Compact View ▾ Inspection Popover */}
+        {isMobileViewOpen && (
+          <div className="absolute left-2 right-2 sm:left-auto sm:right-2 sm:w-[300px] top-full mt-1.5 z-50 rounded-xl bg-[#121419]/98 backdrop-blur-xl border border-white/[0.12] shadow-[0_18px_42px_rgba(0,0,0,0.88)] p-2.5 space-y-2.5">
+            <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-white/[0.07]">
+              <span className="text-[10px] font-mono uppercase tracking-[0.08em] text-[#A1A1AA]">
+                View &amp; Inspection
+              </span>
+              {onQuickSaveFrame && (
+                <button
+                  type="button"
+                  disabled={!hasImage || isSavingImage}
+                  onClick={handleQuickSaveClick}
+                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium border transition-colors ${
+                    !hasImage || isSavingImage
+                      ? "text-[#52525B] border-white/[0.05] cursor-not-allowed"
+                      : quickSaved
+                      ? "bg-[#34D399]/15 text-[#34D399] border-[#34D399]/35"
+                      : "bg-[#15171C] text-[#E4E4E7] border-white/[0.09] cursor-pointer"
+                  }`}
+                >
+                  {quickSaved ? <Check className="w-3 h-3" /> : <Camera className="w-3 h-3" />}
+                  <span>{quickSaved ? "Saved" : "Save PNG"}</span>
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-4 gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  onModeChange?.(mode === "side" ? "split" : "side");
+                }}
+                className={`min-h-[34px] px-2 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
+                  mode === "side"
+                    ? "bg-[#F4F4F5] text-[#08090A] border-[#F4F4F5] font-semibold"
+                    : "bg-[#15171C] text-[#D4D4D8] border-white/[0.08]"
+                }`}
+              >
+                Side
+              </button>
+              {[2, 4].map((lvl) => (
+                <button
+                  key={lvl}
+                  type="button"
+                  disabled={!hasImage || mode === "side"}
+                  onClick={() => toggleLoupe(lvl)}
+                  className={`min-h-[34px] px-2 rounded-lg text-[11px] font-mono border transition-colors ${
+                    !hasImage || mode === "side"
+                      ? "bg-[#15171C]/40 text-[#52525B] border-white/[0.04] cursor-not-allowed"
+                      : loupeZoom === lvl
+                      ? "bg-white/[0.18] text-[#F4F4F5] border-white/25 cursor-pointer"
+                      : "bg-[#15171C] text-[#D4D4D8] border-white/[0.08] cursor-pointer"
+                  }`}
+                >
+                  {lvl}x
+                </button>
+              ))}
+              <button
+                type="button"
+                disabled={!hasImage || mode !== "split"}
+                onClick={handleToggleSplitDirection}
+                className={`min-h-[34px] px-2 rounded-lg text-[11px] font-mono inline-flex items-center justify-center gap-1 border transition-colors ${
+                  !hasImage || mode !== "split"
+                    ? "bg-[#15171C]/40 text-[#52525B] border-white/[0.04] cursor-not-allowed"
+                    : "bg-[#15171C] text-[#D4D4D8] border-white/[0.08] cursor-pointer"
+                }`}
+              >
+                {splitDirection === "vertical" ? (
+                  <MoveHorizontal className="w-3 h-3" />
+                ) : (
+                  <MoveVertical className="w-3 h-3" />
+                )}
+                <span>{splitDirection === "vertical" ? "H" : "V"}</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={!hasImage || !showWebGL}
+                onClick={() => toggleMonitor("zebra")}
+                className={`min-h-[34px] px-2 rounded-lg text-[11px] font-medium border transition-colors ${
+                  !hasImage || !showWebGL
+                    ? "bg-[#15171C]/40 text-[#52525B] border-white/[0.04] cursor-not-allowed"
+                    : monitorMode === "zebra"
+                    ? "bg-white/[0.18] text-[#F4F4F5] border-white/25 cursor-pointer"
+                    : "bg-[#15171C] text-[#D4D4D8] border-white/[0.08] cursor-pointer"
+                }`}
+              >
+                Zebra
+              </button>
+              <button
+                type="button"
+                disabled={!hasImage || !showWebGL}
+                onClick={() => toggleMonitor("falsecolor")}
+                className={`min-h-[34px] px-2 rounded-lg text-[11px] font-medium border transition-colors ${
+                  !hasImage || !showWebGL
+                    ? "bg-[#15171C]/40 text-[#52525B] border-white/[0.04] cursor-not-allowed"
+                    : monitorMode === "falsecolor"
+                    ? "bg-white/[0.18] text-[#F4F4F5] border-white/25 cursor-pointer"
+                    : "bg-[#15171C] text-[#D4D4D8] border-white/[0.08] cursor-pointer"
+                }`}
+              >
+                IRE
+              </button>
+              <button
+                type="button"
+                disabled={!hasImage || !showWebGL}
+                onClick={() => toggleMonitor("gamut")}
+                className={`min-h-[34px] px-2 rounded-lg text-[11px] font-medium border transition-colors ${
+                  !hasImage || !showWebGL
+                    ? "bg-[#15171C]/40 text-[#52525B] border-white/[0.04] cursor-not-allowed"
+                    : monitorMode === "gamut"
+                    ? "bg-white/[0.18] text-[#F4F4F5] border-white/25 cursor-pointer"
+                    : "bg-[#15171C] text-[#D4D4D8] border-white/[0.08] cursor-pointer"
+                }`}
+              >
+                Gamut
+              </button>
+              <button
+                type="button"
+                disabled={!hasImage || mode === "side"}
+                onClick={() => {
+                  setIsEyedropperActive((v) => {
+                    if (v) {
+                      clearPixelReadout();
+                      setReticlePos(null);
+                    }
+                    return !v;
+                  });
+                }}
+                aria-pressed={isEyedropperActive}
+                title={t("preview.eyedropperTitle")}
+                className={`min-h-[34px] px-2 rounded-lg text-[11px] font-medium inline-flex items-center justify-center gap-1 border transition-colors ${
+                  !hasImage || mode === "side"
+                    ? "bg-[#15171C]/40 text-[#52525B] border-white/[0.04] cursor-not-allowed"
+                    : isEyedropperActive
+                    ? "bg-white/[0.18] text-[#F4F4F5] border-white/25 cursor-pointer"
+                    : "bg-[#15171C] text-[#D4D4D8] border-white/[0.08] cursor-pointer"
+                }`}
+              >
+                <Pipette className="w-3 h-3" />
+                <span>Pick</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Video Transport + Telemetry Footer */}
       {footer}
     </div>
   );

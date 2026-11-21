@@ -12,11 +12,13 @@ import {
   Check,
   Package,
   Globe,
+  Layers,
 } from "lucide-react";
 import { listEngines } from "../utils/engineRegistry";
 import { LOG_PROFILES } from "../utils/logProfiles";
 import { BUILT_IN_LOOKS } from "../utils/builtInLooks";
 import { useLanguage } from "../i18n/LanguageContext";
+import { usePresence } from "../hooks/usePresence";
 
 const SAVED_LOOKS_STORAGE_KEY = "kf_saved_looks_v1";
 
@@ -49,6 +51,7 @@ export default function CommandPalette({
   hasLook = false,
 }) {
   const { lang, setLang, t } = useLanguage();
+  const { isMounted, state: presenceState } = usePresence(isOpen, 160);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef(null);
@@ -65,7 +68,7 @@ export default function CommandPalette({
   }, [isOpen]);
 
   const commands = useMemo(() => {
-    if (!isOpen) return [];
+    if (!isMounted) return [];
     const items = [];
     const engines = listEngines();
 
@@ -237,9 +240,21 @@ export default function CommandPalette({
       });
     });
 
+    // 6. Partner Ecosystem Tools
+    items.push({
+      id: "partner-seethrough-studio",
+      category: "Partner Tool",
+      title: "Open SeeThrough Studio",
+      subtitle: "Split flat PNG illustrations into layered .psd parts for Live2D rigging",
+      keywords: "seethrough studio partner png psd layer split live2d vtuber external",
+      badge: "PARTNER ↗",
+      icon: Layers,
+      action: () => window.open("https://seethrough-studio.pages.dev", "_blank", "noopener,noreferrer"),
+    });
+
     return items;
   }, [
-    isOpen,
+    isMounted,
     lang,
     setLang,
     t,
@@ -299,19 +314,21 @@ export default function CommandPalette({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, filtered, activeIndex, onClose]);
 
-  if (!isOpen || typeof document === "undefined") return null;
+  if (!isMounted || typeof document === "undefined") return null;
 
   return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-label={t("commandPalette.ariaLabel")}
+      data-state={presenceState}
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] px-4 bg-black/65 backdrop-blur-sm"
+      className="studio-backdrop fixed inset-0 z-50 flex items-start justify-center pt-[12vh] px-4 bg-black/68 backdrop-blur-md"
     >
       <div
+        data-state={presenceState}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xl rounded-2xl liquid-glass-card overflow-hidden m3-modal-enter"
+        className="studio-modal w-full max-w-xl rounded-2xl bg-[#101216]/95 backdrop-blur-2xl border border-white/[0.11] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_24px_64px_rgba(0,0,0,0.85)] overflow-hidden"
       >
         {/* Spotlight Search Input Row */}
         <div className="flex items-center gap-3 px-4 py-3.5 border-b border-white/[0.1]">

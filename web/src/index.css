@@ -1,642 +1,211 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-display: "Bricolage Grotesque", -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --spring-bouncy: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --spring-liquid: cubic-bezier(0.22, 1.35, 0.36, 1);
-  --ease-m3: cubic-bezier(0.2, 0, 0, 1);
-  --ease-m3-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --ease-bouncy-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --ease-liquid-morph: cubic-bezier(0.22, 1.35, 0.36, 1);
-  --ease-tactile-press: cubic-bezier(0.2, 0, 0, 1);
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --ease-shutter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-aperture: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-optical: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-nle: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 :root {
-  --spring-bouncy: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --spring-liquid: cubic-bezier(0.22, 1.35, 0.36, 1);
-  --ease-m3-spring: var(--spring-bouncy);
-  --ease-bouncy-spring: var(--spring-bouncy);
-  --ease-liquid-morph: var(--spring-liquid);
-  --ease-tactile-press: cubic-bezier(0.2, 0, 0, 1);
-  --ambient-primary: rgba(255, 255, 255, 0.045);
+  --surface-well: #08090A;
+  --surface-inspector: #0E0F12;
+  --surface-control: #15171C;
+  --border-hairline: rgba(255, 255, 255, 0.07);
+  --accent-emerald: #34D399;
+
+  /* Signature Cinema Optical & Hardware Motion Tokens */
+  --ease-shutter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-aperture: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-optical: var(--ease-aperture);
+  --ease-nle: var(--ease-shutter);
+  --dur-micro: 150ms;
+  --dur-popover: 220ms;
+  --dur-pill: 260ms;
+  --dur-pill-nav: 260ms;
+  --dur-collapse: 260ms;
+  --dur-backdrop-in: 220ms;
+  --dur-backdrop-out: 150ms;
+  --dur-modal-in: 280ms;
+  --dur-modal-out: 160ms;
+  --dur-view: 380ms;
+  --dur-drawer-in: 280ms;
+  --dur-drawer-out: 160ms;
+  --dur-toast-in: 240ms;
+  --dur-toast-out: 150ms;
+  --dur-rim-sweep: 650ms;
+  --dur-scanline: 450ms;
 }
 
 @layer base {
   html,
   body {
     font-family: var(--font-sans);
-    background-color: #060709;
-    color: #E2E4E9;
+    background-color: #08090A;
+    color: #E4E4E7;
     overflow-x: clip;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   .font-mono {
     font-variant-numeric: tabular-nums;
   }
-
-  *,
-  *::before,
-  *::after {
-    transition-timing-function: var(--spring-liquid);
-  }
 }
 
-@keyframes liquidMorphLens {
-  0%,
-  100% {
-    border-radius: 54% 46% 52% 48% / 48% 54% 46% 52%;
-  }
-  33% {
-    border-radius: 46% 54% 48% 52% / 55% 45% 55% 45%;
-  }
-  66% {
-    border-radius: 52% 48% 45% 55% / 46% 52% 48% 54%;
-  }
+/* Utility: Hide scrollbars cleanly for horizontal floating docks on mobile */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
-@keyframes liquidSheenSweep {
-  0% {
-    transform: translate3d(-140%, -140%, 0) rotate(28deg);
+/* Calibrated Neutral Modal & Secondary Surface Panels */
+@layer components {
+  .m3-panel {
+    position: relative;
+    background-color: #0E0F12;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 10px;
   }
-  100% {
-    transform: translate3d(140%, 140%, 0) rotate(28deg);
-  }
-}
 
-@keyframes anamorphicCausticSweep {
-  0% {
-    transform: translate3d(-24%, -8%, 0) rotate(-14deg) scale3d(1, 0.92, 1);
+  .interactive-studio-backdrop {
+    background-color: #07080A;
   }
-  50% {
-    transform: translate3d(18%, 6%, 0) rotate(-8deg) scale3d(1.12, 1.04, 1);
-  }
-  100% {
-    transform: translate3d(-18%, 4%, 0) rotate(-12deg) scale3d(0.98, 0.94, 1);
-  }
-}
 
-/* 120fps GPU-Composited Monochrome Anamorphic Liquid Light Sweeps (18s, 24s, 30s) */
-@keyframes anamorphicRibbonDriftA {
-  0% {
-    transform: translate3d(-14%, -8%, 0) rotate(-14deg) scale3d(1, 0.94, 1);
+  .interactive-studio-backdrop .m3-panel {
+    background-color: rgba(11, 12, 15, 0.72);
+    backdrop-filter: blur(40px);
+    -webkit-backdrop-filter: blur(40px);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.07), 0 12px 32px rgba(0, 0, 0, 0.55);
   }
-  50% {
-    transform: translate3d(10%, 6%, 0) rotate(-9deg) scale3d(1.12, 1.04, 1);
-  }
-  100% {
-    transform: translate3d(-6%, 10%, 0) rotate(-12deg) scale3d(0.98, 1.02, 1);
-  }
-}
 
-@keyframes anamorphicRibbonDriftB {
-  0% {
-    transform: translate3d(12%, 4%, 0) rotate(11deg) scale3d(1.04, 0.96, 1);
-  }
-  50% {
-    transform: translate3d(-10%, -5%, 0) rotate(6deg) scale3d(0.96, 1.08, 1);
-  }
-  100% {
-    transform: translate3d(8%, -8%, 0) rotate(13deg) scale3d(1.08, 0.94, 1);
-  }
-}
-
-@keyframes anamorphicCausticPool {
-  0% {
-    transform: translate3d(-8%, 6%, 0) rotate(-6deg) scale3d(0.96, 1.05, 1);
-  }
-  50% {
-    transform: translate3d(9%, -6%, 0) rotate(4deg) scale3d(1.10, 0.95, 1);
-  }
-  100% {
-    transform: translate3d(-4%, -4%, 0) rotate(-2deg) scale3d(1.02, 1.06, 1);
-  }
-}
-
-.kf-liquid-lens {
-  animation: liquidMorphLens 11s ease-in-out infinite;
-  will-change: border-radius, transform;
-}
-
-.kf-liquid-sheen {
-  animation: liquidSheenSweep 5.5s var(--spring-liquid) infinite;
-  will-change: transform;
-}
-
-.argan-caustic-sweep {
-  animation: anamorphicCausticSweep 18s ease-in-out infinite alternate;
-  will-change: transform;
-}
-
-/* ==========================================================================
-   1. 120FPS GPU MONOCHROME ANAMORPHIC LIQUID LIGHT-FIELD BACKDROP
-   ========================================================================== */
-.workspace-anamorphic-ribbon-a {
-  pointer-events: none;
-  background: linear-gradient(
-    115deg,
-    transparent 20%,
-    rgba(255, 255, 255, 0.055) 45%,
-    rgba(235, 240, 250, 0.11) 50%,
-    rgba(255, 255, 255, 0.04) 55%,
-    transparent 80%
-  );
-  animation: anamorphicRibbonDriftA 18s ease-in-out infinite alternate;
-  will-change: transform;
-}
-
-.workspace-anamorphic-ribbon-b {
-  pointer-events: none;
-  background: linear-gradient(
-    115deg,
-    transparent 22%,
-    rgba(255, 255, 255, 0.045) 46%,
-    rgba(235, 240, 250, 0.095) 51%,
-    rgba(255, 255, 255, 0.035) 56%,
-    transparent 82%
-  );
-  animation: anamorphicRibbonDriftB 24s ease-in-out infinite alternate;
-  will-change: transform;
-}
-
-.workspace-caustic-pool-a {
-  pointer-events: none;
-  background: radial-gradient(
-    ellipse 68% 36% at 50% 50%,
-    rgba(255, 255, 255, 0.11) 0%,
-    rgba(235, 238, 245, 0.055) 42%,
-    rgba(255, 255, 255, 0.02) 68%,
-    transparent 84%
-  );
-  animation: anamorphicCausticPool 30s ease-in-out infinite alternate;
-  will-change: transform;
-}
-
-.workspace-caustic-pool-b {
-  pointer-events: none;
-  background: radial-gradient(
-    ellipse 60% 30% at 50% 50%,
-    rgba(255, 255, 255, 0.085) 0%,
-    rgba(226, 228, 233, 0.04) 48%,
-    transparent 78%
-  );
-  animation: anamorphicRibbonDriftA 24s ease-in-out infinite alternate-reverse;
-  will-change: transform;
-}
-
-.obsidian-studio-light {
-  background:
-    radial-gradient(
-      ellipse 80% 45% at 50% -10%,
-      rgba(255, 255, 255, 0.055),
-      transparent 70%
-    ),
-    radial-gradient(
-      ellipse 65% 32% at 50% -4%,
-      var(--ambient-primary, rgba(255, 255, 255, 0.045)),
-      transparent 65%
+  /* Linear-style cursor-proximity 1px specular border illumination */
+  .interactive-studio-backdrop .m3-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: radial-gradient(
+      380px circle at var(--mx, -9999px) var(--my, -9999px),
+      rgba(255, 255, 255, 0.32),
+      rgba(255, 255, 255, 0.11) 42%,
+      transparent 72%
     );
-  transition: background 600ms var(--spring-liquid);
+    -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+    z-index: 2;
+    opacity: var(--card-border-opacity, 0);
+    transition: opacity 220ms var(--ease-nle);
+  }
+
+  @media (hover: none) {
+    .interactive-studio-backdrop .m3-panel::before {
+      display: none;
+    }
+  }
 }
 
-.optical-caustic-grain {
-  background-image: radial-gradient(rgba(255, 255, 255, 0.65) 0.5px, transparent 0.5px),
-    radial-gradient(rgba(210, 215, 225, 0.45) 0.5px, transparent 0.5px);
-  background-size: 24px 24px;
-  background-position: 0 0, 12px 12px;
-  opacity: 0.025;
-}
-
-/* ==========================================================================
-   2. 100% HARDWARE-ACCELERATED LIQUID GLASS SYSTEM (Opera & Chrome Safe)
-   ========================================================================== */
-
-/* Sticky Top Header Frosted Glass Fill */
-.studio-frosted-header {
-  background: rgba(12, 14, 19, 0.56);
-  backdrop-filter: blur(22px) saturate(165%);
-  -webkit-backdrop-filter: blur(22px) saturate(165%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.05),
-    0 12px 32px -12px rgba(0, 0, 0, 0.72);
-}
-
-/* Hardware-Accelerated Optical Glass + Fresnel Rim (Top-Level Only: Rail & Modals) */
-.optical-refract-glass,
-.fresnel-glass-rim,
-.m3-modal-enter {
-  backdrop-filter: blur(22px) saturate(150%);
-  -webkit-backdrop-filter: blur(22px) saturate(150%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.05),
-    0 18px 40px -16px rgba(0, 0, 0, 0.75);
-}
-
-/* Prevent nested backdrop-filter inside cards/header (Chromium/Opera compositor fix) */
-.liquid-glass-card .optical-refract-glass,
-.m3-panel .optical-refract-glass,
-.studio-frosted-header .optical-refract-glass {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-/* Isolated Decorative Child Layers: Gradual Blur (3 Stacked Progressive Blur + Masks) */
-.gradual-blur-bottom {
-  pointer-events: none;
-  user-select: none;
-}
-
-.gradual-blur-layer-1 {
-  pointer-events: none;
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-  mask-image: linear-gradient(to bottom, transparent 0%, black 38%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 38%);
-}
-
-.gradual-blur-layer-2 {
-  pointer-events: none;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  mask-image: linear-gradient(to bottom, transparent 28%, black 72%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 28%, black 72%);
-}
-
-.gradual-blur-layer-3 {
-  pointer-events: none;
+.optical-refract-glass {
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  mask-image: linear-gradient(to bottom, transparent 58%, black 100%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 58%, black 100%);
 }
 
-/* Isolated Decorative Child Layer: Frosted Glass Soft Edges (Feathered Radial Mask) */
-.frosted-soft-edge {
-  pointer-events: none;
-  backdrop-filter: blur(18px) saturate(125%);
-  -webkit-backdrop-filter: blur(18px) saturate(125%);
-  mask-image: radial-gradient(
-    ellipse 72% 72% at 50% 50%,
-    black 48%,
-    transparent 100%
-  );
-  -webkit-mask-image: radial-gradient(
-    ellipse 72% 72% at 50% 50%,
-    black 48%,
-    transparent 100%
-  );
-}
-
-/* Permanent 18px Radius Hardware-Accelerated Cards (Explicit z-10 Above Backdrop, Zero Disappearing Cards) */
-.m3-panel,
-.liquid-glass-card {
-  position: relative;
-  z-index: 10;
-  border-radius: 18px;
-  overflow: hidden;
-  background: linear-gradient(
-    160deg,
-    rgba(20, 22, 28, 0.56) 0%,
-    rgba(11, 13, 17, 0.66) 100%
-  );
-  backdrop-filter: blur(22px) saturate(140%);
-  -webkit-backdrop-filter: blur(22px) saturate(140%);
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    0 18px 40px -16px rgba(0, 0, 0, 0.75);
+/* Tactile Hairline Switch (Optical Shutter Detent) */
+.nle-switch {
   transition:
-    border-color 240ms var(--spring-liquid),
-    background 240ms var(--spring-liquid),
-    box-shadow 260ms var(--spring-liquid),
-    transform 420ms var(--spring-bouncy);
+    background-color var(--dur-micro) var(--ease-shutter),
+    border-color var(--dur-micro) var(--ease-shutter);
 }
 
-.liquid-glass-pill {
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+.nle-switch > span {
   transition:
-    transform 420ms var(--spring-bouncy),
-    border-color 220ms var(--spring-liquid),
-    background 220ms var(--spring-liquid),
-    box-shadow 260ms var(--spring-liquid);
+    transform var(--dur-micro) var(--ease-shutter),
+    background-color var(--dur-micro) var(--ease-shutter);
 }
 
-.m3-surface-high {
-  background-color: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.085);
-  transition: background-color 200ms var(--spring-liquid),
-    border-color 200ms var(--spring-liquid);
-}
-
-/* ==========================================================================
-   3. BOUNCY SPRING PHYSICS & GOOEY LIQUID DROPLET DETACHMENT
-   ========================================================================== */
-
-/* 3.1 iOS 26 Liquid Stretch Toggles (Elongated Capsule Mid-Travel + Bouncy Overshoot) */
-@keyframes liquidToggleStretchOn {
-  0% {
-    transform: translate3d(2px, 0, 0) scaleX(1) scaleY(1);
-  }
-  45% {
-    transform: translate3d(9px, 0, 0) scaleX(1.38) scaleY(0.84);
-  }
-  78% {
-    transform: translate3d(17.5px, 0, 0) scaleX(0.92) scaleY(1.08);
-  }
-  100% {
-    transform: translate3d(16px, 0, 0) scaleX(1) scaleY(1);
-  }
-}
-
-@keyframes liquidToggleStretchOff {
-  0% {
-    transform: translate3d(16px, 0, 0) scaleX(1) scaleY(1);
-  }
-  45% {
-    transform: translate3d(8px, 0, 0) scaleX(1.38) scaleY(0.84);
-  }
-  78% {
-    transform: translate3d(0.5px, 0, 0) scaleX(0.92) scaleY(1.08);
-  }
-  100% {
-    transform: translate3d(2px, 0, 0) scaleX(1) scaleY(1);
-  }
-}
-
-.liquid-switch,
-[role="switch"] {
-  transition:
-    background-color 320ms var(--spring-liquid),
-    border-color 320ms var(--spring-liquid),
-    box-shadow 320ms var(--spring-liquid),
-    transform 320ms var(--spring-bouncy);
-}
-
-.liquid-switch:active,
-[role="switch"]:active {
-  transform: scale3d(0.96, 0.96, 1);
-}
-
-.liquid-switch-thumb,
-[role="switch"] > span {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.65),
-    0 2px 6px rgba(0, 0, 0, 0.6);
-  transition:
-    transform 420ms var(--spring-bouncy),
-    background-color 260ms var(--spring-liquid),
-    box-shadow 260ms var(--spring-liquid);
-  will-change: transform;
-}
-
-[role="switch"][aria-checked="true"] > span {
-  animation: liquidToggleStretchOn 440ms var(--spring-bouncy) forwards;
-}
-
-[role="switch"][aria-checked="false"] > span {
-  animation: liquidToggleStretchOff 440ms var(--spring-bouncy) forwards;
-}
-
-[role="switch"]:active > span {
-  transform: scaleX(1.38) scaleY(0.84) !important;
-}
-
-/* 3.2 Morphing Segmented Pill Indicator (420ms --spring-bouncy + Platinum Specular Rim) */
-.m3-pill-indicator {
-  transition:
-    transform 420ms var(--spring-bouncy),
-    opacity 220ms var(--spring-liquid);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.42),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.12),
-    0 4px 12px rgba(0, 0, 0, 0.45);
-  will-change: transform, opacity;
-}
-
-/* 3.3 Droplet Detachment on Action Pills (--spring-bouncy scale/translate overshoot) */
-@keyframes liquidDropletBud {
-  0% {
-    opacity: 0;
-    transform: scale(0.4) translateX(-12px);
-  }
-  60% {
-    opacity: 1;
-    transform: scale(1.08) translateX(2px);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1) translateX(0);
-  }
-}
-
-.liquid-droplet-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  animation: liquidDropletBud 460ms var(--spring-bouncy) both;
-  transform-origin: left center;
-  will-change: transform, opacity;
-}
-
-.liquid-goo-group {
-  filter: url(#liquid-goo);
-}
-
-/* 3.4 Collapsible Card Disclosure (Permanent 18px Radius in Both Collapsed & Expanded States) */
-.capsule-disclosure {
-  position: relative;
-  overflow: hidden;
-  border-radius: 18px;
-  transition:
-    border-color 320ms var(--spring-liquid),
-    background-color 320ms var(--spring-liquid),
-    box-shadow 340ms var(--spring-bouncy),
-    transform 340ms var(--spring-bouncy);
-}
-
-.capsule-disclosure::after {
-  content: "";
-  position: absolute;
-  inset: -40%;
-  background: linear-gradient(
-    125deg,
-    transparent 38%,
-    rgba(255, 255, 255, 0.06) 48%,
-    rgba(255, 255, 255, 0.14) 50%,
-    rgba(255, 255, 255, 0.05) 52%,
-    transparent 62%
-  );
-  transform: translate3d(-68%, -68%, 0);
-  opacity: 0;
-  pointer-events: none;
-  z-index: 2;
-  transition:
-    transform 640ms var(--spring-liquid),
-    opacity 380ms var(--spring-liquid);
-}
-
-.capsule-disclosure[data-open="true"] {
-  border-radius: 18px;
-  transform: scale3d(1, 1, 1);
-}
-
-.capsule-disclosure[data-open="true"]::after {
-  transform: translate3d(68%, 68%, 0);
-  opacity: 1;
-}
-
-.capsule-disclosure[data-open="false"] {
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.15),
-    0 12px 28px -12px rgba(0, 0, 0, 0.75);
-}
-
-.m3-collapse-grid {
+/* Smooth CSS Grid Collapsible Inspector Sections & Accordions (260ms var(--ease-shutter)) */
+.m3-collapse-grid,
+.studio-collapse-grid {
   display: grid;
   grid-template-rows: 0fr;
+  opacity: 0;
   transition:
-    grid-template-rows 340ms var(--spring-bouncy),
-    opacity 260ms var(--spring-liquid),
-    margin-top 340ms var(--spring-bouncy);
+    grid-template-rows var(--dur-collapse) var(--ease-shutter),
+    opacity 220ms var(--ease-aperture);
 }
 
-.m3-collapse-grid[data-expanded="true"] {
+.m3-collapse-grid[data-expanded="true"],
+.studio-collapse-grid[data-expanded="true"] {
   grid-template-rows: 1fr;
   opacity: 1;
 }
 
-.m3-collapse-grid[data-expanded="false"] {
+.m3-collapse-grid[data-expanded="false"],
+.studio-collapse-grid[data-expanded="false"] {
   grid-template-rows: 0fr;
   opacity: 0;
   pointer-events: none;
 }
 
-.m3-collapse-inner {
+.m3-collapse-inner,
+.studio-collapse-inner {
   overflow: hidden;
   min-height: 0;
-  transform-origin: top center;
+}
+
+.studio-chevron {
   transition:
-    transform 340ms var(--spring-bouncy),
-    opacity 260ms var(--spring-liquid);
+    transform var(--dur-collapse) var(--ease-shutter),
+    color var(--dur-micro) var(--ease-aperture);
 }
 
-.m3-collapse-grid[data-expanded="true"] > .m3-collapse-inner {
-  transform: scale3d(1, 1, 1);
-  opacity: 1;
-}
-
-.m3-collapse-grid[data-expanded="false"] > .m3-collapse-inner {
-  transform: scale3d(0.98, 0.96, 1);
-  opacity: 0;
-}
-
-/* 3.5 Recessed Optical Glass Slider Channel & Monochrome Platinum Droplet Lens Thumb */
-.liquid-slider-track {
-  background: linear-gradient(
-    180deg,
-    rgba(6, 7, 10, 0.84) 0%,
-    rgba(16, 18, 22, 0.68) 100%
-  );
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow:
-    inset 0 1px 2px rgba(0, 0, 0, 0.78),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.07);
-}
-
-.liquid-droplet-thumb {
-  will-change: transform;
+/* Precision Hardware Tactile Buttons & Segmented Controls */
+.m3-btn-morph,
+.studio-tactile {
   transition:
-    transform 420ms var(--spring-bouncy),
-    background-color 200ms var(--spring-liquid),
-    border-color 200ms var(--spring-liquid),
-    box-shadow 240ms var(--spring-liquid);
+    background-color var(--dur-micro) var(--ease-aperture),
+    border-color var(--dur-micro) var(--ease-aperture),
+    color var(--dur-micro) var(--ease-aperture),
+    opacity var(--dur-micro) var(--ease-aperture),
+    transform 110ms var(--ease-shutter);
 }
 
-/* Fast Compositor-Only Tactile Spring Buttons */
-.m3-btn-morph {
-  transition: transform 360ms var(--spring-bouncy),
-    background-color 200ms var(--spring-liquid),
-    border-color 200ms var(--spring-liquid),
-    color 200ms var(--spring-liquid),
-    box-shadow 220ms var(--spring-liquid);
-}
-
-.m3-btn-morph:not(:disabled):hover {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 6px 16px rgba(0, 0, 0, 0.42);
-}
-
-.m3-btn-morph:not(:disabled):active {
-  transform: scale3d(0.94, 0.94, 1);
-  transition-duration: 90ms;
-  transition-timing-function: var(--ease-tactile-press);
+.m3-btn-morph:not(:disabled):active,
+.studio-tactile:not(:disabled):active {
+  transform: scale(0.96);
 }
 
 .m3-btn-primary-morph {
-  transition: transform 360ms var(--spring-bouncy),
-    background-color 200ms var(--spring-liquid),
-    box-shadow 220ms var(--spring-liquid);
-}
-
-.m3-btn-primary-morph:not(:disabled):hover {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    0 8px 22px rgba(110, 231, 183, 0.22);
+  transition:
+    background-color var(--dur-micro) var(--ease-aperture),
+    opacity var(--dur-micro) var(--ease-aperture),
+    transform 110ms var(--ease-shutter);
 }
 
 .m3-btn-primary-morph:not(:disabled):active {
-  transform: scale3d(0.94, 0.94, 1);
-  transition-duration: 90ms;
-  transition-timing-function: var(--ease-tactile-press);
+  transform: scale(0.96);
 }
 
-/* GPU-Composited View, Modal & Workstation Cascade Animations */
-@keyframes m3FadeSlideIn {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 8px, 0) scale3d(0.98, 0.98, 1);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
-  }
-}
-
-@keyframes m3ModalIn {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 10px, 0) scale3d(0.96, 0.96, 1);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
-  }
-}
-
-@keyframes m3ToastIn {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 14px, 0) scale3d(0.92, 0.92, 1);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
-  }
-}
-
-@keyframes liquidTopBarMorphIn {
+/* Signature Cinema Optical & Hardware Keyframes */
+@keyframes optical-view-reveal {
   0% {
     opacity: 0;
-    transform: translate3d(0, -16px, 0) scale3d(0.98, 0.98, 1);
+    transform: translate3d(0, 16px, 0) scale3d(0.968, 0.968, 1);
   }
   100% {
     opacity: 1;
@@ -644,10 +213,27 @@
   }
 }
 
-@keyframes liquidPanelMorphIn {
+@keyframes specular-rim-sweep {
   0% {
     opacity: 0;
-    transform: translate3d(0, 18px, 0) scale3d(0.97, 0.97, 1);
+    background-position: 100% 0%;
+  }
+  16% {
+    opacity: 1;
+  }
+  82% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    background-position: 0% 0%;
+  }
+}
+
+@keyframes aperture-dialog-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale3d(0.9, 0.9, 1);
   }
   100% {
     opacity: 1;
@@ -655,10 +241,874 @@
   }
 }
 
-@keyframes liquidSliderRowMorphIn {
+@keyframes aperture-dialog-out {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale3d(0.93, 0.93, 1);
+  }
+}
+
+@keyframes calibration-scanline {
   0% {
     opacity: 0;
-    transform: translate3d(0, 6px, 0);
+    transform: translate3d(0, -100%, 0);
+  }
+  10% {
+    opacity: 1;
+  }
+  84% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 4%, 0);
+  }
+}
+
+@keyframes studioPanelFade {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.992);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes studioBackdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes studioBackdropOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes studioDrawerRightIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(24px, 14px, 0) scale3d(0.92, 0.92, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+@keyframes studioDrawerRightOut {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(20px, 8px, 0) scale3d(0.95, 0.95, 1);
+  }
+}
+
+@keyframes optical-unfold-down-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -8px, 0) scale3d(0.94, 0.94, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+@keyframes optical-unfold-down-out {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, -5px, 0) scale3d(0.96, 0.96, 1);
+  }
+}
+
+@keyframes optical-unfold-up-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale3d(0.94, 0.94, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+@keyframes optical-unfold-up-out {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 5px, 0) scale3d(0.96, 0.96, 1);
+  }
+}
+
+@keyframes studioToastIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes studioToastOut {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.97);
+  }
+}
+
+@keyframes studioToastTopIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -12px, 0) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes studioToastTopOut {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, -8px, 0) scale(0.97);
+  }
+}
+
+@keyframes studioCalibBeam {
+  0% {
+    transform: translate3d(-100%, 0, 0);
+  }
+  100% {
+    transform: translate3d(260%, 0, 0);
+  }
+}
+
+@keyframes studioCalibLockFlash {
+  0% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Sub-page optical focus settle (omits forwards so resting transform/filter returns to none) */
+.studio-view-enter,
+.optical-view-reveal,
+.m3-tab-enter {
+  animation: optical-view-reveal var(--dur-view) var(--ease-shutter);
+}
+
+.studio-panel-fade {
+  animation: studioPanelFade 210ms var(--ease-shutter);
+}
+
+/* Staggered smoked-glass studio cards (65ms step) + clearly visible 1px bright silver specular rim sweep (650ms) */
+.studio-card-enter {
+  position: relative;
+  animation: optical-view-reveal var(--dur-view) var(--ease-shutter) backwards;
+  animation-delay: var(--stagger-delay, 0ms);
+}
+
+.studio-card-enter::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 6px;
+  right: 6px;
+  height: 1px;
+  border-radius: 9999px;
+  pointer-events: none;
+  z-index: 4;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 24%,
+    rgba(255, 255, 255, 0.42) 38%,
+    rgba(255, 255, 255, 0.98) 50%,
+    rgba(255, 255, 255, 0.42) 62%,
+    transparent 76%,
+    transparent 100%
+  );
+  background-size: 280% 100%;
+  background-repeat: no-repeat;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.28);
+  opacity: 0;
+  animation: specular-rim-sweep var(--dur-rim-sweep) var(--ease-shutter) both;
+  animation-delay: calc(var(--stagger-delay, 0ms) + 70ms);
+}
+
+.studio-stagger-0 { --stagger-delay: 0ms; }
+.studio-stagger-1 { --stagger-delay: 65ms; }
+.studio-stagger-2 { --stagger-delay: 130ms; }
+.studio-stagger-3 { --stagger-delay: 195ms; }
+.studio-stagger-4 { --stagger-delay: 260ms; }
+
+/* Smoked Backdrop & Optical Aperture Modal Transitions */
+.studio-backdrop[data-state="open"] {
+  animation: studioBackdropIn var(--dur-backdrop-in) var(--ease-aperture) both;
+}
+
+.studio-backdrop[data-state="closing"] {
+  animation: studioBackdropOut var(--dur-backdrop-out) var(--ease-aperture) both;
+  pointer-events: none;
+}
+
+.studio-modal {
+  position: relative;
+}
+
+.studio-modal[data-state="open"],
+.m3-modal-enter {
+  animation: aperture-dialog-in var(--dur-modal-in) var(--ease-shutter) both;
+}
+
+.studio-modal[data-state="open"]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 10px;
+  right: 10px;
+  height: 1px;
+  border-radius: 9999px;
+  pointer-events: none;
+  z-index: 10;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 24%,
+    rgba(255, 255, 255, 0.42) 38%,
+    rgba(255, 255, 255, 0.98) 50%,
+    rgba(255, 255, 255, 0.42) 62%,
+    transparent 76%,
+    transparent 100%
+  );
+  background-size: 280% 100%;
+  background-repeat: no-repeat;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.25);
+  opacity: 0;
+  animation: specular-rim-sweep var(--dur-rim-sweep) var(--ease-shutter) 65ms both;
+}
+
+.studio-modal[data-state="closing"] {
+  animation: aperture-dialog-out var(--dur-modal-out) var(--ease-aperture) both;
+  pointer-events: none;
+}
+
+/* Right-Docked Preset Browser / Looks Drawer */
+.studio-drawer-right {
+  position: relative;
+  transform-origin: right center;
+}
+
+.studio-drawer-right[data-state="open"] {
+  animation: studioDrawerRightIn var(--dur-drawer-in) var(--ease-shutter) both;
+}
+
+.studio-drawer-right[data-state="open"]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 8px;
+  right: 8px;
+  height: 1px;
+  border-radius: 9999px;
+  pointer-events: none;
+  z-index: 10;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 24%,
+    rgba(255, 255, 255, 0.42) 38%,
+    rgba(255, 255, 255, 0.98) 50%,
+    rgba(255, 255, 255, 0.42) 62%,
+    transparent 76%,
+    transparent 100%
+  );
+  background-size: 280% 100%;
+  background-repeat: no-repeat;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.25);
+  opacity: 0;
+  animation: specular-rim-sweep var(--dur-rim-sweep) var(--ease-shutter) 65ms both;
+}
+
+.studio-drawer-right[data-state="closing"] {
+  animation: studioDrawerRightOut var(--dur-drawer-out) var(--ease-aperture) both;
+  pointer-events: none;
+}
+
+/* Header Popovers, Dropdowns & Hover Tooltips (190ms Optical Unfold) */
+.studio-popover[data-state="open"],
+.studio-popover-enter {
+  transform-origin: top center;
+  animation: optical-unfold-down-in var(--dur-popover) var(--ease-shutter) both;
+}
+
+.studio-popover[data-state="closing"] {
+  transform-origin: top center;
+  animation: optical-unfold-down-out 130ms var(--ease-aperture) both;
+  pointer-events: none;
+}
+
+.studio-popover[data-placement="top"][data-state="open"] {
+  transform-origin: bottom center;
+  animation: optical-unfold-up-in var(--dur-popover) var(--ease-shutter) both;
+}
+
+.studio-popover[data-placement="top"][data-state="closing"] {
+  transform-origin: bottom center;
+  animation: optical-unfold-up-out 130ms var(--ease-aperture) both;
+  pointer-events: none;
+}
+
+/* Crisp Slide-In Toast Notifications (240ms var(--ease-shutter)) */
+.studio-toast[data-state="open"],
+.m3-toast-enter {
+  animation: studioToastIn var(--dur-toast-in) var(--ease-shutter) both;
+}
+
+.studio-toast[data-state="closing"] {
+  animation: studioToastOut var(--dur-toast-out) var(--ease-aperture) both;
+  pointer-events: none;
+}
+
+.studio-toast-top[data-state="open"] {
+  animation: studioToastTopIn var(--dur-toast-in) var(--ease-shutter) both;
+}
+
+.studio-toast-top[data-state="closing"] {
+  animation: studioToastTopOut var(--dur-toast-out) var(--ease-aperture) both;
+  pointer-events: none;
+}
+
+/* Silver-Emerald 1.5px Optical Calibration Scanline Sweep (450ms) */
+.studio-scanline-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 35;
+}
+
+.studio-scanline-sweep {
+  position: absolute;
+  inset: 0;
+  will-change: transform, opacity;
+  animation: calibration-scanline var(--dur-scanline) var(--ease-shutter) forwards;
+}
+
+.studio-scanline-sweep::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 1.5px;
+  height: 34px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(52, 211, 153, 0.11) 58%,
+    rgba(228, 228, 231, 0.22) 100%
+  );
+}
+
+.studio-scanline-sweep::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1.5px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(52, 211, 153, 0.85) 14%,
+    rgba(255, 255, 255, 0.98) 50%,
+    rgba(52, 211, 153, 0.85) 86%,
+    transparent 100%
+  );
+  box-shadow:
+    0 0 14px 1px rgba(52, 211, 153, 0.62),
+    0 0 5px rgba(255, 255, 255, 0.85);
+}
+
+/* Calibration Diagnostic Progress Rail */
+.studio-calib-beam {
+  width: 42%;
+  animation: studioCalibBeam 760ms var(--ease-aperture) infinite;
+  will-change: transform;
+}
+
+.studio-calib-lock-flash {
+  animation: studioCalibLockFlash 650ms var(--ease-aperture) forwards;
+}
+
+.studio-sliding-pill {
+  will-change: transform, width, height;
+}
+
+@keyframes introShutterPartTop {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, -100%, 0);
+  }
+}
+
+@keyframes introShutterPartBottom {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 100%, 0);
+  }
+}
+
+@keyframes introHorizonExpand {
+  0% {
+    opacity: 0;
+    transform: scale3d(0, 1, 1);
+  }
+  16% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.95;
+    transform: scale3d(1, 1, 1);
+  }
+}
+
+@keyframes introHorizonFade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes introViewfinderLock {
+  from {
+    opacity: 0;
+    transform: scale3d(1.06, 1.06, 1);
+  }
+  to {
+    opacity: 1;
+    transform: scale3d(1, 1, 1);
+  }
+}
+
+@keyframes introTelemetryLock {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes introColorimeterReveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes introCalibChipIgnite {
+  0% {
+    opacity: 0.14;
+    transform: scale3d(1, 0.8, 1);
+    filter: brightness(1);
+    box-shadow: none;
+  }
+  40% {
+    opacity: 1;
+    transform: scale3d(1, 1.06, 1);
+    filter: brightness(1.55);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.85),
+      0 0 8px rgba(255, 255, 255, 0.32);
+  }
+  100% {
+    opacity: 1;
+    transform: scale3d(1, 1, 1);
+    filter: brightness(1);
+    box-shadow: none;
+  }
+}
+
+@keyframes introColorimeterSilverSweep {
+  0% {
+    opacity: 0;
+    transform: translate3d(-120%, 0, 0);
+  }
+  18% {
+    opacity: 0.96;
+  }
+  82% {
+    opacity: 0.78;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(250%, 0, 0);
+  }
+}
+
+@keyframes introEmblemAperture {
+  from {
+    opacity: 0;
+    transform: scale3d(0.88, 0.88, 1);
+  }
+  to {
+    opacity: 1;
+    transform: scale3d(1, 1, 1);
+  }
+}
+
+@keyframes introKineticMaskReveal {
+  from {
+    opacity: 0.01;
+    clip-path: inset(100% 0 0 0);
+    transform: translate3d(0, 16px, 0);
+    letter-spacing: 0.025em;
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translate3d(0, 0, 0);
+    letter-spacing: -0.025em;
+  }
+}
+
+@keyframes introSubtitleMaskReveal {
+  from {
+    opacity: 0;
+    clip-path: inset(100% 0 0 0);
+    transform: translate3d(0, 14px, 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes cinemaIntroReveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes introCtaSpecularSweep {
+  0% {
+    opacity: 0;
+    transform: translate3d(-135%, 0, 0) skewX(-22deg);
+  }
+  16% {
+    opacity: 1;
+  }
+  84% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(275%, 0, 0) skewX(-22deg);
+  }
+}
+
+.intro-shutter-top {
+  animation: introShutterPartTop 650ms cubic-bezier(0.16, 1, 0.3, 1) 300ms both;
+  will-change: transform, opacity;
+}
+
+.intro-shutter-bottom {
+  animation: introShutterPartBottom 650ms cubic-bezier(0.16, 1, 0.3, 1) 300ms both;
+  will-change: transform, opacity;
+}
+
+.intro-horizon-wrap {
+  animation: introHorizonFade 500ms cubic-bezier(0.16, 1, 0.3, 1) 450ms forwards;
+  will-change: opacity;
+}
+
+.intro-horizon-scanline {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.16) 14%,
+    rgba(255, 255, 255, 0.68) 50%,
+    rgba(255, 255, 255, 0.16) 86%,
+    transparent 100%
+  );
+  transform-origin: center center;
+  opacity: 0;
+  animation: introHorizonExpand 450ms cubic-bezier(0.16, 1, 0.3, 1) 0ms both;
+  will-change: transform, opacity;
+}
+
+.intro-vf-frame {
+  transform-origin: center center;
+  opacity: 0;
+  animation: introViewfinderLock 850ms cubic-bezier(0.16, 1, 0.3, 1) 100ms both;
+  will-change: transform, opacity;
+}
+
+.intro-boot-telemetry {
+  opacity: 0;
+  animation: introTelemetryLock 850ms cubic-bezier(0.16, 1, 0.3, 1) 100ms both;
+  will-change: transform, opacity;
+}
+
+.intro-boot-colorimeter {
+  opacity: 0;
+  animation: introColorimeterReveal 480ms cubic-bezier(0.16, 1, 0.3, 1) 820ms both;
+  will-change: transform, opacity;
+}
+
+.intro-calib-chip {
+  opacity: 0.14;
+  transform-origin: center bottom;
+  animation-name: introCalibChipIgnite;
+  animation-duration: 280ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: both;
+  will-change: transform, opacity, filter;
+}
+
+.intro-calib-boot-sweep {
+  background: linear-gradient(
+    102deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.16) 24%,
+    rgba(255, 255, 255, 0.85) 50%,
+    rgba(255, 255, 255, 0.16) 76%,
+    transparent 100%
+  );
+  width: 46%;
+  opacity: 0;
+  animation: introColorimeterSilverSweep 600ms cubic-bezier(0.16, 1, 0.3, 1) 1820ms both;
+  will-change: transform, opacity;
+}
+
+.intro-boot-emblem {
+  opacity: 0;
+  animation: introEmblemAperture 800ms cubic-bezier(0.16, 1, 0.3, 1) 1250ms both;
+  will-change: transform, opacity;
+}
+
+.intro-kinetic-mask {
+  opacity: 0.01;
+  clip-path: inset(100% 0 0 0);
+  animation-name: introKineticMaskReveal;
+  animation-duration: 900ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: both;
+  will-change: transform, clip-path, opacity;
+}
+
+.intro-kinetic-subtitle {
+  opacity: 0;
+  clip-path: inset(100% 0 0 0);
+  animation-name: introSubtitleMaskReveal;
+  animation-duration: 850ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: both;
+  will-change: transform, clip-path, opacity;
+}
+
+.m3-intro-item {
+  opacity: 0;
+  animation-name: cinemaIntroReveal;
+  animation-duration: 750ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: both;
+  will-change: transform, opacity;
+}
+
+.intro-cta-boot-sweep {
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(161, 161, 170, 0.14) 22%,
+    rgba(255, 255, 255, 0.95) 48%,
+    rgba(255, 255, 255, 0.98) 54%,
+    rgba(161, 161, 170, 0.14) 78%,
+    transparent 100%
+  );
+  width: 48%;
+  opacity: 0;
+  animation: introCtaSpecularSweep 600ms cubic-bezier(0.16, 1, 0.3, 1) 2950ms both;
+  will-change: transform, opacity;
+}
+
+/* Cinema Viewfinder Intro: cursor-reactive 1px silver specular bezel & calibration sweep */
+.intro-specular-bezel {
+  position: relative;
+}
+
+.intro-specular-bezel::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: radial-gradient(
+    240px circle at var(--local-mx, -9999px) var(--local-my, -9999px),
+    rgba(255, 255, 255, 0.44),
+    rgba(255, 255, 255, 0.14) 44%,
+    transparent 74%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: var(--cursor-presence, 0);
+  transition: opacity 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.intro-calib-sweep {
+  background: linear-gradient(
+    102deg,
+    transparent calc(var(--sweep-pct, 50%) - 18%),
+    rgba(255, 255, 255, 0.07) calc(var(--sweep-pct, 50%) - 8%),
+    rgba(255, 255, 255, 0.46) var(--sweep-pct, 50%),
+    rgba(255, 255, 255, 0.07) calc(var(--sweep-pct, 50%) + 8%),
+    transparent calc(var(--sweep-pct, 50%) + 18%)
+  );
+  opacity: calc(0.12 + var(--cursor-presence, 0) * 0.78);
+  transition: opacity 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (hover: none) {
+  .intro-specular-bezel::before {
+    display: none;
+  }
+}
+
+/* Choreographed Intro-to-Workstation Hand-Off (540ms Optical Dive & 3-Column Workstation Stagger) */
+@keyframes introOpticalDive {
+  0% {
+    opacity: 1;
+    transform: scale3d(1, 1, 1);
+    filter: blur(0px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale3d(1.07, 1.07, 1);
+    filter: blur(8px);
+  }
+}
+
+@keyframes introBackdropFadeOut {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes introHandoffRail {
+  0% {
+    opacity: 0;
+    transform: scale3d(0.18, 1, 1);
+  }
+  18% {
+    opacity: 0.7;
+    transform: scale3d(1, 1, 1);
+  }
+  78% {
+    opacity: 0.36;
+    transform: scale3d(1, 1, 1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale3d(1, 1, 1);
+  }
+}
+
+@keyframes introHandoffBeamSweep {
+  0% {
+    opacity: 0;
+    transform: translate3d(-100%, 0, 0);
+  }
+  12% {
+    opacity: 1;
+  }
+  84% {
+    opacity: 0.96;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(280%, 0, 0);
+  }
+}
+
+@keyframes workstationHeaderEnter {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -100%, 0);
   }
   100% {
     opacity: 1;
@@ -666,10 +1116,10 @@
   }
 }
 
-@keyframes m3IntroElementRise {
+@keyframes workstationColLeftEnter {
   0% {
     opacity: 0;
-    transform: translate3d(0, 12px, 0) scale3d(0.97, 0.97, 1);
+    transform: translate3d(-18px, 0, 0) scale3d(0.97, 0.97, 1);
   }
   100% {
     opacity: 1;
@@ -677,101 +1127,193 @@
   }
 }
 
-.m3-tab-enter {
-  animation: m3FadeSlideIn 320ms var(--spring-bouncy) forwards;
+@keyframes workstationColCenterEnter {
+  0% {
+    opacity: 0;
+    transform: scale3d(0.96, 0.96, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale3d(1, 1, 1);
+  }
 }
 
-.m3-modal-enter {
-  animation: m3ModalIn 340ms var(--spring-bouncy) forwards;
+@keyframes workstationColRightEnter {
+  0% {
+    opacity: 0;
+    transform: translate3d(18px, 0, 0) scale3d(0.97, 0.97, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
 }
 
-.m3-toast-enter {
-  animation: m3ToastIn 380ms var(--spring-bouncy) forwards;
+.intro-exit-dive {
+  transform-origin: center center;
+  animation: introOpticalDive 280ms var(--ease-shutter) forwards;
+  will-change: transform, filter, opacity;
 }
 
-.m3-morph-topbar {
-  animation: liquidTopBarMorphIn 420ms var(--spring-bouncy) both;
-  animation-delay: 0ms;
+.intro-exit-bg {
+  animation: introBackdropFadeOut 340ms var(--ease-shutter) forwards;
+  will-change: opacity;
+}
+
+.intro-exit-chrome {
+  animation: introBackdropFadeOut 240ms var(--ease-shutter) forwards;
+  will-change: opacity;
+}
+
+.intro-handoff-rail {
+  transform-origin: center center;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.22) 16%,
+    rgba(255, 255, 255, 0.65) 50%,
+    rgba(255, 255, 255, 0.22) 84%,
+    transparent 100%
+  );
+  animation: introHandoffRail 360ms var(--ease-shutter) forwards;
   will-change: transform, opacity;
 }
 
-.m3-morph-panel {
-  animation: liquidPanelMorphIn 460ms var(--spring-bouncy) both;
-  animation-delay: var(--morph-delay, 0ms);
+.intro-handoff-beam {
+  width: 38%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(228, 228, 231, 0.48) 26%,
+    rgba(255, 255, 255, 0.98) 52%,
+    rgba(228, 228, 231, 0.48) 76%,
+    transparent 100%
+  );
+  box-shadow:
+    0 0 12px 1px rgba(255, 255, 255, 0.58),
+    0 0 24px rgba(52, 211, 153, 0.22);
+  animation: introHandoffBeamSweep 360ms var(--ease-shutter) forwards;
   will-change: transform, opacity;
 }
 
-.m3-morph-slider-row {
-  animation: liquidSliderRowMorphIn 340ms var(--spring-liquid) both;
-  animation-delay: var(--row-delay, 120ms);
+.workstation-header-enter {
+  animation: workstationHeaderEnter 320ms var(--ease-shutter) 140ms both;
+  will-change: transform, opacity;
 }
 
-.m3-intro-item {
-  opacity: 0;
-  animation: m3IntroElementRise 440ms var(--spring-bouncy) forwards;
+.workstation-col-left-enter {
+  transform-origin: left center;
+  animation: workstationColLeftEnter 400ms var(--ease-shutter) 160ms both;
+  will-change: transform, opacity;
 }
 
-/* Respect System Reduced-Motion Preference */
+.workstation-col-center-enter {
+  transform-origin: center center;
+  animation: workstationColCenterEnter 400ms var(--ease-shutter) 220ms both;
+  will-change: transform, opacity;
+}
+
+.workstation-col-right-enter {
+  transform-origin: right center;
+  animation: workstationColRightEnter 400ms var(--ease-shutter) 280ms both;
+  will-change: transform, opacity;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  :root {
-    --spring-bouncy: cubic-bezier(0.2, 0, 0, 1);
-    --spring-liquid: cubic-bezier(0.2, 0, 0, 1);
-    --ease-m3-spring: cubic-bezier(0.2, 0, 0, 1);
-    --ease-bouncy-spring: cubic-bezier(0.2, 0, 0, 1);
-    --ease-liquid-morph: cubic-bezier(0.2, 0, 0, 1);
-    --ease-tactile-press: cubic-bezier(0.2, 0, 0, 1);
-  }
-
-  .argan-caustic-sweep,
-  .workspace-anamorphic-ribbon-a,
-  .workspace-anamorphic-ribbon-b,
-  .workspace-caustic-pool-a,
-  .workspace-caustic-pool-b {
-    animation: none !important;
-  }
-
-  .m3-pill-indicator,
-  .m3-btn-morph,
-  .m3-btn-primary-morph,
-  .m3-collapse-grid,
-  .m3-collapse-inner {
-    transition-duration: 100ms !important;
-  }
-
-  .m3-btn-morph:not(:disabled):active,
-  .m3-btn-primary-morph:not(:disabled):active {
-    transform: none !important;
-  }
-
+  .studio-view-enter,
+  .optical-view-reveal,
+  .studio-panel-fade,
+  .studio-card-enter,
+  .studio-backdrop,
+  .studio-modal,
+  .studio-drawer-right,
+  .studio-popover,
+  .studio-popover-enter,
+  .studio-toast,
+  .studio-toast-top,
+  .studio-calib-beam,
+  .studio-calib-lock-flash,
   .m3-tab-enter,
   .m3-modal-enter,
   .m3-toast-enter,
-  .m3-morph-topbar,
-  .m3-morph-panel,
-  .m3-morph-slider-row,
   .m3-intro-item,
-  .liquid-droplet-badge {
+  .intro-vf-frame,
+  .intro-boot-telemetry,
+  .intro-boot-colorimeter,
+  .intro-calib-chip,
+  .intro-boot-emblem,
+  .intro-kinetic-mask,
+  .intro-kinetic-subtitle,
+  .workstation-header-enter,
+  .workstation-col-left-enter,
+  .workstation-col-center-enter,
+  .workstation-col-right-enter {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
+    clip-path: none !important;
+    filter: none !important;
+    letter-spacing: inherit;
+  }
+
+  .intro-exit-dive,
+  .intro-exit-bg,
+  .intro-exit-chrome {
+    animation: none !important;
+    opacity: 0 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+
+  .studio-card-enter::after,
+  .studio-modal::after,
+  .studio-drawer-right::after,
+  .studio-scanline-overlay,
+  .studio-scanline-sweep,
+  .intro-handoff-rail,
+  .intro-handoff-beam {
+    display: none !important;
+    animation: none !important;
+  }
+
+  .studio-sliding-pill,
+  .studio-collapse-grid,
+  .m3-collapse-grid,
+  .studio-chevron,
+  .studio-tactile,
+  .m3-btn-morph,
+  .m3-btn-primary-morph,
+  .nle-switch,
+  .nle-switch > span {
+    transition: none !important;
+  }
+
+  .intro-shutter-top,
+  .intro-shutter-bottom,
+  .intro-horizon-wrap,
+  .intro-horizon-scanline,
+  .intro-calib-boot-sweep,
+  .intro-cta-boot-sweep {
+    display: none !important;
   }
 }
 
-/* Custom ultra-thin 4px scrollbar for workstation feel */
+/* Ultra-thin calibrated dark scrollbar for side inspectors */
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #060709;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.24);
 }

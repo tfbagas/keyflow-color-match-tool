@@ -8,6 +8,7 @@ import {
   GLSL_FILMIC_LINEAR_SHOULDER_FUNCTIONS,
 } from "./colorMatcher.js";
 import { GLSL_LOG_PROFILE_FUNCTIONS } from "./logProfiles.js";
+import { LUT32_SIZE, packLut32ToWebGLTexture512x64 } from "../engine/lut3d.ts";
 
 export { UNIFORM_MAP };
 
@@ -309,6 +310,7 @@ void main() {
 export const LUT_UNIFORMS = `uniform sampler2D uLutTex;
 uniform float uLutActive;
 uniform float uLutMix;
+uniform float uLutPostGrade;
 uniform float uLutSize;
 uniform float uLutGridCols;
 uniform vec2 uLutTexSize;
@@ -325,6 +327,8 @@ export const LUT_FUNCTION = `vec3 kfFetchLutNode(float rIdx, float gIdx, float b
     return texture2D(uLutTex, uv).rgb;
 }
 
+// Exact Tetrahedral Interpolation in pure GLSL ES 1.00 (4 fetches per pixel).
+// Eliminates neutral-gray & smooth-gradient hue banding on 32^3 and N^3 LUTs.
 vec3 kfSampleLut3D(vec3 rgb) {
     vec3 domSpan = max(uLutDomainMax - uLutDomainMin, vec3(1e-5));
     vec3 normRgb = clamp((rgb - uLutDomainMin) / domSpan, 0.0, 1.0);
@@ -335,21 +339,37 @@ vec3 kfSampleLut3D(vec3 rgb) {
     vec3 f = pos - i0;
 
     vec3 c000 = kfFetchLutNode(i0.r, i0.g, i0.b);
-    vec3 c100 = kfFetchLutNode(i1.r, i0.g, i0.b);
-    vec3 c010 = kfFetchLutNode(i0.r, i1.g, i0.b);
-    vec3 c110 = kfFetchLutNode(i1.r, i1.g, i0.b);
-    vec3 c001 = kfFetchLutNode(i0.r, i0.g, i1.b);
-    vec3 c101 = kfFetchLutNode(i1.r, i0.g, i1.b);
-    vec3 c011 = kfFetchLutNode(i0.r, i1.g, i1.b);
     vec3 c111 = kfFetchLutNode(i1.r, i1.g, i1.b);
 
-    vec3 c00 = mix(c000, c100, f.r);
-    vec3 c10 = mix(c010, c110, f.r);
-    vec3 c01 = mix(c001, c101, f.r);
-    vec3 c11 = mix(c011, c111, f.r);
-    vec3 c0 = mix(c00, c10, f.g);
-    vec3 c1 = mix(c01, c11, f.g);
-    return mix(c0, c1, f.b);
+    if (f.r >= f.g) {
+        if (f.g >= f.b) {
+            vec3 c100 = kfFetchLutNode(i1.r, i0.g, i0.b);
+            vec3 c110 = kfFetchLutNode(i1.r, i1.g, i0.b);
+            return c000 + f.r * (c100 - c000) + f.g * (c110 - c100) + f.b * (c111 - c110);
+        } else if (f.r >= f.b) {
+            vec3 c100 = kfFetchLutNode(i1.r, i0.g, i0.b);
+            vec3 c101 = kfFetchLutNode(i1.r, i0.g, i1.b);
+            return c000 + f.r * (c100 - c000) + f.b * (c101 - c100) + f.g * (c111 - c101);
+        } else {
+            vec3 c001 = kfFetchLutNode(i0.r, i0.g, i1.b);
+            vec3 c101 = kfFetchLutNode(i1.r, i0.g, i1.b);
+            return c000 + f.b * (c001 - c000) + f.r * (c101 - c001) + f.g * (c111 - c101);
+        }
+    } else {
+        if (f.b > f.g) {
+            vec3 c001 = kfFetchLutNode(i0.r, i0.g, i1.b);
+            vec3 c011 = kfFetchLutNode(i0.r, i1.g, i1.b);
+            return c000 + f.b * (c001 - c000) + f.g * (c011 - c001) + f.r * (c111 - c011);
+        } else if (f.b > f.r) {
+            vec3 c010 = kfFetchLutNode(i0.r, i1.g, i0.b);
+            vec3 c011 = kfFetchLutNode(i0.r, i1.g, i1.b);
+            return c000 + f.g * (c010 - c000) + f.b * (c011 - c010) + f.r * (c111 - c011);
+        } else {
+            vec3 c010 = kfFetchLutNode(i0.r, i1.g, i0.b);
+            vec3 c110 = kfFetchLutNode(i1.r, i1.g, i0.b);
+            return c000 + f.g * (c010 - c000) + f.r * (c110 - c010) + f.b * (c111 - c110);
+        }
+    }
 }
 `;
 
@@ -407,7 +427,14 @@ void main() {
     if (graded) {
         if (uLutActive > 0.5) {
             vec3 lutRgb = kfSampleLut3D(inputRgb);
-            outRgb = clamp(mix(inputRgb, lutRgb, clamp(uLutMix, 0.0, 1.5)), 0.0, 1.0);
+            vec3 blended = clamp(mix(inputRgb, lutRgb, clamp(uLutMix, 0.0, 1.5)), 0.0, 1.0);
+            if (uLutPostGrade > 0.5) {
+                outRgb = kfGrade(blended);
+                float toeProtect = smoothstep(0.0, 0.04, baseLuma);
+                outRgb = min(outRgb, blended) + max(outRgb - blended, vec3(0.0)) * toeProtect;
+            } else {
+                outRgb = blended;
+            }
         } else {
             outRgb = kfGrade(inputRgb);
             float toeProtect = smoothstep(0.0, 0.04, baseLuma);
@@ -423,7 +450,7 @@ void main() {
             } else if (monLuma < 0.02) {
                 outRgb = mix(outRgb, vec3(0.22, 0.55, 1.0), 0.75 * stripe);
             }
-        } else {
+        } else if (uMonitorMode < 2.5) {
             vec3 fc;
             if (monLuma < 0.04) {
                 fc = vec3(0.32, 0.14, 0.65);
@@ -443,6 +470,21 @@ void main() {
                 fc = vec3(0.95, 0.16, 0.16);
             }
             outRgb = fc;
+        } else {
+            float maxCh = max(outRgb.r, max(outRgb.g, outRgb.b));
+            float minCh = min(outRgb.r, min(outRgb.g, outRgb.b));
+            float chromaSpan = maxCh - minCh;
+            float satRatio = chromaSpan / max(maxCh, 1e-4);
+            bool chClip = (maxCh >= 0.992 || minCh <= 0.004) && chromaSpan > 0.22;
+            bool highGamut = satRatio > 0.86 && maxCh > 0.24;
+            vec3 mono = vec3(monLuma * 0.48);
+            if (chClip) {
+                outRgb = vec3(0.96, 0.24, 0.58);
+            } else if (highGamut) {
+                outRgb = mix(mono, vec3(0.96, 0.68, 0.16), 0.78);
+            } else {
+                outRgb = mono;
+            }
         }
     }
     gl_FragColor = vec4(outRgb, 1.0);
@@ -518,6 +560,15 @@ export function buildLutTexturePayload(lut) {
   const dMin = lut.dMin || [0, 0, 0];
   const dMax = lut.dMax || [1, 1, 1];
 
+  // Universal 32^3 fast path: exact 512x64 (16x2 tiles of 32x32) power-of-two WebGL texture
+  if (lut.kind !== "1d" && size === LUT32_SIZE && data3d instanceof Float32Array) {
+    const packed = packLut32ToWebGLTexture512x64(data3d);
+    packed.dMin = dMin;
+    packed.dMax = dMax;
+    lut._cachedPayload = packed;
+    return packed;
+  }
+
   if (lut.kind === "1d") {
     const N1 = lut.size;
     size = 17;
@@ -592,6 +643,7 @@ export function getLutUniformLocations(gl, program) {
     uLutTex: gl.getUniformLocation(program, "uLutTex"),
     uLutActive: gl.getUniformLocation(program, "uLutActive"),
     uLutMix: gl.getUniformLocation(program, "uLutMix"),
+    uLutPostGrade: gl.getUniformLocation(program, "uLutPostGrade"),
     uLutSize: gl.getUniformLocation(program, "uLutSize"),
     uLutGridCols: gl.getUniformLocation(program, "uLutGridCols"),
     uLutTexSize: gl.getUniformLocation(program, "uLutTexSize"),
@@ -665,6 +717,7 @@ export function bindLutTextureAndUniforms(
     if (lutLoc.uLutTex !== null) gl.uniform1i(lutLoc.uLutTex, texUnit);
     if (lutLoc.uLutActive !== null) gl.uniform1f(lutLoc.uLutActive, 0.0);
     if (lutLoc.uLutMix !== null) gl.uniform1f(lutLoc.uLutMix, 0.0);
+    if (lutLoc.uLutPostGrade !== null) gl.uniform1f(lutLoc.uLutPostGrade, 0.0);
     gl.activeTexture(gl.TEXTURE0);
     return;
   }
@@ -741,6 +794,9 @@ export function bindLutTextureAndUniforms(
   if (lutLoc.uLutActive !== null) gl.uniform1f(lutLoc.uLutActive, 1.0);
   if (lutLoc.uLutMix !== null) {
     gl.uniform1f(lutLoc.uLutMix, Math.min(1.5, Math.max(0.0, lutMix)));
+  }
+  if (lutLoc.uLutPostGrade !== null) {
+    gl.uniform1f(lutLoc.uLutPostGrade, activeLut.applyPostGrade ? 1.0 : 0.0);
   }
   if (lutLoc.uLutSize !== null) gl.uniform1f(lutLoc.uLutSize, payload.size);
   if (lutLoc.uLutGridCols !== null) gl.uniform1f(lutLoc.uLutGridCols, payload.cols);

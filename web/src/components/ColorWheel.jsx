@@ -110,7 +110,7 @@ const ColorWheel = memo(function ColorWheel({
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
-      // Ignore if pointer capture is unavailable
+      // ignore
     }
     updateFromPointer(e.clientX, e.clientY);
   };
@@ -139,7 +139,7 @@ const ColorWheel = memo(function ColorWheel({
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
-      // Ignore
+      // ignore
     }
   };
 
@@ -177,9 +177,9 @@ const ColorWheel = memo(function ColorWheel({
     Math.abs(safeRgb[2] - 0.5) < 0.004;
 
   return (
-    <div className="relative flex flex-col items-center gap-1 px-1.5 py-2 rounded-2xl bg-white/[0.025] border border-white/[0.09] hover:border-white/[0.18] transition-[border-color] duration-150 select-none">
+    <div className="flex flex-col items-center gap-1.5 py-1.5 select-none">
       <div className="w-full flex items-center justify-center gap-1 relative">
-        <span className="text-[10px] font-medium text-[#9CA3AF] tracking-wide truncate max-w-full">
+        <span className="text-[10px] font-medium uppercase tracking-[0.06em] text-[#A1A1AA] truncate">
           {title}
         </span>
         {!isNeutral && (
@@ -191,7 +191,7 @@ const ColorWheel = memo(function ColorWheel({
             }}
             title={t("wheel.resetTitle", { title })}
             aria-label={t("wheel.resetTitle", { title })}
-            className="absolute right-0 p-0.5 rounded text-[#9CA3AF] hover:text-[#E2E4E9] hover:bg-white/[0.08] transition-colors cursor-pointer"
+            className="absolute right-0 p-0.5 rounded text-[#71717A] hover:text-[#F4F4F5] transition-colors cursor-pointer"
           >
             <RotateCcw className="w-2.5 h-2.5" />
           </button>
@@ -210,36 +210,27 @@ const ColorWheel = memo(function ColorWheel({
         onPointerCancel={handlePointerUp}
         onDoubleClick={handleDoubleClick}
         title={t("wheel.wheelTooltip")}
-        className="relative w-[72px] h-[72px] rounded-full border border-white/[0.18] cursor-crosshair touch-none overflow-visible shadow-inner"
-        style={{
-          background:
-            "radial-gradient(circle at center, rgba(255,255,255,0.065) 0%, rgba(255,255,255,0.02) 55%, rgba(0,0,0,0.45) 100%)",
-          boxShadow:
-            "inset 0 1px 2px rgba(0, 0, 0, 0.72), inset 0 -1px 0 rgba(255, 255, 255, 0.08)",
-        }}
+        className="relative w-[84px] h-[84px] rounded-full bg-[#08090A] border border-white/[0.10] hover:border-white/[0.20] cursor-crosshair touch-none overflow-visible transition-colors"
       >
-        {/* Subtle radial color spectrum ring hint */}
+        {/* Calibrated Outer Hue Reference Ring */}
         <div
-          className="pointer-events-none absolute inset-0 rounded-full opacity-30"
+          className="pointer-events-none absolute inset-0 rounded-full opacity-25"
           style={{
             background:
-              "conic-gradient(from 90deg, rgba(248,113,113,0.45), rgba(250,204,21,0.4), rgba(74,222,128,0.45), rgba(56,189,248,0.45), rgba(167,139,250,0.45), rgba(244,114,182,0.45), rgba(248,113,113,0.45))",
+              "conic-gradient(from 90deg, rgba(248,113,113,0.5), rgba(250,204,21,0.45), rgba(74,222,128,0.5), rgba(56,189,248,0.5), rgba(167,139,250,0.5), rgba(244,114,182,0.5), rgba(248,113,113,0.5))",
             WebkitMaskImage:
-              "radial-gradient(circle, transparent 56%, black 72%, transparent 98%)",
+              "radial-gradient(circle, transparent 62%, black 76%, transparent 98%)",
             maskImage:
-              "radial-gradient(circle, transparent 56%, black 72%, transparent 98%)",
+              "radial-gradient(circle, transparent 62%, black 76%, transparent 98%)",
           }}
         />
-        {/* Subtle inner ring */}
-        <div className="pointer-events-none absolute inset-[24%] rounded-full border border-white/[0.08]" />
-        {/* Fine crosshair axes */}
-        <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-white/[0.09]" />
-        <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/[0.09]" />
+        <div className="pointer-events-none absolute inset-[26%] rounded-full border border-white/[0.06]" />
+        <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-white/[0.07]" />
+        <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/[0.07]" />
 
-        {/* Subtle radial tint indicator */}
         {!isNeutral && (
           <div
-            className="pointer-events-none absolute inset-0 rounded-full opacity-25"
+            className="pointer-events-none absolute inset-0 rounded-full opacity-20"
             style={{
               background: `radial-gradient(circle at ${50 + puckX * 44}% ${
                 50 + puckY * 44
@@ -248,56 +239,38 @@ const ColorWheel = memo(function ColorWheel({
           />
         )}
 
-        {/* Draggable Puck -> Morphs via scale3d(1.55, 1.55, 1) into a Transparent Refractive Glass Loupe on Drag */}
+        {/* Precision Center / Offset Puck (0ms instant during pointer drag) */}
         <div
-          className={`pointer-events-none absolute w-4 h-4 rounded-full flex items-center justify-center z-20 ${
+          className={`pointer-events-none absolute w-3 h-3 rounded-full z-20 ${
             isDragging
-              ? "optical-refract-glass border-[1.5px] border-white/95 shadow-[inset_0_1.5px_2px_rgba(255,255,255,0.95),0_6px_18px_rgba(0,0,0,0.75),0_0_0_3.5px_rgba(255,255,255,0.16)]"
-              : "border-2 border-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.8),0_1px_5px_rgba(0,0,0,0.85)]"
+              ? "transition-none border-[1.5px] border-white ring-4 ring-white/15"
+              : "transition-shadow duration-100 border-[1.5px] border-white/90 shadow-[0_1px_4px_rgba(0,0,0,0.9)]"
           }`}
           style={{
             left: `${50 + puckX * 40}%`,
             top: `${50 + puckY * 40}%`,
-            backgroundColor: isDragging
-              ? `rgba(${r255}, ${g255}, ${b255}, 0.34)`
-              : hex,
+            backgroundColor: hex,
             transform: isDragging
-              ? "translate3d(-50%, -50%, 0) scale3d(1.55, 1.55, 1)"
-              : "translate3d(-50%, -50%, 0) scale3d(1, 1, 1)",
-            transition:
-              "transform 420ms var(--spring-bouncy), box-shadow 240ms var(--spring-liquid), border-color 220ms var(--spring-liquid), background-color 180ms var(--spring-liquid)",
+              ? "translate(-50%, -50%) scale(1.18)"
+              : "translate(-50%, -50%)",
           }}
-        >
-          {/* Precision Loupe Center Dot */}
-          <span
-            className={`w-1.5 h-1.5 rounded-full border border-white/90 transition-opacity duration-150 ${
-              isDragging ? "opacity-100" : "opacity-0"
-            }`}
-            style={{ backgroundColor: hex }}
-          />
-        </div>
+        />
       </div>
 
       <button
         type="button"
         onClick={handleCopy}
         title={t("wheel.clickCopyHex")}
-        className="relative inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/[0.05] hover:bg-white/[0.11] border border-white/[0.12] text-[10px] font-mono text-[#F4F5F7] transition-colors cursor-pointer"
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#15171C] hover:bg-[#1C1F26] border border-white/[0.07] text-[10px] font-mono tabular-nums text-[#A1A1AA] hover:text-[#F4F4F5] transition-colors cursor-pointer"
       >
-        {copied && (
-          <span
-            aria-hidden="true"
-            className="frosted-soft-edge pointer-events-none absolute -inset-2 rounded-full bg-white/[0.12]"
-          />
-        )}
         <span
-          className="w-2 h-2 rounded-full border border-white/25 shrink-0"
+          className="w-1.5 h-1.5 rounded-full border border-white/20 shrink-0"
           style={{ backgroundColor: hex }}
         />
         {copied ? (
-          <span className="liquid-droplet-badge relative z-10 inline-flex items-center gap-0.5 text-[#6EE7B7]">
+          <span className="inline-flex items-center gap-0.5 text-[#F4F4F5]">
             <Check className="w-2.5 h-2.5" />
-            {t("wheel.copied", { hex })}
+            <span>OK</span>
           </span>
         ) : (
           <span>{hex}</span>
