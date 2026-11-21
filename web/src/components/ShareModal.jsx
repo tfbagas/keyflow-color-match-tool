@@ -126,6 +126,10 @@ export default function ShareModal({
           </button>
         </div>
 
+        <p className="text-[11px] leading-relaxed text-[#9CA3AF]">
+          {t("shareModal.subtitle")}
+        </p>
+
         <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono">
           <span className="px-2 py-0.5 rounded bg-[#6EE7B7]/12 text-[#6EE7B7] border border-[#6EE7B7]/35">
             {formatEngineName(engineId)}

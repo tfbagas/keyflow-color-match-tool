@@ -56,6 +56,9 @@ export default function ShortcutsModal({ isOpen, onClose }) {
         </div>
 
         <div className="p-4 space-y-2 flex-1 overflow-y-auto">
+          <p className="text-xs text-[#9CA3AF] leading-relaxed px-1 pb-1">
+            {t("shortcutsModal.subtitle")}
+          </p>
           {shortcuts.map((item) => (
             <div
               key={item.keys}

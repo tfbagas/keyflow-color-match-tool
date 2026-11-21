@@ -410,7 +410,7 @@ export default function InteractiveStudioBackdrop({
       context.stroke();
 
       // Whisper-quiet monospace IRE reference ticks along the left margin
-      context.font = "500 9px 'JetBrains Mono', ui-monospace, monospace";
+      context.font = "500 9px 'IBM Plex Mono', ui-monospace, monospace";
       context.fillStyle = "rgba(255, 255, 255, 0.14)";
       context.textBaseline = "bottom";
       context.fillText("100", 12, y100 - 4);

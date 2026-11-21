@@ -1,7 +1,7 @@
 {
-  "name": "Color Match for Keyflow",
-  "short_name": "Color Match",
-  "description": "Extract Look & Grading from Reference Image and Export as Keyflow Mobile Plugin (.kfplug)",
+  "name": "ToneBench: 3D OKLab Color Transfer & Editable LUT Studio",
+  "short_name": "ToneBench",
+  "description": "Browser-based 3D OKLab color transfer workbench by TFBAGAS with editable .cube and .lut grading parameters, After Effects (.ffx) presets, and Keyflow (.kfplug) shaders.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#060709",

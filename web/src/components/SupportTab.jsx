@@ -74,19 +74,19 @@ export default function SupportTab() {
 
   const ecosystemItems = [
     {
-      icon: Layers,
-      title: "Keyflow Mobile Shaders (.kfplug)",
-      desc: "Pure GLSL ES 1.00 color-grading plugins built for zero-lag mobile editing.",
+      icon: Sliders,
+      title: "Editable 3D LUTs (.cube / .lut)",
+      desc: "Unlike standard editors that lock LUTs as static filters, ToneBench exposes editable curves, color wheels, and hue vectors before exporting 17³ / 33³ / 65³ files for DaVinci Resolve, Premiere Pro, Final Cut, and CapCut.",
     },
     {
       icon: Film,
-      title: "After Effects Lumetri (.ffx)",
-      desc: "Binary Lumetri presets & reverse-engineered color matching workflows.",
+      title: "After Effects Presets (.ffx)",
+      desc: "Binary Lumetri Color presets formatted for direct drag-and-drop grading in After Effects.",
     },
     {
-      icon: Sliders,
-      title: "Cinema 3D LUTs & Look Packs",
-      desc: "Scene-linear OKLab looks exported cleanly as 17³ / 33³ / 65³ .cube files.",
+      icon: Layers,
+      title: "Keyflow Mobile Shaders (.kfplug)",
+      desc: "Self-contained GLSL ES 1.00 shader plugins compiled for zero-lag grading in Keyflow.",
     },
   ];
 
@@ -252,7 +252,7 @@ export default function SupportTab() {
                       Creator Ecosystem &amp; Packs
                     </h3>
                   </div>
-                  <span className="text-[10px] font-mono text-[#A1A1AA]">Keyflow · AE</span>
+                  <span className="text-[10px] font-mono text-[#A1A1AA]">Universal · .cube / .lut</span>
                 </div>
 
                 <div className="p-5 space-y-2.5">
@@ -300,7 +300,7 @@ export default function SupportTab() {
                             </span>
                           </div>
                           <p className="text-[11px] text-[#D4D4D8] mt-1 leading-relaxed">
-                            Turn flat anime &amp; character PNGs into separated Hair, Eyes, Face &amp; Outfit layers—ready for instant .PSD rigging in Live2D Cubism or After Effects.
+                            Turn flat anime &amp; character PNGs into separated Hair, Eyes, Face &amp; Outfit layers, ready for instant .PSD rigging in Live2D Cubism or After Effects.
                           </p>
                         </div>
                       </div>
@@ -326,7 +326,7 @@ export default function SupportTab() {
 
               <div className="px-5 py-3.5 border-t border-white/[0.06] bg-[#0B0C0F]/55 flex items-center gap-2">
                 <a
-                  href="https://tfbagas.carrd.co"
+                  href="https://sociabuzz.com/tfbagas/shop"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-xs font-medium bg-white/[0.05] hover:bg-white/[0.09] text-[#F4F4F5] border border-white/[0.08] transition-colors"

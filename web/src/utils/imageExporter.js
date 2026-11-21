@@ -18,6 +18,7 @@ import {
   resolveEngineId,
 } from "./engineMetadata";
 import { extractPaletteSwatches } from "./paletteSwatches";
+import { drawToneBenchCubeCanvas } from "./toneBenchCanvasMark";
 
 export { extractPaletteSwatches };
 
@@ -250,10 +251,12 @@ function renderViaCPU(source, width, height, params, layout, splitPos, simulateL
   return outCanvas;
 }
 
+const FONT_DISPLAY =
+  '"Bricolage Grotesque", "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
 const FONT_SANS =
-  'Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
+  '"Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
 const FONT_MONO =
-  '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+  '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 
 const REC709_COLORIMETER_8STEP = [
   "#1E212B", // 0 IRE Obsidian
@@ -600,52 +603,23 @@ function drawColorimeterStrip(ctx, x, y, stripW, stripH = 6) {
   ctx.restore();
 }
 
-function drawKeyflowPrismMark(ctx, x, y, size) {
+function drawToneBenchCubeMark(ctx, x, y, size) {
   ctx.save();
   // Recessed obsidian squircle
   drawRoundedRectPath(ctx, x, y, size, size, Math.round(size * 0.24));
-  ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
+  ctx.fillStyle = "rgba(8, 9, 12, 0.92)";
   ctx.fill();
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  // Precision optical prism triangle matching Keyflow emblem
-  const cx = x + size * 0.5;
-  const topY = y + size * 0.2;
-  const botY = y + size * 0.78;
-  const halfBase = size * 0.31;
-
-  ctx.beginPath();
-  ctx.moveTo(cx, topY);
-  ctx.lineTo(cx + halfBase, botY);
-  ctx.lineTo(cx - halfBase, botY);
-  ctx.closePath();
-  ctx.fillStyle = "rgba(255, 255, 255, 0.09)";
-  ctx.fill();
-  ctx.strokeStyle = "rgba(244, 244, 245, 0.88)";
-  ctx.lineWidth = 1.25;
-  ctx.lineJoin = "round";
-  ctx.stroke();
-
-  // Internal refractive axis
-  ctx.beginPath();
-  ctx.moveTo(cx, topY + 1);
-  ctx.lineTo(cx, botY);
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.32)";
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  // Emerald dispersed caustic ray
-  ctx.beginPath();
-  ctx.moveTo(cx - halfBase * 0.62, y + size * 0.54);
-  ctx.lineTo(cx, y + size * 0.45);
-  ctx.lineTo(cx + halfBase * 0.68, y + size * 0.56);
-  ctx.strokeStyle = "rgba(110, 231, 183, 0.92)";
-  ctx.lineWidth = 1.2;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.stroke();
+  const iconSize = size * 0.76;
+  drawToneBenchCubeCanvas(
+    ctx,
+    x + (size - iconSize) / 2,
+    y + (size - iconSize) / 2,
+    iconSize
+  );
   ctx.restore();
 }
 
@@ -802,20 +776,20 @@ function drawStudioSignatureBlock(
   const totalH = prismSize + gap1 + brandFontSize + gap2 + subFontSize;
   const startY = Math.round(innerTop + (innerH - totalH) / 2);
 
-  drawKeyflowPrismMark(ctx, Math.round(centerX - prismSize / 2), startY, prismSize);
+  drawToneBenchCubeMark(ctx, Math.round(centerX - prismSize / 2), startY, prismSize);
 
   ctx.save();
   ctx.textBaseline = "top";
 
-  ctx.font = `700 ${brandFontSize}px ${FONT_SANS}`;
+  ctx.font = `700 ${brandFontSize}px ${FONT_DISPLAY}`;
   ctx.fillStyle = "#F8FAFC";
-  const line1 = "KEYFLOW";
+  const line1 = "ToneBench";
   const l1W = measureTrackedText(ctx, line1, brandTracking);
   drawTrackedText(ctx, line1, Math.round(centerX - l1W / 2), startY + prismSize + gap1, brandTracking);
 
   ctx.font = `600 ${subFontSize}px ${FONT_MONO}`;
   ctx.fillStyle = "#A1A1AA";
-  const line2 = "COLOR MATCH";
+  const line2 = "3D LUT STUDIO";
   const l2W = measureTrackedText(ctx, line2, subTracking);
   drawTrackedText(
     ctx,
@@ -856,7 +830,7 @@ function resolvePromoQrUrl({ includeQr, qrMode, qrUrl, engineId, simulateLogInpu
   const base =
     typeof window !== "undefined" && window.location
       ? `${window.location.origin}${window.location.pathname}`
-      : "https://keyflow.app/";
+      : "https://tonebench.app/";
   return `${base}${hash}`;
 }
 
@@ -1056,14 +1030,14 @@ export function renderPromoCardCanvas({
 
   // Measure QR-OFF signature section width so both states stay optically balanced
   const brandFontSize = isWide ? 12.5 : 11.5;
-  const brandTracking = isWide ? 2.0 : 1.6;
-  const subFontSize = 10;
-  const subTracking = isWide ? 1.1 : 0.7;
+  const brandTracking = isWide ? 1.2 : 0.9;
+  const subFontSize = 9.5;
+  const subTracking = isWide ? 1.0 : 0.7;
   ctx.save();
-  ctx.font = `700 ${brandFontSize}px ${FONT_SANS}`;
-  const brandLineW = measureTrackedText(ctx, "KEYFLOW", brandTracking);
+  ctx.font = `700 ${brandFontSize}px ${FONT_DISPLAY}`;
+  const brandLineW = measureTrackedText(ctx, "ToneBench", brandTracking);
   ctx.font = `600 ${subFontSize}px ${FONT_MONO}`;
-  const subLineW = measureTrackedText(ctx, "COLOR MATCH", subTracking);
+  const subLineW = measureTrackedText(ctx, "3D LUT STUDIO", subTracking);
   ctx.restore();
   const brandSectionW = Math.max(qrSize, Math.ceil(Math.max(brandLineW, subLineW)) + 8);
   const rightEndSectionW = hasValidQr ? qrSize : brandSectionW;

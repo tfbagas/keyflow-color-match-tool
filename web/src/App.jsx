@@ -3393,7 +3393,7 @@ export default function App() {
     <div
       className={`min-h-screen ${
         activeTab === "home" ? "lg:h-screen lg:overflow-hidden" : ""
-      } flex flex-col bg-[#08090A] text-[#E4E4E7]`}
+      } flex flex-col bg-[#08090A] text-[#E4E4E7] font-sans`}
     >
       {/* Hidden Preset Importer (.cube / .kfplug / .ffx / .lut) */}
       <input
@@ -3423,7 +3423,7 @@ export default function App() {
       <header
         className={`${
           activeTab === "home" ? "relative lg:sticky lg:top-0" : "sticky top-0"
-        } z-40 shrink-0 w-full bg-[#0E0F12] border-b border-white/[0.07] flex flex-col ${
+        } z-40 shrink-0 w-full bg-[#0E0F12] border-b border-white/[0.07] flex flex-col font-sans ${
           workspacePhase === "hidden"
             ? "opacity-0 pointer-events-none"
             : workspacePhase === "entering"
@@ -3457,11 +3457,8 @@ export default function App() {
             className="flex items-center gap-2 shrink-0 cursor-pointer group"
           >
             <BrandLogo size={22} />
-            <span className="hidden sm:inline text-[13px] font-semibold tracking-[-0.015em] text-[#F4F4F5] whitespace-nowrap">
-              Keyflow Color Match
-            </span>
-            <span className="sm:hidden text-[13px] font-semibold tracking-[-0.015em] text-[#F4F4F5]">
-              Keyflow
+            <span className="font-display text-[13.5px] font-bold tracking-[-0.015em] text-[#F4F4F5] whitespace-nowrap">
+              ToneBench
             </span>
           </button>
 
@@ -3572,7 +3569,7 @@ export default function App() {
               href="https://seethrough-studio.pages.dev"
               target="_blank"
               rel="noopener noreferrer"
-              aria-label="SeeThrough Studio — Split PNG illustrations into layered PSD parts for Live2D"
+              aria-label="SeeThrough Studio: Split PNG illustrations into layered PSD parts for Live2D"
               className="studio-tactile inline-flex items-center gap-1.5 border border-emerald-500/25 bg-emerald-500/[0.06] hover:bg-emerald-500/[0.12] hover:border-emerald-400/40 text-zinc-100 hover:text-white text-[11px] font-medium px-2.5 py-1 rounded-md shrink-0"
             >
               <Layers className="w-3 h-3 text-emerald-400 shrink-0" />
@@ -3711,7 +3708,7 @@ export default function App() {
             href="https://seethrough-studio.pages.dev"
             target="_blank"
             rel="noopener noreferrer"
-            aria-label="SeeThrough Studio — Split PNG illustrations into layered PSD parts for Live2D"
+            aria-label="SeeThrough Studio: Split PNG illustrations into layered PSD parts for Live2D"
             className="studio-tactile inline-flex items-center gap-1 border border-emerald-500/25 bg-emerald-500/[0.06] hover:bg-emerald-500/[0.12] hover:border-emerald-400/40 text-zinc-100 hover:text-white text-[10px] font-medium px-2 py-0.5 rounded-md shrink-0 whitespace-nowrap"
           >
             <span>SeeThrough</span>
@@ -4550,7 +4547,7 @@ export default function App() {
 
               {isNeutralGrade && hasLook && (
                 <div className="px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-[10.5px] text-amber-200">
-                  Grade is currently neutral — adjust sliders or match a reference first.
+                  Grade is currently neutral. Adjust sliders or match a reference first.
                 </div>
               )}
 
@@ -5798,8 +5795,8 @@ export default function App() {
                       <div className="flex items-center gap-3">
                         <BrandLogo size={38} />
                         <div className="min-w-0">
-                          <h2 className="text-sm font-semibold text-[#F4F4F5] leading-tight">
-                            Color Match for Keyflow
+                          <h2 className="text-sm font-semibold font-display text-[#F4F4F5] leading-tight">
+                            ToneBench
                           </h2>
                           <span className="inline-block mt-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.06] text-[#E4E4E7] border border-white/[0.08]">
                             v0.9.6a
@@ -5840,7 +5837,8 @@ export default function App() {
                         {[
                           { label: "Web Studio", active: true },
                           { label: "Keyflow .kfplug", active: true },
-                          { label: "After Effects .ffx / Native v1.0", active: false },
+                          { label: "After Effects .ffx", active: true },
+                          { label: "NLEs .cube 3D LUT", active: true },
                         ].map((pill) => (
                           <span
                             key={pill.label}
@@ -5898,26 +5896,22 @@ export default function App() {
                     </div>
                     <div className="p-4 space-y-4">
                       <p className="text-xs text-[#A1A1AA] leading-relaxed">
-                        {t("about.heroParagraph1")}{" "}
-                        <code className="text-[#F4F4F5] font-mono bg-white/[0.06] px-1.5 py-0.5 rounded border border-white/[0.08]">
-                          .kfplug
-                        </code>{" "}
-                        {t("about.heroParagraph2")}
+                        {t("about.architectureParagraph")}
                       </p>
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div className="rounded-md bg-[#0B0C0F]/55 border border-white/[0.06] p-3.5 space-y-1.5">
                           <div className="text-[10px] font-mono text-[#34D399]">01 · SOLVER</div>
-                          <div className="text-xs font-semibold text-[#F4F4F5]">Altair 4.0 ULTRA</div>
+                          <div className="text-xs font-semibold text-[#F4F4F5]">Altair 4.5 Refresh</div>
                           <p className="text-[11px] text-[#A1A1AA] leading-relaxed">
-                            Scene-linear Rec.709 + 16-direction 3D OKLab Optimal Transport, 5-zone tonal curve, and skin-tone cluster lock.
+                            Two-stage source normalization with 16-direction 3D OKLab Optimal Transport, 5-zone tonal curve, and skin-tone cluster lock.
                           </p>
                         </div>
                         <div className="rounded-md bg-[#0B0C0F]/55 border border-white/[0.06] p-3.5 space-y-1.5">
                           <div className="text-[10px] font-mono text-[#A1A1AA]">02 · EXPORTERS</div>
-                          <div className="text-xs font-semibold text-[#F4F4F5]">.kfplug Native Shader</div>
+                          <div className="text-xs font-semibold text-[#F4F4F5]">Editable LUT &amp; Shader Export</div>
                           <p className="text-[11px] text-[#A1A1AA] leading-relaxed">
-                            Pure GLSL ES 1.00 shaders with 1:1 parity across WebGL preview, Keyflow Mobile, 33³/65³ .cube LUTs, and AE .ffx.
+                            Edit internal tone curves, wheels, and hue vectors on .cube and .lut workflows with 1:1 visual parity across WebGL preview, After Effects (.ffx), and Keyflow (.kfplug).
                           </p>
                         </div>
                         <div className="rounded-md bg-[#0B0C0F]/55 border border-white/[0.06] p-3.5 space-y-1.5">

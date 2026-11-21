@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { ArrowRight } from "lucide-react";
 import { useLanguage } from "../i18n/LanguageContext";
 import IntroProScopesCanvas from "./IntroProScopesCanvas";
+import { ToneBenchCubeSvg } from "./BrandLogo";
 
 const LUMINANCE_STEPS = [
   { ire: 0, hex: "#0A0B0E" },
@@ -221,7 +222,7 @@ export default function IntroScreen({ onStartExit, onComplete }) {
               <span className="text-zinc-600" aria-hidden="true">·</span>
               <span>60FPS WEBGL</span>
               <span className="text-zinc-600" aria-hidden="true">·</span>
-              <span className="text-zinc-300">.KFPLUG</span>
+              <span className="text-zinc-300">.KFPLUG · .FFX · .CUBE</span>
             </div>
           </header>
 
@@ -332,63 +333,7 @@ export default function IntroScreen({ onStartExit, onComplete }) {
                   "inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -1px 0 rgba(255, 255, 255, 0.03), 0 18px 42px rgba(0, 0, 0, 0.65)",
               }}
             >
-              <svg
-                viewBox="0 0 48 48"
-                fill="none"
-                aria-hidden="true"
-                className="w-8 h-8 sm:w-9 sm:h-9"
-              >
-                <defs>
-                  <linearGradient
-                    id="kfOpticalEdge"
-                    x1="10"
-                    y1="6"
-                    x2="38"
-                    y2="40"
-                    gradientUnits="userSpaceOnUse"
-                  >
-                    <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.96" />
-                    <stop offset="56%" stopColor="#D4D8E2" stopOpacity="0.72" />
-                    <stop offset="100%" stopColor="#6EE7B7" stopOpacity="0.82" />
-                  </linearGradient>
-                  <linearGradient
-                    id="kfOpticalFacet"
-                    x1="24"
-                    y1="7"
-                    x2="37"
-                    y2="38"
-                    gradientUnits="userSpaceOnUse"
-                  >
-                    <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.22" />
-                    <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0.02" />
-                  </linearGradient>
-                </defs>
-                {/* Outer Precision Optical Prism */}
-                <polygon
-                  points="24,6.5 40.5,37.5 7.5,37.5"
-                  fill="url(#kfOpticalFacet)"
-                  stroke="url(#kfOpticalEdge)"
-                  strokeWidth="1.4"
-                  strokeLinejoin="round"
-                />
-                {/* Internal Refractive Split Axis */}
-                <line
-                  x1="24"
-                  y1="6.5"
-                  x2="24"
-                  y2="37.5"
-                  stroke="rgba(255, 255, 255, 0.36)"
-                  strokeWidth="1.1"
-                />
-                {/* Dispersed Caustic Ray */}
-                <path
-                  d="M14.5 25L24 21L34.5 26.2"
-                  stroke="rgba(110, 231, 183, 0.78)"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              <ToneBenchCubeSvg className="w-10 h-10 sm:w-11 sm:h-11" />
             </div>
           </div>
 

@@ -1,6 +1,7 @@
 // High-DPI 2400x1350 (16:9) Single-Image Release Poster Generator
 // Showcases v0.9.0 + v0.9.5 Beta features in a 6-Module Apple Liquid Glass Bento Grid
 // Supports Bilingual rendering (English 'en' & Natural Bahasa Indonesia 'id')
+import { drawToneBenchCubeCanvas } from "./toneBenchCanvasMark";
 
 function drawRoundedRectPath(ctx, x, y, w, h, r) {
   const rad = Math.min(r, w / 2, h / 2);
@@ -222,7 +223,7 @@ function drawPill(ctx, x, y, text, opts = {}) {
     textColor = "#E2E4E9",
     dotColor = null,
     tracking = 0,
-    fontFamily = 'Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif',
+    fontFamily = '"Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif',
   } = opts;
 
   ctx.save();
@@ -261,53 +262,18 @@ function drawPill(ctx, x, y, text, opts = {}) {
 function drawPrismBadge(ctx, x, y, size) {
   // Squircle glass badge
   drawInnerPanel(ctx, x, y, size, size, 16, {
-    fill: "rgba(255, 255, 255, 0.06)",
+    fill: "rgba(8, 9, 12, 0.92)",
     stroke: "rgba(255, 255, 255, 0.24)",
     accentGlow: true,
   });
 
-  const cx = x + size / 2;
-  const cy = y + size / 2;
-  const r = size * 0.3;
-
-  ctx.save();
-  // Outer hexagon prism
-  ctx.beginPath();
-  for (let i = 0; i < 6; i += 1) {
-    const ang = (Math.PI / 3) * i - Math.PI / 2;
-    const px = cx + Math.cos(ang) * r;
-    const py = cy + Math.sin(ang) * r;
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  }
-  ctx.closePath();
-  const prismGrad = ctx.createLinearGradient(x, y, x + size, y + size);
-  prismGrad.addColorStop(0, "rgba(248, 250, 252, 0.24)");
-  prismGrad.addColorStop(0.5, "rgba(110, 231, 183, 0.20)");
-  prismGrad.addColorStop(1, "rgba(255, 255, 255, 0.08)");
-  ctx.fillStyle = prismGrad;
-  ctx.fill();
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.72)";
-  ctx.lineWidth = 1.6;
-  ctx.stroke();
-
-  // Inner prism facets
-  ctx.beginPath();
-  ctx.moveTo(cx, cy - r);
-  ctx.lineTo(cx, cy);
-  ctx.lineTo(cx + Math.cos(Math.PI / 6) * r, cy + Math.sin(Math.PI / 6) * r);
-  ctx.moveTo(cx, cy);
-  ctx.lineTo(cx - Math.cos(Math.PI / 6) * r, cy + Math.sin(Math.PI / 6) * r);
-  ctx.strokeStyle = "rgba(110, 231, 183, 0.85)";
-  ctx.lineWidth = 1.4;
-  ctx.stroke();
-
-  // Center core dot
-  ctx.beginPath();
-  ctx.arc(cx, cy, 3.2, 0, Math.PI * 2);
-  ctx.fillStyle = "#6EE7B7";
-  ctx.fill();
-  ctx.restore();
+  const iconSize = size * 0.78;
+  drawToneBenchCubeCanvas(
+    ctx,
+    x + (size - iconSize) / 2,
+    y + (size - iconSize) / 2,
+    iconSize
+  );
 }
 
 function drawCardHeader(ctx, cardX, cardY, cardW, pad, eyebrow) {
@@ -394,12 +360,12 @@ function drawCard01Polaris(ctx, x, y, w, h, isId) {
     });
 
     ctx.save();
-    ctx.font = '700 19px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
+    ctx.font = '700 19px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
     ctx.fillStyle = eng.pro ? "#F8FAFC" : "#E2E4E9";
     ctx.textBaseline = "top";
     ctx.fillText(eng.name, ex + 14, startY + 48);
 
-    ctx.font = '500 12.5px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+    ctx.font = '500 12.5px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
     ctx.fillStyle = eng.pro ? "#A7F3D0" : "#9CA3AF";
     ctx.fillText(eng.sub, ex + 14, startY + 75);
 
@@ -409,7 +375,7 @@ function drawCard01Polaris(ctx, x, y, w, h, isId) {
     ctx.lineTo(ex + engW - 14, startY + 102);
     ctx.stroke();
 
-    ctx.font = '500 12.5px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+    ctx.font = '500 12.5px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
     eng.bullets.forEach((b, bi) => {
       const by = startY + 116 + bi * 25;
       ctx.beginPath();
@@ -456,14 +422,14 @@ function drawCard01Polaris(ctx, x, y, w, h, isId) {
       stroke: idx === 1 ? "rgba(110, 231, 183, 0.35)" : "rgba(255, 255, 255, 0.12)",
     });
     ctx.save();
-    ctx.font = '600 13px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+    ctx.font = '600 13px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
     ctx.fillStyle = idx === 1 ? "#6EE7B7" : "#E2E4E9";
     ctx.textBaseline = "middle";
     const tw = ctx.measureText(st).width;
     ctx.fillText(st, sx + (stW - tw) / 2, sy + 18);
     if (idx < stages.length - 1) {
       ctx.fillStyle = "rgba(255, 255, 255, 0.42)";
-      ctx.font = '600 14px Inter, system-ui, sans-serif';
+      ctx.font = '600 14px "Instrument Sans", system-ui, sans-serif';
       ctx.fillText("->", sx + stW + 5, sy + 18);
     }
     ctx.restore();
@@ -530,7 +496,7 @@ function drawCard02LogSampler(ctx, x, y, w, h, isId) {
   });
 
   ctx.save();
-  ctx.font = '600 16px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
+  ctx.font = '600 16px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
   ctx.fillStyle = "#F8FAFC";
   ctx.textBaseline = "middle";
   ctx.fillText(
@@ -543,7 +509,7 @@ function drawCard02LogSampler(ctx, x, y, w, h, isId) {
   // Simulate Log Input toggle switch UI
   const toggleLabel = isId ? "Simulasi Input Log" : "Simulate Log Input";
   ctx.save();
-  ctx.font = '500 13px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+  ctx.font = '500 13px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
   ctx.fillStyle = "#A7F3D0";
   ctx.textBaseline = "middle";
   const tlW = ctx.measureText(toggleLabel).width;
@@ -578,7 +544,7 @@ function drawCard02LogSampler(ctx, x, y, w, h, isId) {
   let lpY = secAY + 58;
   logProfiles.forEach((lp) => {
     ctx.save();
-    ctx.font = '600 13.5px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+    ctx.font = '600 13.5px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
     const estW = ctx.measureText(lp.name).width + 32 + (lp.active ? 14 : 0);
     ctx.restore();
     if (lpX + estW > x + pad + innerW - 16) {
@@ -605,12 +571,12 @@ function drawCard02LogSampler(ctx, x, y, w, h, isId) {
   });
 
   ctx.save();
-  ctx.font = '600 16px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
+  ctx.font = '600 16px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
   ctx.fillStyle = "#F8FAFC";
   ctx.textBaseline = "top";
   ctx.fillText("Smart Video Sampler", x + pad + 18, secBY + 16);
 
-  ctx.font = '500 12.5px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+  ctx.font = '500 12.5px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
   ctx.fillStyle = "#9CA3AF";
   ctx.fillText(
     isId
@@ -651,7 +617,7 @@ function drawCard02LogSampler(ctx, x, y, w, h, isId) {
   });
 
   ctx.save();
-  ctx.font = '600 16px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
+  ctx.font = '600 16px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
   ctx.fillStyle = "#F8FAFC";
   ctx.textBaseline = "top";
   ctx.fillText(
@@ -688,7 +654,7 @@ function drawCard02LogSampler(ctx, x, y, w, h, isId) {
 
   const matchLbl = isId ? "Match Frame Ini" : "Match Current Frame";
   ctx.save();
-  ctx.font = '600 13.5px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+  ctx.font = '600 13.5px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
   const mEstW = Math.round(ctx.measureText(matchLbl).width + 32 + 14);
   ctx.restore();
 
@@ -737,12 +703,12 @@ function drawCard03Export(ctx, x, y, w, h, isId) {
   });
 
   ctx.save();
-  ctx.font = '700 21px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
+  ctx.font = '700 21px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
   ctx.fillStyle = "#F8FAFC";
   ctx.textBaseline = "top";
   ctx.fillText(isId ? "Video MP4 Hasil Grade" : "MP4 Graded Video", x + pad + 18, t1Y + 50);
 
-  ctx.font = '500 13.5px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+  ctx.font = '500 13.5px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
   ctx.fillStyle = "#CBD5E1";
   ctx.fillText(
     isId
@@ -773,7 +739,7 @@ function drawCard03Export(ctx, x, y, w, h, isId) {
   });
 
   ctx.save();
-  ctx.font = '700 21px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
+  ctx.font = '700 21px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
   ctx.fillStyle = "#F8FAFC";
   ctx.textBaseline = "top";
   ctx.fillText(
@@ -782,7 +748,7 @@ function drawCard03Export(ctx, x, y, w, h, isId) {
     t2Y + 50
   );
 
-  ctx.font = '500 13.5px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+  ctx.font = '500 13.5px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
   ctx.fillStyle = "#CBD5E1";
   ctx.fillText(
     isId
@@ -843,11 +809,11 @@ function drawCard03Export(ctx, x, y, w, h, isId) {
     ctx.textBaseline = "top";
     ctx.fillText(fmt.ext, fx + 14, t3Y + 52);
 
-    ctx.font = '600 14.5px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
+    ctx.font = '600 14.5px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
     ctx.fillStyle = "#E2E4E9";
     ctx.fillText(fmt.title, fx + 14, t3Y + 96);
 
-    ctx.font = '500 12.5px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+    ctx.font = '500 12.5px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
     ctx.fillStyle = "#9CA3AF";
     ctx.fillText(fmt.sub, fx + 14, t3Y + 122);
     ctx.restore();
@@ -878,7 +844,7 @@ function drawCard04Scopes(ctx, x, y, w, h, isId) {
     stroke: "rgba(255, 255, 255, 0.12)",
   });
   ctx.save();
-  ctx.font = '600 12.5px Inter, system-ui, sans-serif';
+  ctx.font = '600 12.5px "Instrument Sans", system-ui, sans-serif';
   ctx.fillStyle = "#E2E4E9";
   ctx.textBaseline = "top";
   ctx.fillText("Luma / RGB Histogram", hX + 14, scopeY + 14);
@@ -929,7 +895,7 @@ function drawCard04Scopes(ctx, x, y, w, h, isId) {
     stroke: "rgba(255, 255, 255, 0.12)",
   });
   ctx.save();
-  ctx.font = '600 12.5px Inter, system-ui, sans-serif';
+  ctx.font = '600 12.5px "Instrument Sans", system-ui, sans-serif';
   ctx.fillStyle = "#E2E4E9";
   ctx.textBaseline = "top";
   ctx.fillText("RGB Parade", pX + 14, scopeY + 14);
@@ -967,7 +933,7 @@ function drawCard04Scopes(ctx, x, y, w, h, isId) {
     stroke: "rgba(255, 255, 255, 0.12)",
   });
   ctx.save();
-  ctx.font = '600 12.5px Inter, system-ui, sans-serif';
+  ctx.font = '600 12.5px "Instrument Sans", system-ui, sans-serif';
   ctx.fillStyle = "#E2E4E9";
   ctx.textBaseline = "top";
   ctx.fillText("Vectorscope (I-Line)", vX + 14, scopeY + 14);
@@ -1034,7 +1000,7 @@ function drawCard04Scopes(ctx, x, y, w, h, isId) {
     stroke: "rgba(255, 255, 255, 0.12)",
   });
   ctx.save();
-  ctx.font = '600 14.5px Inter, system-ui, sans-serif';
+  ctx.font = '600 14.5px "Instrument Sans", system-ui, sans-serif';
   ctx.fillStyle = "#F8FAFC";
   ctx.textBaseline = "top";
   ctx.fillText("False Color IRE", x + pad + 32, ovCardY + 16);
@@ -1060,7 +1026,7 @@ function drawCard04Scopes(ctx, x, y, w, h, isId) {
     stroke: "rgba(255, 255, 255, 0.12)",
   });
   ctx.save();
-  ctx.font = '600 14.5px Inter, system-ui, sans-serif';
+  ctx.font = '600 14.5px "Instrument Sans", system-ui, sans-serif';
   ctx.fillStyle = "#F8FAFC";
   ctx.textBaseline = "top";
   ctx.fillText("Zebra Clipping", zX + 14, ovCardY + 16);
@@ -1094,7 +1060,7 @@ function drawCard04Scopes(ctx, x, y, w, h, isId) {
     stroke: "rgba(255, 255, 255, 0.12)",
   });
   ctx.save();
-  ctx.font = '600 14.5px Inter, system-ui, sans-serif';
+  ctx.font = '600 14.5px "Instrument Sans", system-ui, sans-serif';
   ctx.fillStyle = "#F8FAFC";
   ctx.textBaseline = "top";
   ctx.fillText("Touch Eyedropper", eX + 14, ovCardY + 16);
@@ -1215,7 +1181,7 @@ function drawCard05Precision(ctx, x, y, w, h, isId) {
   );
   const zoomLbl = isId ? "Cubit 2 Jari untuk Zoom (1x-4x)" : "2-Finger Pinch-to-Zoom (1x-4x)";
   ctx.save();
-  ctx.font = '600 12px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+  ctx.font = '600 12px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
   const zEstW = Math.round(ctx.measureText(zoomLbl).width + 28 + 14);
   ctx.restore();
   drawPill(ctx, fx + fw - 14 - zEstW, fy + fh - 40, zoomLbl, {
@@ -1257,12 +1223,12 @@ function drawCard05Precision(ctx, x, y, w, h, isId) {
     });
 
     ctx.save();
-    ctx.font = '600 15px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
+    ctx.font = '600 15px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
     ctx.fillStyle = "#F8FAFC";
     ctx.textBaseline = "top";
     ctx.fillText(item.title, ix + 16, iy + 18);
 
-    ctx.font = '500 12.5px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+    ctx.font = '500 12.5px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
     ctx.fillStyle = "#9CA3AF";
     ctx.fillText(item.sub, ix + 16, iy + 46);
     ctx.restore();
@@ -1292,7 +1258,7 @@ function drawCard06StorefrontLooks(ctx, x, y, w, h, isId) {
   });
 
   ctx.save();
-  ctx.font = '700 18px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
+  ctx.font = '700 18px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
   ctx.fillStyle = "#F8FAFC";
   ctx.textBaseline = "top";
   ctx.fillText(
@@ -1301,7 +1267,7 @@ function drawCard06StorefrontLooks(ctx, x, y, w, h, isId) {
     c1Y + 16
   );
 
-  ctx.font = '500 13px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+  ctx.font = '500 13px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
   ctx.fillStyle = "#9CA3AF";
   ctx.fillText(
     isId
@@ -1365,7 +1331,7 @@ function drawCard06StorefrontLooks(ctx, x, y, w, h, isId) {
   });
 
   ctx.save();
-  ctx.font = '600 16px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
+  ctx.font = '600 16px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
   ctx.fillStyle = "#F8FAFC";
   ctx.textBaseline = "top";
   ctx.fillText(
@@ -1374,7 +1340,7 @@ function drawCard06StorefrontLooks(ctx, x, y, w, h, isId) {
     c2Y + 14
   );
 
-  ctx.font = '500 12.5px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+  ctx.font = '500 12.5px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
   ctx.fillStyle = "#9CA3AF";
   ctx.fillText(
     isId
@@ -1427,12 +1393,12 @@ function drawCard06StorefrontLooks(ctx, x, y, w, h, isId) {
       stroke: p.accent ? "rgba(110, 231, 183, 0.34)" : "rgba(255, 255, 255, 0.12)",
     });
     ctx.save();
-    ctx.font = '600 13.5px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+    ctx.font = '600 13.5px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
     ctx.fillStyle = p.accent ? "#F8FAFC" : "#E2E4E9";
     ctx.textBaseline = "top";
     ctx.fillText(p.title, px + 14, py + 12);
 
-    ctx.font = '500 11.5px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+    ctx.font = '500 11.5px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
     ctx.fillStyle = p.accent ? "#A7F3D0" : "#9CA3AF";
     ctx.fillText(p.sub, px + 14, py + 34);
     ctx.restore();
@@ -1458,12 +1424,12 @@ export function renderReleasePosterCanvas(lang = "en") {
   drawPrismBadge(ctx, padX, 52, 64);
 
   ctx.save();
-  ctx.font = '700 42px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
+  ctx.font = '700 42px "Bricolage Grotesque", "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif';
   ctx.fillStyle = "#F8FAFC";
   ctx.textBaseline = "top";
   ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
   ctx.shadowBlur = 12;
-  const titleText = "Color Match for Keyflow";
+  const titleText = "ToneBench";
   const titleX = padX + 84;
   const titleY = 50;
   ctx.fillText(titleText, titleX, titleY);
@@ -1569,13 +1535,13 @@ export function renderReleasePosterCanvas(lang = "en") {
   ctx.lineTo(width - padX, 1284);
   ctx.stroke();
 
-  ctx.font = '500 14px Inter, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+  ctx.font = '500 14px "Instrument Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
   ctx.fillStyle = "rgba(226, 228, 233, 0.65)";
   ctx.textBaseline = "middle";
   ctx.fillText(
     isId
-      ? "Color Match for Keyflow  -  Studio Color Grading Sinema & Pembuat Plugin Keyflow di Browser"
-      : "Color Match for Keyflow  -  Client-Side Cinema Grading & Keyflow Plugin Studio",
+      ? "ToneBench oleh TFBAGAS  -  Studio Transfer Warna 3D OKLab, .cube LUT & Plugin di Browser"
+      : "ToneBench by TFBAGAS  -  Client-Side 3D OKLab Color Transfer & LUT/Plugin Studio",
     padX,
     1315
   );
@@ -1606,6 +1572,6 @@ export async function renderReleasePosterBlob(lang = "en") {
     blob,
     width: canvas.width,
     height: canvas.height,
-    fileName: `ColorMatch_Keyflow_v0.9.5_Beta_Release${suffix}.png`,
+    fileName: `ToneBench_v0.9.5_Beta_Release${suffix}.png`,
   };
 }

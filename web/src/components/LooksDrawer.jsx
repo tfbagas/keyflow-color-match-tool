@@ -154,13 +154,14 @@ export default function LooksDrawer({
   const handleExportJson = () => {
     const payload = {
       version: 1,
+      app: "ToneBench",
       exportedAt: new Date().toISOString(),
       looks: savedLooks,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
     });
-    downloadBlob(blob, `Keyflow_Saved_Looks_${new Date().toISOString().slice(0, 10)}.json`);
+    downloadBlob(blob, `ToneBench_Saved_Looks_${new Date().toISOString().slice(0, 10)}.json`);
     flashFeedback(t("looksDrawer.feedbackExportedJson"));
   };
 
@@ -237,7 +238,7 @@ export default function LooksDrawer({
         entries.push({ name: `${cleanName}/${cleanName}.cube`, data: cubeBlob });
       }
       const zipBlob = await buildZipBlob(entries);
-      downloadBlob(zipBlob, `Keyflow_Batch_Looks_${chosen.length}.zip`);
+      downloadBlob(zipBlob, `ToneBench_Batch_Looks_${chosen.length}.zip`);
       flashFeedback(t("looksDrawer.feedbackBatchExported", { count: chosen.length }));
     } catch {
       flashFeedback(t("looksDrawer.feedbackBatchFailed"));
@@ -291,8 +292,8 @@ export default function LooksDrawer({
       }
 
       const readmeText = [
-        "Color Match for Keyflow - Preset Pack",
-        "=====================================",
+        "ToneBench by TFBAGAS - Preset Pack",
+        "==================================",
         `Packaged Looks: ${savedLooks.length}`,
         `Exported: ${new Date().toISOString()}`,
         "",
@@ -309,7 +310,7 @@ export default function LooksDrawer({
       zip.file("README.txt", readmeText);
 
       const zipBlob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
-      downloadBlob(zipBlob, "ColorMatch_Keyflow_PresetPack.zip");
+      downloadBlob(zipBlob, "ToneBench_PresetPack.zip");
       flashFeedback(t("looksDrawer.feedbackPacked", { count: savedLooks.length }));
     } catch {
       flashFeedback(t("looksDrawer.feedbackPackFailed"));

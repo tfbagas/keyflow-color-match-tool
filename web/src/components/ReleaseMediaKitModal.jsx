@@ -159,7 +159,7 @@ export default function ReleaseMediaKitModal({ isOpen, onClose }) {
           {!isRendering && !errorMsg && previewUrl && (
             <img
               src={previewUrl}
-              alt="Color Match for Keyflow v0.9.5 Beta Release Poster"
+              alt="ToneBench v0.9.5 Beta Release Poster"
               className="w-full h-full object-contain select-none"
             />
           )}

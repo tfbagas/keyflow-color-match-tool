@@ -336,7 +336,7 @@ export default function IntroProScopesCanvas({
       context.stroke();
 
       // Monospace IRE reference scale labels (100 / 75 / 50 / 25 / 0) inset past left feather zone
-      context.font = "500 9px 'JetBrains Mono', ui-monospace, monospace";
+      context.font = "500 9px 'IBM Plex Mono', ui-monospace, monospace";
       context.fillStyle = `rgba(161, 161, 170, ${(0.42 * alpha).toFixed(4)})`;
       context.textBaseline = "bottom";
       const labelInset = Math.max(width < 640 ? 28 : 44, Math.round(width * 0.045));
@@ -348,7 +348,7 @@ export default function IntroProScopesCanvas({
 
       // Subtle R / G / B parade channel identifiers tucked cleanly along the 0 IRE baseline
       context.textBaseline = "top";
-      context.font = "600 8.5px 'JetBrains Mono', ui-monospace, monospace";
+      context.font = "600 8.5px 'IBM Plex Mono', ui-monospace, monospace";
       for (let c = 0; c < PARADE_CHANNELS.length; c += 1) {
         const ch = PARADE_CHANNELS[c];
         const laneLeft = plotLeft + c * (colW + gap);
@@ -448,7 +448,7 @@ export default function IntroProScopesCanvas({
       context.arc(endX, endY, 2, 0, Math.PI * 2);
       context.fill();
 
-      context.font = "500 8px 'JetBrains Mono', ui-monospace, monospace";
+      context.font = "500 8px 'IBM Plex Mono', ui-monospace, monospace";
       context.fillStyle = `rgba(251, 191, 36, ${(0.28 * alpha).toFixed(4)})`;
       context.textBaseline = "middle";
       context.fillText(

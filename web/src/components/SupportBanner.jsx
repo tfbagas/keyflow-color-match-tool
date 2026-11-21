@@ -34,7 +34,7 @@ export default function SupportBanner({ onOpenSupport }) {
           <Heart className="w-3.5 h-3.5 text-[#6EE7B7]" />
         </span>
         <p className="leading-snug">
-          Enjoying <span className="font-semibold text-[#E2E4E9]">Color Match Tool</span>? Built for free by{" "}
+          Enjoying <span className="font-semibold text-[#E2E4E9]">ToneBench</span>? Built for free by{" "}
           <button
             type="button"
             onClick={onOpenSupport}

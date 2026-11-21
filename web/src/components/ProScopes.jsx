@@ -20,7 +20,7 @@ function drawIreGraticules(ctx, w, h) {
   ctx.save();
   ctx.strokeStyle = "rgba(255, 255, 255, 0.065)";
   ctx.lineWidth = 1;
-  ctx.font = "500 8px 'JetBrains Mono', monospace";
+  ctx.font = "500 8px 'IBM Plex Mono', monospace";
   ctx.fillStyle = "rgba(161, 161, 170, 0.72)";
 
   const marks = [
@@ -85,7 +85,7 @@ function drawVectorscopeGraticuleAndSkinLine(ctx, w, h) {
   ctx.arc(endX, endY, 1.8, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.font = "500 8px 'JetBrains Mono', monospace";
+  ctx.font = "500 8px 'IBM Plex Mono', monospace";
   ctx.fillStyle = "rgba(251, 191, 36, 0.85)";
   ctx.fillText(
     "I-LINE",

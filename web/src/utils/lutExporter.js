@@ -32,6 +32,7 @@ export function generateLutText(
   }
 
   const lines = [
+    `# Created by ToneBench v0.9.6a`,
     `TITLE "${cleanTitle}"`,
     `LUT_3D_SIZE ${size}`,
     `DOMAIN_MIN 0.0 0.0 0.0`,

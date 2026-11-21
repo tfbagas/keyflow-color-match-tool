@@ -1,10 +1,10 @@
 export const TRANSLATIONS = {
   en: {
     intro: {
-      dialogLabel: "Color Match for Keyflow Intro",
-      title: "Color Match for Keyflow",
+      dialogLabel: "ToneBench Studio Intro",
+      title: "ToneBench",
       subtitle:
-        "Deterministic 3D OKLab color transfer, Pro Scopes & native .kfplug / .ffx export — 100% in your browser.",
+        "Deterministic 3D OKLab color transfer, editable .cube and .lut parameters, and Pro Scopes. Export universal 3D LUTs, After Effects (.ffx) presets, and Keyflow (.kfplug) shaders directly in your browser.",
       indexLine: "V0.9.6A  -  REC.709 / LOG  -  OKLAB COLOR SCIENCE  -  60FPS WEBGL",
       openStudio: "Open Studio",
       pressKey: "Press",
@@ -72,7 +72,7 @@ export const TRANSLATIONS = {
       unsupportedEmpty:
         "No supported color grading effects found in {fileName}.",
       thirdPartyPlugin:
-        "Detected third-party plugin(s) ({effects}) in {fileName}. External plugin shaders (Magic Bullet Looks, Sapphire, BCC, etc.) cannot be read directly from .ffx — render 1 graded frame (PNG/JPG) from After Effects and drop it here as Reference for 100% accurate color matching.",
+        "Detected third-party plugin(s) ({effects}) in {fileName}. External plugin shaders (Magic Bullet Looks, Sapphire, BCC, etc.) cannot be read directly from .ffx. Render 1 graded frame (PNG/JPG) from After Effects and drop it here as Reference for 100% accurate color matching.",
     },
     toasts: {
       backedUpSlotB: "Previous grade backed up to Slot B",
@@ -428,6 +428,8 @@ export const TRANSLATIONS = {
     },
     shareModal: {
       title: "Share Grade Link & QR",
+      subtitle:
+        "Share ToneBench grades by TFBAGAS with live editable parameters, ready to export as universal .cube / .lut files, After Effects (.ffx) presets, and Keyflow (.kfplug) shaders.",
       closeAria: "Close Share Modal",
       strengthBadge: "Strength {pct}%",
       scanHint: "Scan with phone camera to open grade",
@@ -526,9 +528,12 @@ export const TRANSLATIONS = {
       replayIntroBtn: "Replay Intro",
       replayIntroTitle: "Replay the interactive monochrome liquid glass entrance intro",
       devHubTitle: "Created by TFBAGAS - View Developer & Support Hub",
+      architectureParagraph:
+        "Unlike standard NLEs that treat LUTs as locked static filters, ToneBench by TFBAGAS lets you inspect and edit live grading parameters (Curves, 3-Way Wheels, Hue 6V, and Skin Protect) on .cube and .lut workflows inside your browser. Match any reference image via Web Workers and export 17³ / 33³ / 65³ .cube and .lut files, After Effects (.ffx) presets, or Keyflow (.kfplug) shaders.",
       heroParagraph1:
-        "This tool analyzes the luminance distribution (Rec. 709), white balance neutrality, saturation, and 3-way split toning (Shadows, Midtones, Highlights) of any reference image directly inside your browser using Web Workers, then packages a native",
-      heroParagraph2: "GLSL shader plugin for Keyflow.",
+        "Unlike standard NLEs that treat LUTs as locked static filters, ToneBench by TFBAGAS lets you inspect and edit live grading parameters on .cube and .lut workflows directly inside your browser using Web Workers, then package native",
+      heroParagraph2:
+        "shaders for Keyflow, After Effects (.ffx) presets, and 17³ / 33³ / 65³ .cube and .lut files.",
       privacyTitle: "Privacy & Architecture",
       privacyDesc:
         "All images are processed locally in your device's memory. No photos or presets are ever uploaded to an external server.",
@@ -588,20 +593,22 @@ export const TRANSLATIONS = {
       supportSub: "100% Free & Open Client-Side Web Tool",
       supportDesc:
         "This tool is 100% free with no ads or paywalls. If it helps your editing workflow or saves you time, consider supporting future updates and new tools!",
-      supportNote: "Every contribution fuels new presets & Keyflow tools",
+      supportNote: "Every contribution fuels new ToneBench presets & Keyflow / AE tools",
       supportBtn: "Support on SociaBuzz",
-      footerNote: "Crafted by TFBAGAS for the Keyflow community",
+      footerNote: "ToneBench crafted by TFBAGAS for creators across Keyflow, After Effects & NLEs",
     },
     supportToast: {
       title: "Plugin Exported Successfully!",
       desc1: "Saved your time? Support",
-      desc2: "so this tool stays free & keeps getting better!",
+      desc2: "so ToneBench stays free & keeps getting better!",
       closeAria: "Close notification",
       maybeLater: "Maybe Later",
       supportBtn: "Support on SociaBuzz",
     },
     shortcutsModal: {
-      title: "Keyboard & Grading Shortcuts",
+      title: "ToneBench Help & Shortcuts",
+      subtitle:
+        "ToneBench by TFBAGAS lets you inspect and edit live grading parameters (Curves, 3-Way Wheels, Hue 6V, Skin Protect) on .cube and .lut workflows, then export universal 3D LUTs, After Effects (.ffx) presets, and Keyflow (.kfplug) shaders.",
       closeAria: "Close shortcuts",
       touchTipsHeader: "Touch & Mobile Tips",
       shortcuts: [
@@ -633,10 +640,10 @@ export const TRANSLATIONS = {
   },
   id: {
     intro: {
-      dialogLabel: "Intro Color Match for Keyflow",
-      title: "Color Match for Keyflow",
+      dialogLabel: "Intro ToneBench Studio",
+      title: "ToneBench",
       subtitle:
-        "Transfer warna 3D OKLab deterministik, Pro Scopes & ekspor native .kfplug / .ffx — 100% di browser Anda.",
+        "Transfer warna 3D OKLab deterministik, parameter .cube dan .lut yang dapat diedit, serta Pro Scopes. Ekspor 3D LUT universal, preset After Effects (.ffx), dan shader Keyflow (.kfplug) langsung di browser Anda.",
       indexLine: "V0.9.6A  -  REC.709 / LOG  -  SAINS WARNA OKLAB  -  60FPS WEBGL",
       openStudio: "Buka Studio",
       pressKey: "Tekan",
@@ -704,7 +711,7 @@ export const TRANSLATIONS = {
       unsupportedEmpty:
         "Tidak ada efek color grading yang didukung di {fileName}.",
       thirdPartyPlugin:
-        "Terdeteksi plugin pihak ketiga ({effects}) di {fileName}. Shader plugin eksternal (Magic Bullet Looks, Sapphire, BCC, dll.) tidak dapat dibaca langsung dari .ffx — render 1 frame hasil grading (PNG/JPG) dari After Effects lalu masukkan ke Referensi untuk hasil color match 100% akurat.",
+        "Terdeteksi plugin pihak ketiga ({effects}) di {fileName}. Shader plugin eksternal (Magic Bullet Looks, Sapphire, BCC, dll.) tidak dapat dibaca langsung dari .ffx. Render 1 frame hasil grading (PNG/JPG) dari After Effects lalu masukkan ke Referensi untuk hasil color match 100% akurat.",
     },
     toasts: {
       backedUpSlotB: "Grade sebelumnya dicadangkan ke Slot B",
@@ -1060,6 +1067,8 @@ export const TRANSLATIONS = {
     },
     shareModal: {
       title: "Bagikan Link Grade & QR",
+      subtitle:
+        "Bagikan grade ToneBench oleh TFBAGAS dengan parameter live yang dapat diedit, siap diekspor ke file .cube / .lut universal, preset After Effects (.ffx), dan shader Keyflow (.kfplug).",
       closeAria: "Tutup Modal Bagikan",
       strengthBadge: "Strength {pct}%",
       scanHint: "Scan dengan kamera HP untuk membuka grade ini",
@@ -1158,9 +1167,12 @@ export const TRANSLATIONS = {
       replayIntroBtn: "Putar Ulang Intro",
       replayIntroTitle: "Putar ulang animasi pembuka monochrome liquid glass",
       devHubTitle: "Dibuat oleh TFBAGAS - Lihat Profil Developer & Dukungan",
+      architectureParagraph:
+        "Berbeda dengan NLE standar yang memperlakukan LUT sebagai filter statis terkunci, ToneBench oleh TFBAGAS memungkinkan Anda memeriksa dan mengedit parameter grading secara langsung (Curves, 3-Way Wheels, Hue 6V, dan Skin Protect) pada workflow .cube dan .lut di dalam browser. Cocokkan gambar referensi melalui Web Workers dan ekspor file .cube dan .lut 17³ / 33³ / 65³, preset After Effects (.ffx), atau shader Keyflow (.kfplug).",
       heroParagraph1:
-        "Aplikasi ini menganalisis distribusi pencahayaan (Rec. 709), keseimbangan white balance, saturasi, serta split toning 3-arah (Shadows, Midtones, Highlights) dari gambar referensi langsung di browser menggunakan Web Workers, lalu membungkusnya menjadi plugin shader GLSL native",
-      heroParagraph2: "untuk aplikasi Keyflow.",
+        "Berbeda dengan NLE standar yang memperlakukan LUT sebagai filter statis terkunci, ToneBench oleh TFBAGAS memungkinkan Anda mengedit parameter grading pada workflow .cube dan .lut langsung di browser menggunakan Web Workers, lalu membungkusnya menjadi shader",
+      heroParagraph2:
+        "untuk Keyflow, preset After Effects (.ffx), serta file .cube dan .lut 17³ / 33³ / 65³.",
       privacyTitle: "Privasi & Arsitektur",
       privacyDesc:
         "Semua gambar dan video diproses langsung di memori perangkat kamu. Tidak ada foto, video, atau preset yang pernah di-upload ke server luar.",
@@ -1220,20 +1232,22 @@ export const TRANSLATIONS = {
       supportSub: "100% Web Tool Gratis & Terbuka di Browser",
       supportDesc:
         "Tool ini 100% gratis tanpa iklan atau langganan berbayar. Kalau tool ini membantu alur editing atau menghemat waktumu, yuk dukung pengembangan fitur dan update berikutnya!",
-      supportNote: "Setiap dukungan mempercepat hadirnya preset & tool Keyflow baru",
+      supportNote: "Setiap dukungan mempercepat hadirnya preset ToneBench & tool Keyflow / AE baru",
       supportBtn: "Dukung di SociaBuzz",
-      footerNote: "Dibuat oleh TFBAGAS untuk komunitas Keyflow",
+      footerNote: "ToneBench dibuat oleh TFBAGAS untuk kreator Keyflow, After Effects & NLE",
     },
     supportToast: {
       title: "Plugin Berhasil Diekspor!",
       desc1: "Menghemat waktu editingmu? Dukung",
-      desc2: "agar tool ini tetap gratis & makin canggih!",
+      desc2: "agar ToneBench tetap gratis & makin canggih!",
       closeAria: "Tutup notifikasi",
       maybeLater: "Nanti Saja",
       supportBtn: "Dukung di SociaBuzz",
     },
     shortcutsModal: {
-      title: "Pintasan Keyboard & Grading",
+      title: "Bantuan & Pintasan ToneBench",
+      subtitle:
+        "ToneBench oleh TFBAGAS memungkinkan Anda mengedit parameter grading langsung (Curves, 3-Way Wheels, Hue 6V, Skin Protect) pada workflow .cube dan .lut, lalu mengekspor 3D LUT universal, preset After Effects (.ffx), dan shader Keyflow (.kfplug).",
       closeAria: "Tutup pintasan",
       touchTipsHeader: "Tips Layar Sentuh & HP",
       shortcuts: [

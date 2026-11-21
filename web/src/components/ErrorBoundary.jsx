@@ -40,7 +40,7 @@ export default class ErrorBoundary extends React.Component {
                   Workstation Runtime Recovery
                 </h1>
                 <p className="text-[11px] font-mono text-[#9CA3AF]">
-                  Color Match Tool encountered a rendering error
+                  ToneBench encountered a rendering error
                 </p>
               </div>
             </div>

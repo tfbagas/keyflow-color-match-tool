@@ -539,13 +539,14 @@ export function serializeCube32(
     .trim()
     .slice(0, 64) || "Keyflow_Altair_Refresh";
 
-  const lines = new Array<string>(LUT32_NODES + 4);
-  lines[0] = `TITLE "${safeTitle}"`;
-  lines[1] = "LUT_3D_SIZE 32";
-  lines[2] = "DOMAIN_MIN 0.0 0.0 0.0";
-  lines[3] = "DOMAIN_MAX 1.0 1.0 1.0";
+  const lines = new Array<string>(LUT32_NODES + 5);
+  lines[0] = "# Created by ToneBench v0.9.6a";
+  lines[1] = `TITLE "${safeTitle}"`;
+  lines[2] = "LUT_3D_SIZE 32";
+  lines[3] = "DOMAIN_MIN 0.0 0.0 0.0";
+  lines[4] = "DOMAIN_MAX 1.0 1.0 1.0";
 
-  let row = 4;
+  let row = 5;
   for (let i = 0; i < LUT32_LENGTH; i += 3) {
     const r = clamp01(Number.isFinite(lut32[i]) ? lut32[i] : 0.0);
     const g = clamp01(Number.isFinite(lut32[i + 1]) ? lut32[i + 1] : 0.0);

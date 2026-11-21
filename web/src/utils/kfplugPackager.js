@@ -927,7 +927,7 @@ export function buildKfplugPackageData(
   const resolvedProfile = resolveLogProfileId(inputProfile || params?.inputProfile);
   const cleanName = sanitizeMetadataText(presetName, "Custom Grade", 64);
   const cleanAuthor = sanitizeMetadataText(author, "TFBAGAS", 64);
-  const defaultDesc = `Grading preset matched from reference '${cleanName}'.`;
+  const defaultDesc = `Grading preset generated with ToneBench from reference '${cleanName}'.`;
   const cleanDescription = sanitizeMetadataText(description, defaultDesc, 200);
 
   const cleanSlug = cleanName.replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(0, 16) || "grade";
