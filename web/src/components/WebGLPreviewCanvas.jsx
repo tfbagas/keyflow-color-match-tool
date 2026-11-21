@@ -118,29 +118,18 @@ export default function WebGLPreviewCanvas({
   const stopLoopRef = useRef(() => {});
   const uploadActiveSourceRef = useRef(() => {});
 
-  // Initialize persistent WebGL context & shader program once on mount.
+  // Defer WebGL context acquisition & shader compilation until after the first UI paint.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
 
-    const gl =
-      canvas.getContext("webgl", {
-        alpha: false,
-        antialias: false,
-        depth: false,
-        stencil: false,
-        powerPreference: "high-performance",
-      }) || null;
-
-    if (!gl) {
-      callbacksRef.current.onError?.("WebGL is not available in this browser.");
-      return undefined;
-    }
-
+    let gl = null;
     let disposed = false;
+    let initRafId = 0;
     let pendingDrawRaf = 0;
 
     const initGLResources = () => {
+      if (!gl || disposed) return false;
       let vs = null;
       let fs = null;
       let program = null;
@@ -255,11 +244,31 @@ export default function WebGLPreviewCanvas({
       }
     };
 
-    if (!initGLResources()) {
-      return undefined;
-    }
+    initRafId = requestAnimationFrame(() => {
+      initRafId = 0;
+      if (disposed) return;
+      gl =
+        canvas.getContext("webgl", {
+          alpha: false,
+          antialias: false,
+          depth: false,
+          stencil: false,
+          powerPreference: "high-performance",
+        }) || null;
+
+      if (!gl) {
+        callbacksRef.current.onError?.("WebGL is not available in this browser.");
+        return;
+      }
+
+      if (initGLResources()) {
+        uploadActiveSourceRef.current();
+        startLoopRef.current();
+      }
+    });
 
     const syncCanvasSize = (isSide) => {
+      if (!gl) return;
       const ms = mediaStateRef.current;
       const sw = ms.videoEl
         ? ms.videoEl.videoWidth || 0
@@ -314,6 +323,7 @@ export default function WebGLPreviewCanvas({
       const ms = mediaStateRef.current;
       if (
         disposed ||
+        !gl ||
         !res ||
         ms.isContextLost ||
         gl.isContextLost() ||
@@ -496,6 +506,7 @@ export default function WebGLPreviewCanvas({
       scheduleDrawRef.current = () => {};
       drawRef.current = () => {};
       if (previewRef) previewRef.current = null;
+      if (initRafId) cancelAnimationFrame(initRafId);
       if (pendingDrawRaf) cancelAnimationFrame(pendingDrawRaf);
       ro.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);

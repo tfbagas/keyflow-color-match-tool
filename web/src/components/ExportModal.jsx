@@ -15,7 +15,7 @@ import {
   ChevronDown,
   Share2,
 } from "lucide-react";
-import { DEFAULT_ENGINE_ID, getEngineCodename } from "../utils/engineRegistry";
+import { DEFAULT_ENGINE_ID, getEngineCodename } from "../utils/engineMetadata";
 import { encodeGradeToHash } from "../utils/shareCodec";
 import { fetchCloudQuota, isCloudRenderConfigured } from "../utils/cloudVideoExporter";
 import { useLanguage } from "../i18n/LanguageContext";

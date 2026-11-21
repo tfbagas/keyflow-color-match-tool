@@ -26,7 +26,7 @@
 //      Halton Sampling + 32^3 Tetrahedral LUT Bake.
 
 import {
-  STANDARD_CUBE,
+  getStandardCube,
   bakeParamsToLut32,
 } from "./lut3d.ts";
 import {
@@ -456,7 +456,7 @@ export function solveTwoStageLut32(
 
   // Exact identity fast path when both stages are dialed to 0% (ΔE = 0.00)
   if (normalizeWeight <= 1e-5 && sigmaWeight <= 1e-5) {
-    const lut32 = new Float32Array(STANDARD_CUBE);
+    const lut32 = new Float32Array(getStandardCube());
     const t1 = typeof performance !== "undefined" ? performance.now() : Date.now();
     const emptyZone: ZoneStats = { meanA: 0, meanB: 0, stdA: 0, stdB: 0, weight: 0 };
     return {

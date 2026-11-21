@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import {
   MoveHorizontal,
   MoveVertical,
@@ -14,8 +14,9 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { usePixelReadout } from "../hooks/usePixelReadout";
-import WebGLPreviewCanvas from "./WebGLPreviewCanvas";
 import { useLanguage } from "../i18n/LanguageContext";
+
+const WebGLPreviewCanvas = lazy(() => import("./WebGLPreviewCanvas"));
 
 const LOUPE_SIZE = 132;
 
@@ -871,26 +872,28 @@ export default function ComparisonSlider({
                     mode !== "side" && mediaBox ? "" : "w-full h-full"
                   }`}
                 >
-                  <WebGLPreviewCanvas
-                    videoEl={videoEl}
-                    imageEl={imageEl}
-                    params={gradingParams}
-                    activeLut={activeLut}
-                    lutMix={lutMix}
-                    mode={mode}
-                    splitPos={splitPos}
-                    splitDirection={splitDirection}
-                    hold={isHoldingBefore}
-                    simulateLogInput={simulateLogInput}
-                    monitorMode={monitorMode}
-                    maxSide={videoEl ? 0 : previewMaxDim}
-                    previewRef={activeGLRef}
-                    onError={videoEl ? onVideoError : onWebGLPhotoError}
-                    onContextLost={() => setIsContextLost(true)}
-                    onContextRestored={() => setIsContextLost(false)}
-                    isActive={isTabActive}
-                    className="w-full h-full object-contain pointer-events-none"
-                  />
+                  <Suspense fallback={null}>
+                    <WebGLPreviewCanvas
+                      videoEl={videoEl}
+                      imageEl={imageEl}
+                      params={gradingParams}
+                      activeLut={activeLut}
+                      lutMix={lutMix}
+                      mode={mode}
+                      splitPos={splitPos}
+                      splitDirection={splitDirection}
+                      hold={isHoldingBefore}
+                      simulateLogInput={simulateLogInput}
+                      monitorMode={monitorMode}
+                      maxSide={videoEl ? 0 : previewMaxDim}
+                      previewRef={activeGLRef}
+                      onError={videoEl ? onVideoError : onWebGLPhotoError}
+                      onContextLost={() => setIsContextLost(true)}
+                      onContextRestored={() => setIsContextLost(false)}
+                      isActive={isTabActive}
+                      className="w-full h-full object-contain pointer-events-none"
+                    />
+                  </Suspense>
 
                   {mode === "split" && !isHoldingBefore && (
                     <SplitDivider

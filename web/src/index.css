@@ -818,29 +818,23 @@
 
 @keyframes introKineticMaskReveal {
   from {
-    opacity: 0.01;
-    clip-path: inset(100% 0 0 0);
-    transform: translate3d(0, 16px, 0);
-    letter-spacing: 0.025em;
+    opacity: 1;
+    filter: brightness(0.92);
   }
   to {
     opacity: 1;
-    clip-path: inset(0 0 0 0);
-    transform: translate3d(0, 0, 0);
-    letter-spacing: -0.025em;
+    filter: brightness(1);
   }
 }
 
 @keyframes introSubtitleMaskReveal {
   from {
-    opacity: 0;
-    clip-path: inset(100% 0 0 0);
-    transform: translate3d(0, 14px, 0);
+    opacity: 1;
+    filter: brightness(0.92);
   }
   to {
     opacity: 1;
-    clip-path: inset(0 0 0 0);
-    transform: translate3d(0, 0, 0);
+    filter: brightness(1);
   }
 }
 
@@ -953,23 +947,19 @@
 }
 
 .intro-kinetic-mask {
-  opacity: 0.01;
-  clip-path: inset(100% 0 0 0);
+  opacity: 1;
   animation-name: introKineticMaskReveal;
-  animation-duration: 900ms;
+  animation-duration: 600ms;
   animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
   animation-fill-mode: both;
-  will-change: transform, clip-path, opacity;
 }
 
 .intro-kinetic-subtitle {
-  opacity: 0;
-  clip-path: inset(100% 0 0 0);
+  opacity: 1;
   animation-name: introSubtitleMaskReveal;
-  animation-duration: 850ms;
+  animation-duration: 650ms;
   animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
   animation-fill-mode: both;
-  will-change: transform, clip-path, opacity;
 }
 
 .m3-intro-item {

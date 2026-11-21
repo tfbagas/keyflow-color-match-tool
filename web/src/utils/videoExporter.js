@@ -5,7 +5,7 @@ import {
   Endianness as MP4BoxEndianness,
 } from "mp4box";
 import { scaleParamsByStrength, sanitizeParams } from "./gradeEngine";
-import { DEFAULT_ENGINE_ID, getEngineCodename } from "./engineRegistry";
+import { DEFAULT_ENGINE_ID, getEngineCodename } from "./engineMetadata";
 import { createWebGLFrameGrader } from "./imageExporter";
 
 const H264_CODEC_CANDIDATES = [

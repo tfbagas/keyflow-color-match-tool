@@ -87,16 +87,41 @@ function buildStandardCube(): {
   return { srgb, oklab };
 }
 
-const CACHED_CUBES = buildStandardCube();
+let cachedCubes: { srgb: Float32Array; oklab: Float32Array } | null = null;
 
-/** Immutable identity 32x32x32x3 (98,304 float32) RGB lattice in .cube order. */
-export const STANDARD_CUBE: Float32Array = CACHED_CUBES.srgb;
+function ensureStandardCubes(): { srgb: Float32Array; oklab: Float32Array } {
+  if (!cachedCubes) {
+    cachedCubes = buildStandardCube();
+  }
+  return cachedCubes;
+}
 
-/** Precomputed OKLab (L, a, b) lattice matching STANDARD_CUBE for <8ms solves. */
-export const STANDARD_CUBE_OKLAB: Float32Array = CACHED_CUBES.oklab;
+/** Lazy identity 32x32x32x3 (98,304 float32) RGB lattice in .cube order. */
+export function getStandardCube(): Float32Array {
+  return ensureStandardCubes().srgb;
+}
+
+/** Lazy precomputed OKLab (L, a, b) lattice matching getStandardCube() for <8ms solves. */
+export function getStandardCubeOklab(): Float32Array {
+  return ensureStandardCubes().oklab;
+}
+
+/** Schedules 32^3 LUT lattice warmup after the initial UI paint when idle. */
+export function warmupStandardCube(): void {
+  if (cachedCubes) return;
+  if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(() => {
+      ensureStandardCubes();
+    });
+  } else {
+    setTimeout(() => {
+      ensureStandardCubes();
+    }, 0);
+  }
+}
 
 export function cloneStandardCube(): Float32Array {
-  return new Float32Array(STANDARD_CUBE);
+  return new Float32Array(getStandardCube());
 }
 
 // ---------------------------------------------------------------------------
@@ -314,15 +339,16 @@ export function bakeParamsToLut32(
 ): Float32Array {
   const G = prepareGrade(sanitizeParams(params));
   const resolvedProfile = resolveLogProfileId(inputProfile);
+  const standardCube = getStandardCube();
   const out = new Float32Array(LUT32_LENGTH);
   const rgb = [0, 0, 0];
 
   for (let i = 0; i < LUT32_LENGTH; i += 3) {
     evaluateGradeRGB(
       G,
-      STANDARD_CUBE[i],
-      STANDARD_CUBE[i + 1],
-      STANDARD_CUBE[i + 2],
+      standardCube[i],
+      standardCube[i + 1],
+      standardCube[i + 2],
       rgb,
       resolvedProfile
     );
@@ -376,15 +402,16 @@ export function composeLutTo32(
   const dMin = isRaw32 ? ([0, 0, 0] as const) : activeLut.dMin || [0, 0, 0];
   const dMax = isRaw32 ? ([1, 1, 1] as const) : activeLut.dMax || [1, 1, 1];
 
+  const standardCube = getStandardCube();
   const out = new Float32Array(LUT32_LENGTH);
   const inBuf = [0, 0, 0];
   const sampled = [0, 0, 0];
   const graded = [0, 0, 0];
 
   for (let i = 0; i < LUT32_LENGTH; i += 3) {
-    let inR = STANDARD_CUBE[i];
-    let inG = STANDARD_CUBE[i + 1];
-    let inB = STANDARD_CUBE[i + 2];
+    let inR = standardCube[i];
+    let inG = standardCube[i + 1];
+    let inB = standardCube[i + 2];
 
     if (useLog) {
       applyLogProfileRGB(inR, inG, inB, resolvedProfile, inBuf);

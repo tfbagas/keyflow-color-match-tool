@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, Copy, Check, Share2, QrCode } from "lucide-react";
 import { encodeGradeToHash, generateQrMatrix } from "../utils/shareCodec";
-import { formatEngineLabel } from "../utils/engineRegistry";
+import { formatEngineLabel } from "../utils/engineMetadata";
 import { getLogProfile } from "../utils/logProfiles";
 import { useLanguage } from "../i18n/LanguageContext";
 import { usePresence } from "../hooks/usePresence";

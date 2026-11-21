@@ -1,4 +1,3 @@
-import JSZip from "jszip";
 import {
   DEFAULT_PARAMS,
   PARAM_LIMITS,
@@ -322,6 +321,7 @@ export async function importKfplugFile(file) {
 
   let zip;
   try {
+    const { default: JSZip } = await import("jszip");
     zip = await JSZip.loadAsync(file);
   } catch {
     throw new Error("This .kfplug file could not be opened as a plugin archive.");

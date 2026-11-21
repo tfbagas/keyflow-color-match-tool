@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { X, Download, Sparkles, Loader2 } from "lucide-react";
 import { renderReleasePosterBlob } from "../utils/releaseKitGenerator";
-import { downloadBlob } from "../utils/kfplugPackager";
+import { downloadBlob } from "../utils/download";
 import { useLanguage } from "../i18n/LanguageContext";
 import { usePresence } from "../hooks/usePresence";
 

@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import JSZip from "jszip";
 import {
   X,
   Bookmark,
@@ -17,11 +16,9 @@ import {
   DEFAULT_ENGINE_ID,
   formatEngineLabel,
   resolveEngineId,
-} from "../utils/engineRegistry";
+} from "../utils/engineMetadata";
 import { getLogProfile } from "../utils/logProfiles";
-import { generateKfplug, downloadBlob } from "../utils/kfplugPackager";
-import { generateLutFile } from "../utils/lutExporter";
-import { buildZipBlob } from "../utils/zipBuilder";
+import { downloadBlob } from "../utils/download";
 import { sanitizeMetadataText } from "../utils/hostGuard";
 import { useLanguage } from "../i18n/LanguageContext";
 import { BUILT_IN_LOOK_DESCRIPTIONS_ID } from "../i18n/translations";
@@ -199,6 +196,11 @@ export default function LooksDrawer({
     if (chosen.length === 0 || isBatchExporting) return;
     setIsBatchExporting(true);
     try {
+      const [{ generateKfplug }, { generateLutFile }, { buildZipBlob }] = await Promise.all([
+        import("../utils/kfplugPackager"),
+        import("../utils/lutExporter"),
+        import("../utils/zipBuilder"),
+      ]);
       const entries = [];
       for (const look of chosen) {
         const cleanName =
@@ -235,6 +237,11 @@ export default function LooksDrawer({
     if (savedLooks.length === 0 || isBatchPackExporting || isBatchExporting) return;
     setIsBatchPackExporting(true);
     try {
+      const [{ default: JSZip }, { generateKfplug }, { generateLutFile }] = await Promise.all([
+        import("jszip"),
+        import("../utils/kfplugPackager"),
+        import("../utils/lutExporter"),
+      ]);
       const zip = new JSZip();
       const usedNames = new Map();
       const safeAuthor = sanitizeMetadataText(authorName, "TFBAGAS", 64);

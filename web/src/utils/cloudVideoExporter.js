@@ -1,5 +1,5 @@
 import { generateLutText, LUT_SIZE } from "./lutExporter";
-import { DEFAULT_ENGINE_ID, getEngineCodename } from "./engineRegistry";
+import { DEFAULT_ENGINE_ID, getEngineCodename } from "./engineMetadata";
 import { scaleParamsByStrength } from "./gradeEngine";
 import { isLogProfileActive } from "./logProfiles";
 

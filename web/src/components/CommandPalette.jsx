@@ -14,7 +14,7 @@ import {
   Globe,
   Layers,
 } from "lucide-react";
-import { listEngines } from "../utils/engineRegistry";
+import { listEngines } from "../utils/engineMetadata";
 import { LOG_PROFILES } from "../utils/logProfiles";
 import { BUILT_IN_LOOKS } from "../utils/builtInLooks";
 import { useLanguage } from "../i18n/LanguageContext";

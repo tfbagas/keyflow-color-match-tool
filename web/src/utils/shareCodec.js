@@ -1,6 +1,6 @@
 import qrcode from "qrcode-generator";
 import { DEFAULT_PARAMS, sanitizeParams } from "./gradeEngine.js";
-import { DEFAULT_ENGINE_ID, resolveEngineId } from "./engineRegistry.js";
+import { DEFAULT_ENGINE_ID, resolveEngineId } from "./engineMetadata.js";
 import { DEFAULT_LOG_PROFILE, resolveLogProfileId } from "./logProfiles.js";
 
 const SCALAR_KEYS = [

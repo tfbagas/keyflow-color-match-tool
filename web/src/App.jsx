@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
 import {
   Settings,
@@ -44,56 +44,26 @@ import ComparisonSlider from "./components/ComparisonSlider";
 import ParameterSlider from "./components/ParameterSlider";
 import ColorWheel from "./components/ColorWheel";
 import Hue6VPanel from "./components/Hue6VPanel";
-import ExportModal from "./components/ExportModal";
-import SupportTab from "./components/SupportTab";
 import SupportToast from "./components/SupportToast";
-import ProScopes from "./components/ProScopes";
-import ShortcutsModal from "./components/ShortcutsModal";
 import { TfbagasWordmark } from "./components/KeyflowLogo";
 import BrandLogo from "./components/BrandLogo";
-import ChangelogModal, {
-  ReleaseHistoryAccordion,
-} from "./components/ChangelogModal";
 import M3Select from "./components/M3Select";
 import IntroScreen from "./components/IntroScreen";
-import CommandPalette from "./components/CommandPalette";
-import LooksDrawer from "./components/LooksDrawer";
-import ShareModal from "./components/ShareModal";
-import ReleaseMediaKitModal from "./components/ReleaseMediaKitModal";
 import VideoTransportBar from "./components/VideoTransportBar";
-import InteractiveStudioBackdrop from "./components/InteractiveStudioBackdrop";
-import {
-  DEFAULT_PARAMS,
-  simulateGradePixels,
-} from "./utils/colorGrading";
+import { DEFAULT_PARAMS } from "./utils/paramSchema";
+import { simulateGradePixels } from "./utils/previewRenderer";
 import {
   DEFAULT_ENGINE_ID,
   getEngine,
   getEngineCodename,
   listEngines,
   resolveEngineId,
-} from "./utils/engineRegistry";
+} from "./utils/engineMetadata";
 import { IDENTITY_HUE6, clamp, scaleParamsByStrength } from "./utils/gradeEngine";
-import { createLut32Object } from "./engine/lut3d.ts";
-import { solveTwoStageLut32 } from "./engine/twoStageSolver.ts";
-import {
-  generateKfplug,
-  downloadBlob,
-} from "./utils/kfplugPackager";
-import { exportToFfx, parseFfxPreset } from "./utils/ffxEngine";
+import { downloadBlob } from "./utils/download";
 import { sanitizeMetadataText } from "./utils/hostGuard";
 import { applyCalibrationToParams } from "./utils/paramSchema";
-import { generateLutFile } from "./utils/lutExporter";
-import {
-  exportGradedImage,
-  exportPromoCardBlob,
-  extractPaletteSwatches,
-} from "./utils/imageExporter";
-import { exportGradedVideo } from "./utils/videoExporter";
-import { exportVideoInCloud } from "./utils/cloudVideoExporter";
-import { buildZipBlob } from "./utils/zipBuilder";
-import { decodeGradeFromHash } from "./utils/shareCodec";
-import { importKfplugFile } from "./utils/presetImporter";
+import { extractPaletteSwatches } from "./utils/paletteSwatches";
 import { SAMPLE_LOOKS, renderLookSample, drawNeutralScene } from "./utils/sampleLooks";
 import { IMAGE_ACCEPT, VIDEO_ACCEPT, PRESET_ACCEPT } from "./utils/rawDecoder";
 import {
@@ -113,6 +83,30 @@ import {
   applySkinProtectToParams,
   computeLiveColorMetrics,
 } from "./utils/telemetryMetrics";
+
+const ExportModal = lazy(() => import("./components/ExportModal"));
+const SupportTab = lazy(() => import("./components/SupportTab"));
+const ProScopes = lazy(() => import("./components/ProScopes"));
+const ShortcutsModal = lazy(() => import("./components/ShortcutsModal"));
+const ChangelogModal = lazy(() => import("./components/ChangelogModal"));
+const ReleaseHistoryAccordion = lazy(() =>
+  import("./components/ChangelogModal").then((m) => ({ default: m.ReleaseHistoryAccordion }))
+);
+const CommandPalette = lazy(() => import("./components/CommandPalette"));
+const LooksDrawer = lazy(() => import("./components/LooksDrawer"));
+const ShareModal = lazy(() => import("./components/ShareModal"));
+const ReleaseMediaKitModal = lazy(() => import("./components/ReleaseMediaKitModal"));
+const InteractiveStudioBackdrop = lazy(() =>
+  import("./components/InteractiveStudioBackdrop")
+);
+
+function useMountOnce(isOpen) {
+  const [hasMounted, setHasMounted] = useState(Boolean(isOpen));
+  if (isOpen && !hasMounted) {
+    setHasMounted(true);
+  }
+  return hasMounted;
+}
 
 const CALIBRATION_STORAGE_KEY = "kf_export_calibration_v1";
 const AUTHOR_STORAGE_KEY = "kf_author_name_v1";
@@ -384,6 +378,8 @@ export default function App() {
       return "hidden";
     }
   });
+  const [hasEnteredStudio, setHasEnteredStudio] = useState(() => workspacePhase !== "hidden");
+  const twoStageSolverRef = useRef(null);
   const settleTimerRef = useRef(null);
   const [introReplayKey, setIntroReplayKey] = useState(0);
   const [homeTabReveal, setHomeTabReveal] = useState(false);
@@ -664,15 +660,21 @@ export default function App() {
     if (hasHydratedRef.current) return;
     hasHydratedRef.current = true;
 
-    const decoded =
-      typeof window !== "undefined" ? decodeGradeFromHash(window.location.hash) : null;
-    if (decoded) {
-      setActiveEngineId(decoded.engineId);
-      setSimulateLogInput(decoded.logProfile);
-      setMatchStrength(decoded.matchStrength);
-      setGradingParams(decoded.params);
-      setImportedLook({ name: "Shared Grade", source: "share-link" });
-      setStatusText("Loaded Share");
+    const rawHash = typeof window !== "undefined" ? window.location.hash : "";
+    if (rawHash && /#?g=/.test(rawHash)) {
+      import("./utils/shareCodec")
+        .then(({ decodeGradeFromHash }) => {
+          const decoded = decodeGradeFromHash(rawHash);
+          if (decoded) {
+            setActiveEngineId(decoded.engineId);
+            setSimulateLogInput(decoded.logProfile);
+            setMatchStrength(decoded.matchStrength);
+            setGradingParams(decoded.params);
+            setImportedLook({ name: "Shared Grade", source: "share-link" });
+            setStatusText("Loaded Share");
+          }
+        })
+        .catch(() => {});
       return;
     }
 
@@ -828,12 +830,34 @@ export default function App() {
     }
   };
 
+  const scheduleDeferredLutWarmup = useCallback(() => {
+    const runWarmup = () => {
+      import("./engine/lut3d.ts")
+        .then((m) => m.warmupStandardCube?.())
+        .catch(() => {});
+      if (!twoStageSolverRef.current) {
+        import("./engine/twoStageSolver.ts")
+          .then((m) => {
+            twoStageSolverRef.current = m;
+          })
+          .catch(() => {});
+      }
+    };
+    if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(runWarmup);
+    } else {
+      setTimeout(runWarmup, 0);
+    }
+  }, []);
+
   const handleStartExit = useCallback(() => {
     if (settleTimerRef.current) {
       clearTimeout(settleTimerRef.current);
       settleTimerRef.current = null;
     }
+    setHasEnteredStudio(true);
     setHomeTabReveal(false);
+    scheduleDeferredLutWarmup();
 
     const reducedMotion =
       typeof window !== "undefined" &&
@@ -850,7 +874,7 @@ export default function App() {
       setWorkspacePhase("settled");
       settleTimerRef.current = null;
     }, 700);
-  }, []);
+  }, [scheduleDeferredLutWarmup]);
 
   const handleSplashComplete = useCallback(() => {
     try {
@@ -859,14 +883,21 @@ export default function App() {
       // ignore
     }
     setShowSplash(false);
+    setHasEnteredStudio(true);
     setWorkspacePhase((prev) => (prev === "hidden" ? "settled" : prev));
   }, []);
 
   useEffect(() => {
     if (!showSplash && workspacePhase === "hidden") {
+      setHasEnteredStudio(true);
       setWorkspacePhase("settled");
     }
   }, [showSplash, workspacePhase]);
+
+  useEffect(() => {
+    if (!hasEnteredStudio) return;
+    scheduleDeferredLutWarmup();
+  }, [hasEnteredStudio, scheduleDeferredLutWarmup]);
 
   if (activeTab !== "home" && !homeTabReveal) {
     setHomeTabReveal(true);
@@ -1147,8 +1178,10 @@ export default function App() {
         let result;
         let nextLut = null;
         if (meta.ext === "kfplug") {
+          const { importKfplugFile } = await import("./utils/presetImporter");
           result = await importKfplugFile(file);
         } else if (meta.ext === "ffx") {
+          const { parseFfxPreset } = await import("./utils/ffxEngine");
           result = await parseFfxPreset(file, file.name, lang);
         } else {
           if (file.size > 40 * 1024 * 1024) {
@@ -1774,11 +1807,14 @@ export default function App() {
     glPreviewRef.current?.setActiveLut?.(null);
   }, []);
 
-  const rebakeAltairRefreshLut = useCallback((normPct, sigmaPct, skinPct) => {
+  const rebakeAltairRefreshLut = useCallback(async (normPct, sigmaPct, skinPct) => {
     if (activeEngineIdRef.current !== "altair_refresh") return;
     const cached = cachedAnalysisBuffersRef.current;
     if (!cached?.ref?.data || !cached.ref.numPixels) return;
-    const res = solveTwoStageLut32(
+    const solverMod =
+      twoStageSolverRef.current ||
+      (twoStageSolverRef.current = await import("./engine/twoStageSolver.ts"));
+    const res = solverMod.solveTwoStageLut32(
       cached.ref.data,
       cached.ref.numPixels,
       cached.tgt ? cached.tgt.data : null,
@@ -1790,11 +1826,16 @@ export default function App() {
         inputProfile: simulateLogInputRef.current || DEFAULT_LOG_PROFILE,
       }
     );
-    const nextLut = createLut32Object(res.lut32, {
+    const nextLut = {
       title: "Keyflow_Altair_Refresh",
+      kind: "3d",
+      size: 32,
+      dMin: [0, 0, 0],
+      dMax: [1, 1, 1],
+      data: res.lut32,
       sourceEngine: "altair_refresh",
       applyPostGrade: false,
-    });
+    };
     activeLutRef.current = nextLut;
     glPreviewRef.current?.setActiveLut?.(nextLut);
     setActiveLut(nextLut);
@@ -2289,6 +2330,7 @@ export default function App() {
         importedLook?.name ||
         targetImage?.baseName ||
         "Custom Look";
+      const { exportGradedImage } = await import("./utils/imageExporter");
       await exportGradedImage({
         source: isVideo ? videoEl : activeImg,
         width: w,
@@ -2359,7 +2401,7 @@ export default function App() {
         );
         const res =
           renderMode === "cloud"
-            ? await exportVideoInCloud({
+            ? await (await import("./utils/cloudVideoExporter")).exportVideoInCloud({
                 videoSrc: src,
                 targetFile: fileFallback,
                 videoDurationSec: Number.isFinite(videoEl?.duration)
@@ -2382,7 +2424,7 @@ export default function App() {
                 },
                 abortSignal: controller.signal,
               })
-            : await exportGradedVideo({
+            : await (await import("./utils/videoExporter")).exportGradedVideo({
                 videoSrc: src,
                 targetFile: fileFallback,
                 params: calibratedVideoParams,
@@ -2506,9 +2548,10 @@ export default function App() {
   const hasLook = Boolean(referenceImage || importedLook);
 
   const handleExportLut = useCallback(
-    (ext, size = 32) => {
+    async (ext, size = 32) => {
       if (!hasLook) return;
       try {
+        const { generateLutFile } = await import("./utils/lutExporter");
         const defaultBase =
           activeEngineId === "altair_refresh" && !presetName
             ? "Keyflow_Altair_Refresh"
@@ -2566,6 +2609,7 @@ export default function App() {
         activeEngineId
       );
       const safePreset = sanitizeMetadataText(rawName, "Custom_Look", 64);
+      const { exportToFfx } = await import("./utils/ffxEngine");
       const { blob, fileName } = await exportToFfx(
         calibratedParams,
         safePreset,
@@ -2613,6 +2657,7 @@ export default function App() {
       const safeAuthor = sanitizeMetadataText(authorName, "TFBAGAS", 64);
       const safeDesc = sanitizeMetadataText(description, "", 200);
 
+      const { generateKfplug } = await import("./utils/kfplugPackager");
       const { blob, fileName } = await generateKfplug(
         calibratedParams,
         safePreset,
@@ -2664,6 +2709,18 @@ export default function App() {
         const filePrefix =
           safePreset.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "Custom_Look";
 
+        const [
+          { generateKfplug },
+          { exportToFfx },
+          { generateLutFile },
+          { buildZipBlob },
+        ] = await Promise.all([
+          import("./utils/kfplugPackager"),
+          import("./utils/ffxEngine"),
+          import("./utils/lutExporter"),
+          import("./utils/zipBuilder"),
+        ]);
+
         const [kfRes, ffxRes] = await Promise.all([
           generateKfplug(
             calibratedParams,
@@ -2700,6 +2757,7 @@ export default function App() {
         const ph = isVideoTarget ? videoEl?.videoHeight : previewSrc?.naturalHeight;
 
         if (previewSrc && pw && ph) {
+          const { exportPromoCardBlob } = await import("./utils/imageExporter");
           const promoRes = await exportPromoCardBlob({
             source: previewSrc,
             width: pw,
@@ -2820,6 +2878,7 @@ export default function App() {
       const safePreset = sanitizeMetadataText(rawName, "Custom Look", 64);
       const safeAuthor = sanitizeMetadataText(authorName, "TFBAGAS", 64);
       const safeDesc = sanitizeMetadataText(description, "", 200);
+      const { generateKfplug } = await import("./utils/kfplugPackager");
       const { blob, fileName } = await generateKfplug(
         calibratedParams,
         safePreset,
@@ -3214,12 +3273,20 @@ export default function App() {
       ? "lg:grid-cols-[280px_1fr]"
       : "lg:grid-cols-[280px_1fr_340px]";
 
+  const hasExportModalMounted = useMountOnce(isExportModalOpen);
+  const hasChangelogMounted = useMountOnce(isChangelogOpen);
+  const hasShortcutsMounted = useMountOnce(isShortcutsOpen);
+  const hasLooksMounted = useMountOnce(isLooksOpen);
+  const hasShareMounted = useMountOnce(isShareOpen);
+  const hasReleaseKitMounted = useMountOnce(isReleaseKitOpen);
+  const hasCommandPaletteMounted = useMountOnce(isCommandPaletteOpen);
+
   const {
     containerRef: topNavContainerRef,
     registerTabRef: registerTopNavRef,
     pillStyle: topNavPillStyle,
   } = usePillIndicator(activeTab, {
-    refreshKey: lang,
+    refreshKey: `${lang}-${hasEnteredStudio}`,
     duration: "var(--dur-pill-nav, 260ms)",
   });
   const {
@@ -3228,30 +3295,30 @@ export default function App() {
     pillStyle: engineTierPillStyle,
   } = usePillIndicator(activeEngineId, {
     orientation: "vertical",
-    refreshKey: `${activeTab}-${isEngineSectionOpen}-${isRightCollapsed}-${lang}`,
+    refreshKey: `${activeTab}-${isEngineSectionOpen}-${isRightCollapsed}-${lang}-${hasEnteredStudio}`,
   });
   const {
     containerRef: gradingTabContainerRef,
     registerTabRef: registerGradingTabRef,
     pillStyle: gradingTabPillStyle,
   } = usePillIndicator(gradingTab, {
-    refreshKey: `${activeTab}-${isRightCollapsed}`,
+    refreshKey: `${activeTab}-${isRightCollapsed}-${hasEnteredStudio}`,
   });
   const {
     containerRef: slotContainerRef,
     registerTabRef: registerSlotRef,
     pillStyle: slotPillStyle,
-  } = usePillIndicator(activeSlot, { refreshKey: activeTab });
+  } = usePillIndicator(activeSlot, { refreshKey: `${activeTab}-${hasEnteredStudio}` });
   const {
     containerRef: mobileDeckTabContainerRef,
     registerTabRef: registerMobileDeckTabRef,
     pillStyle: mobileDeckTabPillStyle,
-  } = usePillIndicator(mobileDeckTab, { refreshKey: `${activeTab}-${lang}` });
+  } = usePillIndicator(mobileDeckTab, { refreshKey: `${activeTab}-${lang}-${hasEnteredStudio}` });
   const {
     containerRef: mobileAdjustTabContainerRef,
     registerTabRef: registerMobileAdjustTabRef,
     pillStyle: mobileAdjustTabPillStyle,
-  } = usePillIndicator(gradingTab, { refreshKey: `${activeTab}-${mobileDeckTab}` });
+  } = usePillIndicator(gradingTab, { refreshKey: `${activeTab}-${mobileDeckTab}-${hasEnteredStudio}` });
 
   useEffect(
     () => () => {
@@ -3322,6 +3389,8 @@ export default function App() {
         />
       )}
 
+      {hasEnteredStudio && (
+      <>
       {/* SLIM TOP HEADER BAR (44px) */}
       <header
         className={`${
@@ -3692,16 +3761,18 @@ export default function App() {
           />
 
           {/* Embedded Live Scopes filling remaining lower height */}
-          <ProScopes
-            ref={desktopScopeRef}
-            hasMedia={hasPreviewImage}
-            isDragging={isScopeFrozen}
-            isVideoPlaying={isVideoPlaying}
-            isDesktopRealtime={isDesktopRealtime}
-            isCollapsed={false}
-            skinSafe={liveMetrics.skinSafe}
-            skinProtect={skinProtect}
-          />
+          <Suspense fallback={null}>
+            <ProScopes
+              ref={desktopScopeRef}
+              hasMedia={hasPreviewImage}
+              isDragging={isScopeFrozen}
+              isVideoPlaying={isVideoPlaying}
+              isDesktopRealtime={isDesktopRealtime}
+              isCollapsed={false}
+              skinSafe={liveMetrics.skinSafe}
+              skinProtect={skinProtect}
+            />
+          </Suspense>
         </aside>
 
         {/* B. CENTER VIEWPORT (Fluid on desktop, Sticky Top on <1024px) */}
@@ -4406,16 +4477,18 @@ export default function App() {
 
           {/* TAB 3: SCOPES (Full Mobile Width Live ProScopes) */}
           <div className={mobileDeckTab === "scopes" ? "w-full studio-panel-fade" : "hidden"}>
-            <ProScopes
-              ref={mobileScopeRef}
-              hasMedia={hasPreviewImage}
-              isDragging={isScopeFrozen}
-              isVideoPlaying={isVideoPlaying}
-              isDesktopRealtime={isDesktopRealtime}
-              isCollapsed={mobileDeckTab !== "scopes"}
-              skinSafe={liveMetrics.skinSafe}
-              skinProtect={skinProtect}
-            />
+            <Suspense fallback={null}>
+              <ProScopes
+                ref={mobileScopeRef}
+                hasMedia={hasPreviewImage}
+                isDragging={isScopeFrozen}
+                isVideoPlaying={isVideoPlaying}
+                isDesktopRealtime={isDesktopRealtime}
+                isCollapsed={mobileDeckTab !== "scopes"}
+                skinSafe={liveMetrics.skinSafe}
+                skinProtect={skinProtect}
+              />
+            </Suspense>
           </div>
 
           {/* TAB 4: EXPORT (.kfplug, .cube, .ffx, Export Promo Card) */}
@@ -5332,11 +5405,12 @@ export default function App() {
 
       {/* SECONDARY VIEWS (Settings / About / Support) — Rich max-w-7xl Studio Layouts */}
       {activeTab !== "home" && (
-        <InteractiveStudioBackdrop
-          as="main"
-          refreshKey={activeTab}
-          className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8"
-        >
+        <Suspense fallback={null}>
+          <InteractiveStudioBackdrop
+            as="main"
+            refreshKey={activeTab}
+            className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8"
+          >
           <div className="min-h-[calc(100vh-44px)] flex flex-col justify-center py-6">
             {/* SETTINGS STUDIO VIEW */}
             {activeTab === "settings" && (
@@ -5935,7 +6009,9 @@ export default function App() {
                             ))}
                           </ul>
                         </div>
-                        <ReleaseHistoryAccordion />
+                        <Suspense fallback={null}>
+                          <ReleaseHistoryAccordion />
+                        </Suspense>
                       </div>
                     </div>
                   </div>
@@ -5946,121 +6022,154 @@ export default function App() {
             {/* SUPPORT STUDIO VIEW */}
             {activeTab === "support" && (
               <div className="studio-view-enter w-full">
-                <SupportTab />
+                <Suspense fallback={null}>
+                  <SupportTab />
+                </Suspense>
               </div>
             )}
           </div>
-        </InteractiveStudioBackdrop>
+          </InteractiveStudioBackdrop>
+        </Suspense>
+      )}
+      </>
       )}
 
       {/* UNIFIED MULTI-FORMAT EXPORT MODAL */}
-      <ExportModal
-        isOpen={isExportModalOpen}
-        onClose={() => setIsExportModalOpen(false)}
-        presetName={presetName}
-        setPresetName={setPresetName}
-        authorName={authorName}
-        setAuthorName={setAuthorName}
-        description={description}
-        setDescription={setDescription}
-        onExportKfplug={handleExport}
-        onExportFfx={handleExportFfx}
-        onExportCube={handleExportCube}
-        onExportLut={handleExportLut3d}
-        onExportZipPack={handleExportZipPack}
-        onOpenShare={() => setIsShareOpen(true)}
-        isExportingPreset={isExporting}
-        hasLook={hasLook}
-        isCalibrationActive={isCalibrationActive}
-        onOpenCalibration={handleOpenCalibration}
-        fallbackName={referenceImage?.baseName || importedLook?.name || "Custom Look"}
-        isNeutralGrade={isNeutralGrade}
-        hasPreviewMedia={hasPreviewImage}
-        isVideo={Boolean(videoEl)}
-        onSaveImage={handleSaveImage}
-        isSavingImage={isSavingFrame}
-        onExportVideo={handleExportVideo}
-        isExportingVideo={isExportingVideo}
-        videoExportProgress={videoExportProgress}
-        videoExportStatusText={videoExportStatusText}
-        onCancelVideoExport={handleCancelVideoExport}
-        targetVideoSrc={targetImage?.videoUrl || videoEl?.currentSrc || videoEl?.src || ""}
-        targetFile={targetImage?.file || null}
-        videoDurationSec={Number.isFinite(videoEl?.duration) ? videoEl.duration : 0}
-        nativeWidth={targetImage?.width || referenceImage?.width || 0}
-        nativeHeight={targetImage?.height || referenceImage?.height || 0}
-        targetBaseName={targetImage?.baseName || referenceImage?.baseName || "Target"}
-        engineId={activeEngineId}
-        splitPos={exportSplitPos}
-        params={effectiveParams}
-        logProfile={simulateLogInput}
-        matchStrength={matchStrength}
-      />
+      {hasExportModalMounted && (
+        <Suspense fallback={null}>
+          <ExportModal
+            isOpen={isExportModalOpen}
+            onClose={() => setIsExportModalOpen(false)}
+            presetName={presetName}
+            setPresetName={setPresetName}
+            authorName={authorName}
+            setAuthorName={setAuthorName}
+            description={description}
+            setDescription={setDescription}
+            onExportKfplug={handleExport}
+            onExportFfx={handleExportFfx}
+            onExportCube={handleExportCube}
+            onExportLut={handleExportLut3d}
+            onExportZipPack={handleExportZipPack}
+            onOpenShare={() => setIsShareOpen(true)}
+            isExportingPreset={isExporting}
+            hasLook={hasLook}
+            isCalibrationActive={isCalibrationActive}
+            onOpenCalibration={handleOpenCalibration}
+            fallbackName={referenceImage?.baseName || importedLook?.name || "Custom Look"}
+            isNeutralGrade={isNeutralGrade}
+            hasPreviewMedia={hasPreviewImage}
+            isVideo={Boolean(videoEl)}
+            onSaveImage={handleSaveImage}
+            isSavingImage={isSavingFrame}
+            onExportVideo={handleExportVideo}
+            isExportingVideo={isExportingVideo}
+            videoExportProgress={videoExportProgress}
+            videoExportStatusText={videoExportStatusText}
+            onCancelVideoExport={handleCancelVideoExport}
+            targetVideoSrc={targetImage?.videoUrl || videoEl?.currentSrc || videoEl?.src || ""}
+            targetFile={targetImage?.file || null}
+            videoDurationSec={Number.isFinite(videoEl?.duration) ? videoEl.duration : 0}
+            nativeWidth={targetImage?.width || referenceImage?.width || 0}
+            nativeHeight={targetImage?.height || referenceImage?.height || 0}
+            targetBaseName={targetImage?.baseName || referenceImage?.baseName || "Target"}
+            engineId={activeEngineId}
+            splitPos={exportSplitPos}
+            params={effectiveParams}
+            logProfile={simulateLogInput}
+            matchStrength={matchStrength}
+          />
+        </Suspense>
+      )}
 
       {/* MODALS & DRAWERS */}
-      <ChangelogModal
-        open={isChangelogOpen}
-        onClose={() => setIsChangelogOpen(false)}
-        onViewFullHistory={() => setActiveTab("about")}
-      />
+      {hasChangelogMounted && (
+        <Suspense fallback={null}>
+          <ChangelogModal
+            open={isChangelogOpen}
+            onClose={() => setIsChangelogOpen(false)}
+            onViewFullHistory={() => setActiveTab("about")}
+          />
+        </Suspense>
+      )}
 
-      <ShortcutsModal
-        isOpen={isShortcutsOpen}
-        onClose={() => setIsShortcutsOpen(false)}
-      />
+      {hasShortcutsMounted && (
+        <Suspense fallback={null}>
+          <ShortcutsModal
+            isOpen={isShortcutsOpen}
+            onClose={() => setIsShortcutsOpen(false)}
+          />
+        </Suspense>
+      )}
 
-      <LooksDrawer
-        isOpen={isLooksOpen}
-        onClose={() => setIsLooksOpen(false)}
-        onApplyLook={handleApplyLook}
-        onComputeSwatches={handleComputeSwatches}
-        authorName={authorName}
-        currentGrade={{
-          presetName: presetName || referenceImage?.baseName || importedLook?.name || "",
-          engineId: activeEngineId,
-          logProfile: simulateLogInput,
-          matchStrength,
-          params: gradingParams,
-        }}
-      />
+      {hasLooksMounted && (
+        <Suspense fallback={null}>
+          <LooksDrawer
+            isOpen={isLooksOpen}
+            onClose={() => setIsLooksOpen(false)}
+            onApplyLook={handleApplyLook}
+            onComputeSwatches={handleComputeSwatches}
+            authorName={authorName}
+            currentGrade={{
+              presetName: presetName || referenceImage?.baseName || importedLook?.name || "",
+              engineId: activeEngineId,
+              logProfile: simulateLogInput,
+              matchStrength,
+              params: gradingParams,
+            }}
+          />
+        </Suspense>
+      )}
 
-      <ShareModal
-        isOpen={isShareOpen}
-        onClose={() => setIsShareOpen(false)}
-        engineId={activeEngineId}
-        logProfile={simulateLogInput}
-        matchStrength={matchStrength}
-        params={effectiveParams}
-        onShareFile={handleShare}
-        canShareFile={
-          typeof navigator !== "undefined" &&
-          typeof navigator.share === "function" &&
-          typeof navigator.canShare === "function"
-        }
-      />
+      {hasShareMounted && (
+        <Suspense fallback={null}>
+          <ShareModal
+            isOpen={isShareOpen}
+            onClose={() => setIsShareOpen(false)}
+            engineId={activeEngineId}
+            logProfile={simulateLogInput}
+            matchStrength={matchStrength}
+            params={effectiveParams}
+            onShareFile={handleShare}
+            canShareFile={
+              typeof navigator !== "undefined" &&
+              typeof navigator.share === "function" &&
+              typeof navigator.canShare === "function"
+            }
+          />
+        </Suspense>
+      )}
 
-      <ReleaseMediaKitModal
-        isOpen={isReleaseKitOpen}
-        onClose={() => setIsReleaseKitOpen(false)}
-      />
+      {hasReleaseKitMounted && (
+        <Suspense fallback={null}>
+          <ReleaseMediaKitModal
+            isOpen={isReleaseKitOpen}
+            onClose={() => setIsReleaseKitOpen(false)}
+          />
+        </Suspense>
+      )}
 
-      <CommandPalette
-        isOpen={isCommandPaletteOpen}
-        onClose={() => setIsCommandPaletteOpen(false)}
-        activeEngineId={activeEngineId}
-        onSelectEngine={handleEngineChange}
-        activeLogProfile={simulateLogInput}
-        onSelectLogProfile={handleTargetInputProfileChange}
-        autoNormalizeTarget={autoNormalizeTarget}
-        onToggleAutoNormalizeTarget={handleToggleAutoNormalizeTarget}
-        onApplyLook={handleApplyLook}
-        onTryInstantDemo={handleTryInstantDemo}
-        onExportKfplug={handleExport}
-        onExportFfx={handleExportFfx}
-        onExportCube={handleExportCube}
-        onExportZip={handleExportZipPack}
-        hasLook={hasLook}
-      />
+      {hasCommandPaletteMounted && (
+        <Suspense fallback={null}>
+          <CommandPalette
+            isOpen={isCommandPaletteOpen}
+            onClose={() => setIsCommandPaletteOpen(false)}
+            activeEngineId={activeEngineId}
+            onSelectEngine={handleEngineChange}
+            activeLogProfile={simulateLogInput}
+            onSelectLogProfile={handleTargetInputProfileChange}
+            autoNormalizeTarget={autoNormalizeTarget}
+            onToggleAutoNormalizeTarget={handleToggleAutoNormalizeTarget}
+            onApplyLook={handleApplyLook}
+            onTryInstantDemo={handleTryInstantDemo}
+            onExportKfplug={handleExport}
+            onExportFfx={handleExportFfx}
+            onExportCube={handleExportCube}
+            onExportZip={handleExportZipPack}
+            hasLook={hasLook}
+          />
+        </Suspense>
+      )}
 
       {/* Minimalist Status Toast (top-center below header so it never overlaps telemetry strip) */}
       {mobileToastPresence.isMounted && (

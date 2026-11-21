@@ -11,7 +11,7 @@ import {
   AlertTriangle,
   Share2,
 } from "lucide-react";
-import { DEFAULT_ENGINE_ID, getEngineCodename } from "../utils/engineRegistry";
+import { DEFAULT_ENGINE_ID, getEngineCodename } from "../utils/engineMetadata";
 import { useLanguage } from "../i18n/LanguageContext";
 
 const ExportCard = memo(function ExportCard({

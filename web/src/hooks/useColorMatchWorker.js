@@ -1,8 +1,18 @@
 import { useRef, useCallback, useEffect } from "react";
-import { runEngineAnalysis, DEFAULT_ENGINE_ID } from "../utils/engineRegistry";
-import { parseLutText } from "../utils/presetImporter";
-import { fitPolarisV3ToLut } from "../utils/polarisV3Engine";
-import { createLut32Object } from "../engine/lut3d.ts";
+import { DEFAULT_ENGINE_ID } from "../utils/engineMetadata";
+
+function buildLut32Object(data, options = {}) {
+  return {
+    title: options.title || "Keyflow_Altair_Refresh",
+    kind: "3d",
+    size: 32,
+    dMin: [0, 0, 0],
+    dMax: [1, 1, 1],
+    data,
+    sourceEngine: options.sourceEngine,
+    applyPostGrade: Boolean(options.applyPostGrade),
+  };
+}
 
 const ANALYSIS_TIMEOUT_MS = 6000;
 const LUT_FIT_TIMEOUT_MS = 15000;
@@ -45,7 +55,7 @@ export function useColorMatchWorker({
   }, []);
 
   const runFallbackAnalysisOrReset = useCallback(
-    (reasonMsg) => {
+    async (reasonMsg) => {
       clearAnalysisTimeout();
       const pending = pendingAnalysisRef.current;
       pendingAnalysisRef.current = null;
@@ -66,6 +76,7 @@ export function useColorMatchWorker({
 
       if (recRef && recRef.numPixels > 0) {
         try {
+          const { runEngineAnalysis } = await import("../utils/engineRegistry");
           const { params: fallbackParams, lut32, lutMeta } = runEngineAnalysis(
             pending?.engineId || DEFAULT_ENGINE_ID,
             recRef.data,
@@ -83,7 +94,7 @@ export function useColorMatchWorker({
           );
           const nextLut =
             lut32 instanceof Float32Array
-              ? createLut32Object(lut32, {
+              ? buildLut32Object(lut32, {
                   title: lutMeta?.title || "Keyflow_Altair_Refresh",
                   sourceEngine: lutMeta?.sourceEngine,
                   applyPostGrade: Boolean(lutMeta?.applyPostGrade),
@@ -163,7 +174,7 @@ export function useColorMatchWorker({
         pendingAnalysisRef.current = null;
         const nextLut =
           lutBuffer instanceof ArrayBuffer
-            ? createLut32Object(new Float32Array(lutBuffer), {
+            ? buildLut32Object(new Float32Array(lutBuffer), {
                 title: lutMeta?.title || "Keyflow_Altair_Refresh",
                 sourceEngine: lutMeta?.sourceEngine,
                 applyPostGrade: Boolean(lutMeta?.applyPostGrade),
@@ -234,13 +245,21 @@ export function useColorMatchWorker({
     setStatusText,
   ]);
 
+  // Defer Web Worker spawn until first analysis or LUT fit request so initial mobile boot stays lean.
+  const ensureWorker = useCallback(() => {
+    if (workerRef.current) return workerRef.current;
+    return initWorker();
+  }, [initWorker]);
+
   useEffect(() => {
-    const worker = initWorker();
     return () => {
       clearAnalysisTimeout();
-      worker.terminate();
+      if (workerRef.current) {
+        workerRef.current.terminate();
+        workerRef.current = null;
+      }
     };
-  }, [initWorker, clearAnalysisTimeout]);
+  }, [clearAnalysisTimeout]);
 
   const beginAnalysisJob = useCallback(() => {
     return ++analysisJobIdRef.current;
@@ -296,11 +315,12 @@ export function useColorMatchWorker({
           transferables.push(tgtBuffer);
         }
 
-        if (!workerRef.current) {
+        const worker = ensureWorker();
+        if (!worker) {
           throw new Error("Worker not initialized.");
         }
 
-        workerRef.current.postMessage(
+        worker.postMessage(
           {
             type: "analyze",
             jobId,
@@ -324,7 +344,7 @@ export function useColorMatchWorker({
         );
       }
     },
-    [clearAnalysisTimeout, initWorker, runFallbackAnalysisOrReset]
+    [clearAnalysisTimeout, ensureWorker, initWorker, runFallbackAnalysisOrReset]
   );
 
   const fitLutInWorker = useCallback((lutText, tgt = null) => {
@@ -336,8 +356,12 @@ export function useColorMatchWorker({
       }
 
       const jobId = ++analysisJobIdRef.current;
-      const runMainThreadFallback = () => {
+      const runMainThreadFallback = async () => {
         try {
+          const [{ parseLutText }, { fitPolarisV3ToLut }] = await Promise.all([
+            import("../utils/presetImporter"),
+            import("../utils/polarisV3Engine"),
+          ]);
           const lut = parseLutText(lutText);
           const { params, rms } = fitPolarisV3ToLut(
             lut,
@@ -372,7 +396,8 @@ export function useColorMatchWorker({
       };
 
       try {
-        if (!workerRef.current) {
+        const worker = ensureWorker();
+        if (!worker) {
           clearTimeout(timer);
           pendingLutFitRef.current = null;
           runMainThreadFallback();
@@ -380,7 +405,7 @@ export function useColorMatchWorker({
         }
         const tgtBuffer = tgt?.data ? toTransferableBuffer(tgt.data, true) : null;
         const transferables = tgtBuffer ? [tgtBuffer] : [];
-        workerRef.current.postMessage(
+        worker.postMessage(
           {
             type: "fitLut",
             jobId,
@@ -396,7 +421,7 @@ export function useColorMatchWorker({
         runMainThreadFallback();
       }
     });
-  }, []);
+  }, [ensureWorker]);
 
   return {
     beginAnalysisJob,

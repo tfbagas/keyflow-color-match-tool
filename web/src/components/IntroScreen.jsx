@@ -154,29 +154,37 @@ export default function IntroScreen({ onStartExit, onComplete }) {
           </div>
         </div>
 
-        {/* Viewfinder & Shutter Chrome Layer (fades cleanly on exit without fighting boot keyframes) */}
+        {/* Beat 1 (300ms - 950ms): Dual Cinema Shutter Curtains & Horizon Line (z-[12], behind hero text so LCP paints unoccluded at t=0) */}
         <div
-          className={`pointer-events-none absolute inset-0 z-[25] ${
+          className={`pointer-events-none absolute inset-0 z-[12] ${
             isExiting ? "intro-exit-chrome" : ""
           }`}
         >
           {/* Beat 1 (300ms - 950ms): Dual Dark Obsidian Cinema Shutter Curtains Parting Upward & Downward */}
           <div
             aria-hidden="true"
-            className="intro-shutter-top pointer-events-none absolute top-0 inset-x-0 h-1/2 bg-[#060709] border-b border-white/[0.06] z-[25]"
+            className="intro-shutter-top pointer-events-none absolute top-0 inset-x-0 h-1/2 bg-[#060709] border-b border-white/[0.06] z-[12]"
           />
           <div
             aria-hidden="true"
-            className="intro-shutter-bottom pointer-events-none absolute bottom-0 inset-x-0 h-1/2 bg-[#060709] border-t border-white/[0.06] z-[25]"
+            className="intro-shutter-bottom pointer-events-none absolute bottom-0 inset-x-0 h-1/2 bg-[#060709] border-t border-white/[0.06] z-[12]"
           />
 
           {/* Beat 1 (0ms - 450ms expand, 450ms - 950ms dissolve): Razor-Thin 1px Silver Optical Horizon Line */}
           <div
             aria-hidden="true"
-            className="intro-horizon-wrap pointer-events-none absolute top-1/2 -mt-[0.5px] inset-x-0 h-px z-[28]"
+            className="intro-horizon-wrap pointer-events-none absolute top-1/2 -mt-[0.5px] inset-x-0 h-px z-[15]"
           >
             <div className="intro-horizon-scanline w-full h-full" />
           </div>
+        </div>
+
+        {/* Viewfinder & Telemetry Chrome Layer (fades cleanly on exit without fighting boot keyframes) */}
+        <div
+          className={`pointer-events-none absolute inset-0 z-[25] ${
+            isExiting ? "intro-exit-chrome" : ""
+          }`}
+        >
 
           {/* Beat 1 (100ms - 950ms): Cinema Viewfinder Registration Marks (4 Corner L-Brackets scale 1.06 -> 1) */}
           <div
@@ -234,7 +242,7 @@ export default function IntroScreen({ onStartExit, onComplete }) {
 
         {/* Center Precision Optical Stage (280ms Optical Depth Dive on Exit: scale 1 -> 1.07, blur 0 -> 8px, opacity 1 -> 0) */}
         <main
-          className={`relative z-20 flex flex-col items-center text-center w-full max-w-[600px] px-8 sm:px-10 ${
+          className={`relative z-20 flex flex-col items-center text-center max-w-[600px] px-8 sm:px-10 ${
             isExiting ? "intro-exit-dive" : ""
           }`}
         >
@@ -384,21 +392,16 @@ export default function IntroScreen({ onStartExit, onComplete }) {
             </div>
           </div>
 
-          {/* Beat 4 (1550ms - 2450ms): Editorial Masked Display Wordmark with Tracking Settle */}
-          <h1
-            className="intro-kinetic-mask pb-1 text-3xl sm:text-[42px] leading-[1.08] font-semibold font-display tracking-tight text-zinc-100"
-            style={{ animationDelay: "1550ms", animationDuration: "900ms" }}
-          >
-            {t("intro.title")}
-          </h1>
+          {/* Natural content-sized LCP hero wrapper: renders immediately at opacity: 1 on first paint */}
+          <div className="flex flex-col items-center text-center">
+            <h1 className="intro-kinetic-mask pb-1 text-3xl sm:text-[42px] leading-[1.08] font-semibold font-display tracking-tight text-zinc-100">
+              {t("intro.title")}
+            </h1>
 
-          {/* Beat 4 (1800ms - 2650ms): Editorial Masked Subtitle (250ms after title) */}
-          <p
-            className="intro-kinetic-subtitle mt-3 pb-1 max-w-[490px] text-[13px] sm:text-[14.5px] leading-relaxed text-zinc-400 font-normal"
-            style={{ animationDelay: "1800ms", animationDuration: "850ms" }}
-          >
-            {t("intro.subtitle")}
-          </p>
+            <p className="intro-kinetic-subtitle mt-3 pb-1 max-w-[490px] text-[13px] sm:text-[14.5px] leading-relaxed text-zinc-400 font-normal">
+              {t("intro.subtitle")}
+            </p>
+          </div>
 
           {/* Beat 5 (2250ms - 3000ms): 3-Tier Solver Readiness Strip */}
           <div
