@@ -2663,7 +2663,8 @@ export default function App() {
         safeDesc,
         simulateLogInput,
         activeLut,
-        matchStrength / 100
+        matchStrength / 100,
+        { skinProtect: skinProtect / 100 }
       );
       downloadBlob(blob, fileName);
       setStatusText("Exported!");
@@ -2687,6 +2688,7 @@ export default function App() {
     simulateLogInput,
     activeLut,
     matchStrength,
+    skinProtect,
     showMobileToast,
     t,
   ]);
@@ -2727,7 +2729,8 @@ export default function App() {
             safeDesc,
             simulateLogInput,
             activeLut,
-            matchStrength / 100
+            matchStrength / 100,
+            { skinProtect: skinProtect / 100 }
           ),
           exportToFfx(calibratedParams, safePreset, null, simulateLogInput),
         ]);
@@ -2799,6 +2802,7 @@ export default function App() {
       simulateLogInput,
       activeLut,
       matchStrength,
+      skinProtect,
       targetImage,
       videoEl,
       exportSplitPos,
@@ -2908,7 +2912,8 @@ export default function App() {
         safeDesc,
         simulateLogInput,
         activeLut,
-        matchStrength / 100
+        matchStrength / 100,
+        { skinProtect: skinProtect / 100 }
       );
       const file = new File([blob], fileName, { type: "application/zip" });
       if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
@@ -2937,6 +2942,7 @@ export default function App() {
     simulateLogInput,
     activeLut,
     matchStrength,
+    skinProtect,
     showMobileToast,
     t,
   ]);

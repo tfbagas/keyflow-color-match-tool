@@ -221,7 +221,10 @@ export default function LooksDrawer({
           look.name,
           sanitizeMetadataText(authorName, "TFBAGAS", 64),
           `Saved look (${formatEngineTag(look.engineId)})`,
-          look.logProfile || "rec709"
+          look.logProfile || "rec709",
+          null,
+          1.0,
+          { skinProtect: (look.skinProtect ?? 75) / 100 }
         );
         const { blob: cubeBlob } = generateLutFile(
           look.params,
@@ -270,7 +273,10 @@ export default function LooksDrawer({
           look.name,
           safeAuthor,
           `Saved look (${formatEngineTag(look.engineId)})`,
-          look.logProfile || "rec709"
+          look.logProfile || "rec709",
+          null,
+          1.0,
+          { skinProtect: (look.skinProtect ?? 75) / 100 }
         );
         const { blob: cubeBlob } = generateLutFile(
           look.params,
