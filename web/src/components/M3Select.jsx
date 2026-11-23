@@ -1,0 +1,169 @@
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import { ChevronDown, Check } from "lucide-react";
+import { usePresence } from "../hooks/usePresence";
+
+export default function M3Select({ value, onChange, options = [], ariaLabel }) {
+  const [open, setOpen] = useState(false);
+  const { isMounted, state: presenceState } = usePresence(open, 130);
+  const [openUpward, setOpenUpward] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const containerRef = useRef(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+
+  const selectedIndex = Math.max(
+    0,
+    options.findIndex((opt) => opt.value === value)
+  );
+  const selectedOption = options[selectedIndex] || options[0] || { label: "" };
+
+  const updatePlacement = useCallback(() => {
+    const triggerEl = triggerRef.current;
+    if (!triggerEl) return;
+    const rect = triggerEl.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const measuredHeight = menuRef.current?.scrollHeight || 0;
+    const menuHeight = Math.max(measuredHeight, options.length * 36 + 16);
+    setOpenUpward(spaceBelow < menuHeight + 12 && spaceAbove > spaceBelow);
+  }, [options.length]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePlacement();
+    window.addEventListener("resize", updatePlacement, { passive: true });
+    window.addEventListener("scroll", updatePlacement, { passive: true, capture: true });
+    return () => {
+      window.removeEventListener("resize", updatePlacement);
+      window.removeEventListener("scroll", updatePlacement, { capture: true });
+    };
+  }, [open, updatePlacement]);
+
+  useEffect(() => {
+    if (!open) return;
+    setHighlightedIndex(selectedIndex);
+  }, [open, selectedIndex]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setOpen(false);
+        triggerRef.current?.focus();
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setHighlightedIndex((prev) =>
+          options.length ? (prev + 1) % options.length : 0
+        );
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setHighlightedIndex((prev) =>
+          options.length ? (prev - 1 + options.length) % options.length : 0
+        );
+      } else if (e.key === "Enter" || e.key === " ") {
+        const opt = options[highlightedIndex];
+        if (opt) {
+          e.preventDefault();
+          onChange(opt.value);
+          setOpen(false);
+          triggerRef.current?.focus();
+        }
+      }
+    };
+    window.addEventListener("pointerdown", handlePointerOutside);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerOutside);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open, options, highlightedIndex, onChange]);
+
+  const handleTriggerKeyDown = (e) => {
+    if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      setOpen(true);
+    }
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      className={`relative w-full select-none ${open ? "z-50" : ""}`}
+    >
+      {/* Trigger Button */}
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        onClick={() => setOpen((prev) => !prev)}
+        onKeyDown={handleTriggerKeyDown}
+        className={`m3-btn-morph w-full flex items-center justify-between gap-2 bg-[#0A0A0D]/38 hover:bg-white/[0.08] border rounded-xl px-3.5 py-2.5 text-xs text-[#E2E4E9] cursor-pointer ${
+          open
+            ? "border-white/25 bg-white/[0.08]"
+            : "border-white/[0.09] hover:border-white/20"
+        }`}
+      >
+        <span className="truncate font-medium">{selectedOption.label}</span>
+        <ChevronDown
+          className={`studio-chevron w-4 h-4 text-[#9CA3AF] shrink-0 ${
+            open ? "rotate-180 text-[#E2E4E9]" : "rotate-0"
+          }`}
+        />
+      </button>
+
+      {/* Dropdown Menu with Crisp 190ms Optical Unfold Transition */}
+      {isMounted && (
+        <div
+          ref={menuRef}
+          role="listbox"
+          data-state={presenceState}
+          data-placement={openUpward ? "top" : "bottom"}
+          className={`studio-popover absolute left-0 right-0 z-50 rounded-xl bg-[#15151B]/98 backdrop-blur-xl border border-white/[0.14] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_14px_34px_rgba(0,0,0,0.75)] ${
+            openUpward ? "bottom-full mb-2" : "top-full mt-1.5"
+          }`}
+        >
+          <div className="p-1 space-y-0.5">
+            {options.map((opt, idx) => {
+              const isSelected = opt.value === value;
+              const isHighlighted = open && idx === highlightedIndex;
+              return (
+                <button
+                  key={String(opt.value)}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  tabIndex={open ? 0 : -1}
+                  onMouseEnter={() => setHighlightedIndex(idx)}
+                  onClick={() => {
+                    onChange(opt.value);
+                    setOpen(false);
+                  }}
+                  className={`m3-btn-morph w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs text-left cursor-pointer ${
+                    isSelected
+                      ? "bg-white/[0.12] text-[#E2E4E9] font-semibold"
+                      : isHighlighted
+                      ? "bg-white/[0.08] text-[#E2E4E9]"
+                      : "text-[#9CA3AF] hover:bg-white/[0.07] hover:text-[#E2E4E9]"
+                  }`}
+                >
+                  <span className="truncate">{opt.label}</span>
+                  {isSelected && (
+                    <Check className="w-3.5 h-3.5 text-[#E2E4E9] shrink-0" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

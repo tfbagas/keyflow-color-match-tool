@@ -1,0 +1,267 @@
+{
+  "templateFile": "src/assets/Lumetri_Template.ffx",
+  "templateByteLength": 85444,
+  "containerMagic": "RIFX",
+  "containerSize": 81648,
+  "formType": "FaFX",
+  "effectMatchName": "ADBE Lumetri",
+  "effectLabel": "Lumetri Color",
+  "scalars": {
+    "temperature": {
+      "matchName": "ADBE Lumetri-0007",
+      "tdsn": "Temperature",
+      "cdatOffset": 42186,
+      "cdatByteLength": 40,
+      "pardValueOffset": 4280,
+      "pardByteLength": 148,
+      "endianness": "big",
+      "type": "float64",
+      "observedValue": 14.5,
+      "expectedSentinel": 14.5,
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    "tint": {
+      "matchName": "ADBE Lumetri-0008",
+      "tdsn": "Tint",
+      "cdatOffset": 42490,
+      "cdatByteLength": 40,
+      "pardValueOffset": 4484,
+      "pardByteLength": 148,
+      "endianness": "big",
+      "type": "float64",
+      "observedValue": -9.5,
+      "expectedSentinel": -9.5,
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    "saturation": {
+      "matchName": "ADBE Lumetri-0020",
+      "tdsn": "Saturation",
+      "cdatOffset": 42800,
+      "cdatByteLength": 40,
+      "pardValueOffset": 4688,
+      "pardByteLength": 148,
+      "endianness": "big",
+      "type": "float64",
+      "observedValue": 118,
+      "expectedSentinel": 118,
+      "default": 100,
+      "min": 0,
+      "max": 200
+    },
+    "exposure": {
+      "matchName": "ADBE Lumetri-0011",
+      "tdsn": "Exposure",
+      "cdatOffset": 43650,
+      "cdatByteLength": 40,
+      "pardValueOffset": 5300,
+      "pardByteLength": 148,
+      "endianness": "big",
+      "type": "float64",
+      "observedValue": -1.25,
+      "expectedSentinel": -1.25,
+      "default": 0,
+      "min": -4,
+      "max": 4
+    },
+    "contrast": {
+      "matchName": "ADBE Lumetri-0012",
+      "tdsn": "Contrast",
+      "cdatOffset": 43958,
+      "cdatByteLength": 40,
+      "pardValueOffset": 5504,
+      "pardByteLength": 148,
+      "endianness": "big",
+      "type": "float64",
+      "observedValue": 42,
+      "expectedSentinel": 42,
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    "highlights": {
+      "matchName": "ADBE Lumetri-0013",
+      "tdsn": "Highlights",
+      "cdatOffset": 44268,
+      "cdatByteLength": 40,
+      "pardValueOffset": 5708,
+      "pardByteLength": 148,
+      "endianness": "big",
+      "type": "float64",
+      "observedValue": -18,
+      "expectedSentinel": -18,
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    "shadows": {
+      "matchName": "ADBE Lumetri-0014",
+      "tdsn": "Shadows",
+      "cdatOffset": 44576,
+      "cdatByteLength": 40,
+      "pardValueOffset": 5912,
+      "pardByteLength": 148,
+      "endianness": "big",
+      "type": "float64",
+      "observedValue": 24,
+      "expectedSentinel": 24,
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    "whites": {
+      "matchName": "ADBE Lumetri-0015",
+      "tdsn": "Whites",
+      "cdatOffset": 44882,
+      "cdatByteLength": 40,
+      "pardValueOffset": 6116,
+      "pardByteLength": 148,
+      "endianness": "big",
+      "type": "float64",
+      "observedValue": 31,
+      "expectedSentinel": 31,
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    "blacks": {
+      "matchName": "ADBE Lumetri-0016",
+      "tdsn": "Blacks",
+      "cdatOffset": 45188,
+      "cdatByteLength": 40,
+      "pardValueOffset": 6320,
+      "pardByteLength": 148,
+      "endianness": "big",
+      "type": "float64",
+      "observedValue": -14,
+      "expectedSentinel": -14,
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    "vibrance": {
+      "matchName": "ADBE Lumetri-0030",
+      "tdsn": "Vibrance",
+      "cdatOffset": 50248,
+      "cdatByteLength": 40,
+      "pardValueOffset": 13408,
+      "pardByteLength": 148,
+      "endianness": "big",
+      "type": "float64",
+      "observedValue": 0,
+      "expectedSentinel": 27,
+      "default": 0,
+      "min": -100,
+      "max": 100
+    },
+    "creativeSaturation": {
+      "matchName": "ADBE Lumetri-0031",
+      "tdsn": "Saturation",
+      "cdatOffset": 50558,
+      "cdatByteLength": 40,
+      "pardValueOffset": 13612,
+      "pardByteLength": 148,
+      "endianness": "big",
+      "type": "float64",
+      "observedValue": 100,
+      "expectedSentinel": 100,
+      "default": 100,
+      "min": 0,
+      "max": 200
+    },
+    "maskOpacity": {
+      "matchName": "ADBE Effect Mask Opacity",
+      "tdsn": "-_0_/-",
+      "cdatOffset": 81068,
+      "cdatByteLength": 40,
+      "pardValueOffset": null,
+      "pardByteLength": null,
+      "endianness": "big",
+      "type": "float64",
+      "observedValue": 100,
+      "expectedSentinel": 100,
+      "default": 100,
+      "min": 0,
+      "max": 100
+    }
+  },
+  "colorWheels": {
+    "matchName": "ADBE Lumetri-0047",
+    "tdsn": "Wheels",
+    "cdatOffset": 65554,
+    "cdatByteLength": 4,
+    "aRbpOffset": 65578,
+    "aRbpByteLength": 96,
+    "pardArbpOffset": 26090,
+    "endianness": "little",
+    "tupleFormat": [
+      "hueDeg (0..360)",
+      "luma (0..1, neutral 0.5)",
+      "sat (0..1, neutral 0.0)"
+    ],
+    "ranges": {
+      "hueDeg": [
+        0,
+        360
+      ],
+      "luma": [
+        0,
+        1
+      ],
+      "sat": [
+        0,
+        1
+      ],
+      "neutral": {
+        "hueDeg": 0,
+        "luma": 0.5,
+        "sat": 0
+      }
+    },
+    "wheels": {
+      "shadows": {
+        "byteOffset": 65578,
+        "byteLength": 24,
+        "hueOffset": 65578,
+        "lumaOffset": 65586,
+        "satOffset": 65594,
+        "observedHueDeg": 313.633613,
+        "observedLuma": 0.58022,
+        "observedSat": 0.323816
+      },
+      "midtones": {
+        "byteOffset": 65602,
+        "byteLength": 24,
+        "hueOffset": 65602,
+        "lumaOffset": 65610,
+        "satOffset": 65618,
+        "observedHueDeg": 52.53073,
+        "observedLuma": 0.416484,
+        "observedSat": 0.198193
+      },
+      "highlights": {
+        "byteOffset": 65626,
+        "byteLength": 24,
+        "hueOffset": 65626,
+        "lumaOffset": 65634,
+        "satOffset": 65642,
+        "observedHueDeg": 169.508523,
+        "observedLuma": 0.38022,
+        "observedSat": 0.301748
+      },
+      "hdrSpecular": {
+        "byteOffset": 65650,
+        "byteLength": 24,
+        "hueOffset": 65650,
+        "lumaOffset": 65658,
+        "satOffset": 65666,
+        "observedHueDeg": 0,
+        "observedLuma": 0.5,
+        "observedSat": 0
+      }
+    }
+  }
+}

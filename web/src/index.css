@@ -1,0 +1,1419 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Bricolage Grotesque", "Instrument Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: "Instrument Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+  --ease-shutter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-aperture: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-optical: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-nle: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root {
+  --surface-recess: #07090D;
+  --surface-well: #0A0C10;
+  --surface-inspector: #11161F;
+  --surface-control: #1C2430;
+  --border-hairline: rgba(170, 183, 197, 0.14);
+  --border-active: rgba(74, 107, 134, 0.45);
+  --accent-steel: #4A6B86;
+  --accent-indicator: #7FA3C2;
+  --accent-indicator-bright: #93B8D8;
+  --text-mist: #AAB7C5;
+  --text-silver: #C9D7E2;
+  --text-crisp: #F4F7FB;
+  --text-pure: #FBFDFF;
+
+  /* Signature Cinema Optical & Hardware Motion Tokens */
+  --ease-shutter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-aperture: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-optical: var(--ease-aperture);
+  --ease-nle: var(--ease-shutter);
+  --dur-micro: 150ms;
+  --dur-popover: 220ms;
+  --dur-pill: 260ms;
+  --dur-pill-nav: 260ms;
+  --dur-collapse: 260ms;
+  --dur-backdrop-in: 220ms;
+  --dur-backdrop-out: 150ms;
+  --dur-modal-in: 280ms;
+  --dur-modal-out: 160ms;
+  --dur-view: 380ms;
+  --dur-drawer-in: 280ms;
+  --dur-drawer-out: 160ms;
+  --dur-toast-in: 240ms;
+  --dur-toast-out: 150ms;
+  --dur-rim-sweep: 650ms;
+  --dur-scanline: 450ms;
+}
+
+@layer base {
+  html,
+  body {
+    font-family: var(--font-sans);
+    background-color: #0A0C10;
+    color: #F4F7FB;
+    overflow-x: clip;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* R-39: Base interaction affordances across enabled and disabled controls */
+  a[href],
+  button:not(:disabled),
+  summary,
+  select:not(:disabled),
+  label[for],
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]),
+  [role="switch"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled,
+  input:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  code,
+  kbd,
+  samp,
+  pre,
+  .font-mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Utility: Hide scrollbars cleanly for horizontal floating docks on mobile */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Calibrated Steel Night x Arctic Ink Surfaces */
+@layer components {
+  .instrument-surface {
+    border: 1px solid rgba(170, 183, 197, 0.14);
+    box-shadow: inset 0 1px 0 rgba(244, 247, 251, 0.06);
+  }
+
+  /* Subtle Ask-inspired halftone dot-matrix border band around instrument showcases */
+  .halftone-frame-band {
+    background-color: #07090D;
+    background-image:
+      radial-gradient(rgba(127, 163, 194, 0.24) 1px, transparent 1px),
+      radial-gradient(rgba(170, 183, 197, 0.12) 1px, transparent 1px);
+    background-size: 12px 12px;
+    background-position: 0 0, 6px 6px;
+  }
+
+  /* Smooth directional dark shimmer skeleton while high-res sample plates decode */
+  .sample-shimmer-skeleton {
+    background: linear-gradient(
+      110deg,
+      #0A0C10 22%,
+      #161D29 45%,
+      #1E2939 50%,
+      #161D29 55%,
+      #0A0C10 78%
+    );
+    background-size: 220% 100%;
+    animation: sampleShimmerSweep 1.35s linear infinite;
+  }
+
+  @keyframes sampleShimmerSweep {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+
+  .keycap-hint {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    font-weight: 500;
+    line-height: 1;
+    color: #C9D7E2;
+    background-color: rgba(28, 36, 48, 0.72);
+    border: 1px solid rgba(170, 183, 197, 0.20);
+    box-shadow: inset 0 1px 0 rgba(244, 247, 251, 0.08), 0 1px 2px rgba(0, 0, 0, 0.45);
+  }
+
+  .m3-panel {
+    position: relative;
+    background-color: #11161F;
+    border: 1px solid rgba(170, 183, 197, 0.14);
+    box-shadow: inset 0 1px 0 rgba(244, 247, 251, 0.06);
+    border-radius: 10px;
+  }
+
+  .interactive-studio-backdrop {
+    background-color: #0A0C10;
+  }
+
+  .interactive-studio-backdrop .m3-panel {
+    background-color: rgba(17, 22, 31, 0.92);
+    border: 1px solid rgba(170, 183, 197, 0.14);
+    box-shadow: inset 0 1px 0 0 rgba(244, 247, 251, 0.06), 0 12px 32px rgba(0, 0, 0, 0.45);
+  }
+
+  /* Linear-style cursor-proximity 1px specular border illumination */
+  .interactive-studio-backdrop .m3-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: radial-gradient(
+      380px circle at var(--mx, -9999px) var(--my, -9999px),
+      rgba(255, 255, 255, 0.32),
+      rgba(255, 255, 255, 0.11) 42%,
+      transparent 72%
+    );
+    -webkit-mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+    z-index: 2;
+    opacity: var(--card-border-opacity, 0);
+    transition: opacity 220ms var(--ease-nle);
+  }
+
+  @media (hover: none) {
+    .interactive-studio-backdrop .m3-panel::before {
+      display: none;
+    }
+  }
+}
+
+.optical-refract-glass {
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* Tactile Hairline Switch (Optical Shutter Detent) */
+.nle-switch {
+  transition:
+    background-color var(--dur-micro) var(--ease-shutter),
+    border-color var(--dur-micro) var(--ease-shutter);
+}
+
+.nle-switch > span {
+  transition:
+    transform var(--dur-micro) var(--ease-shutter),
+    background-color var(--dur-micro) var(--ease-shutter);
+}
+
+/* Smooth CSS Grid Collapsible Inspector Sections & Accordions (260ms var(--ease-shutter)) */
+.m3-collapse-grid,
+.studio-collapse-grid {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--dur-collapse) var(--ease-shutter),
+    opacity 220ms var(--ease-aperture);
+}
+
+.m3-collapse-grid[data-expanded="true"],
+.studio-collapse-grid[data-expanded="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.m3-collapse-grid[data-expanded="false"],
+.studio-collapse-grid[data-expanded="false"] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.m3-collapse-inner,
+.studio-collapse-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.studio-chevron {
+  transition:
+    transform var(--dur-collapse) var(--ease-shutter),
+    color var(--dur-micro) var(--ease-aperture);
+}
+
+/* Precision Hardware Tactile Buttons & Segmented Controls */
+.m3-btn-morph,
+.studio-tactile {
+  transition:
+    background-color var(--dur-micro) var(--ease-aperture),
+    border-color var(--dur-micro) var(--ease-aperture),
+    color var(--dur-micro) var(--ease-aperture),
+    opacity var(--dur-micro) var(--ease-aperture),
+    transform 110ms var(--ease-shutter);
+}
+
+.m3-btn-morph:not(:disabled):active,
+.studio-tactile:not(:disabled):active {
+  transform: scale(0.96);
+}
+
+.m3-btn-primary-morph {
+  transition:
+    background-color var(--dur-micro) var(--ease-aperture),
+    opacity var(--dur-micro) var(--ease-aperture),
+    transform 110ms var(--ease-shutter);
+}
+
+.m3-btn-primary-morph:not(:disabled):active {
+  transform: scale(0.96);
+}
+
+/* Signature Cinema Optical & Hardware Keyframes */
+@keyframes optical-view-reveal {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0) scale3d(0.968, 0.968, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+@keyframes specular-rim-sweep {
+  0% {
+    opacity: 0;
+    background-position: 100% 0%;
+  }
+  16% {
+    opacity: 1;
+  }
+  82% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    background-position: 0% 0%;
+  }
+}
+
+@keyframes aperture-dialog-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale3d(0.9, 0.9, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+@keyframes aperture-dialog-out {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale3d(0.93, 0.93, 1);
+  }
+}
+
+@keyframes calibration-scanline {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -100%, 0);
+  }
+  10% {
+    opacity: 1;
+  }
+  84% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 4%, 0);
+  }
+}
+
+@keyframes studioPanelFade {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.992);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes studioBackdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes studioBackdropOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes studioDrawerRightIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(24px, 14px, 0) scale3d(0.92, 0.92, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+@keyframes studioDrawerRightOut {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(20px, 8px, 0) scale3d(0.95, 0.95, 1);
+  }
+}
+
+@keyframes optical-unfold-down-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -8px, 0) scale3d(0.94, 0.94, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+@keyframes optical-unfold-down-out {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, -5px, 0) scale3d(0.96, 0.96, 1);
+  }
+}
+
+@keyframes optical-unfold-up-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale3d(0.94, 0.94, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+@keyframes optical-unfold-up-out {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 5px, 0) scale3d(0.96, 0.96, 1);
+  }
+}
+
+@keyframes studioToastIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes studioToastOut {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.97);
+  }
+}
+
+@keyframes studioToastTopIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -12px, 0) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes studioToastTopOut {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, -8px, 0) scale(0.97);
+  }
+}
+
+@keyframes studioCalibBeam {
+  0% {
+    transform: translate3d(-100%, 0, 0);
+  }
+  100% {
+    transform: translate3d(260%, 0, 0);
+  }
+}
+
+@keyframes studioCalibLockFlash {
+  0% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Sub-page optical focus settle (omits forwards so resting transform/filter returns to none) */
+.studio-view-enter,
+.optical-view-reveal,
+.m3-tab-enter {
+  animation: optical-view-reveal var(--dur-view) var(--ease-shutter);
+}
+
+.studio-panel-fade {
+  animation: studioPanelFade 210ms var(--ease-shutter);
+}
+
+/* Staggered smoked-glass studio cards (65ms step) + clearly visible 1px bright silver specular rim sweep (650ms) */
+.studio-card-enter {
+  position: relative;
+  animation: optical-view-reveal var(--dur-view) var(--ease-shutter) backwards;
+  animation-delay: var(--stagger-delay, 0ms);
+}
+
+.studio-card-enter::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 6px;
+  right: 6px;
+  height: 1px;
+  border-radius: 9999px;
+  pointer-events: none;
+  z-index: 4;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 24%,
+    rgba(255, 255, 255, 0.42) 38%,
+    rgba(255, 255, 255, 0.98) 50%,
+    rgba(255, 255, 255, 0.42) 62%,
+    transparent 76%,
+    transparent 100%
+  );
+  background-size: 280% 100%;
+  background-repeat: no-repeat;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.28);
+  opacity: 0;
+  animation: specular-rim-sweep var(--dur-rim-sweep) var(--ease-shutter) both;
+  animation-delay: calc(var(--stagger-delay, 0ms) + 70ms);
+}
+
+.studio-stagger-0 { --stagger-delay: 0ms; }
+.studio-stagger-1 { --stagger-delay: 65ms; }
+.studio-stagger-2 { --stagger-delay: 130ms; }
+.studio-stagger-3 { --stagger-delay: 195ms; }
+.studio-stagger-4 { --stagger-delay: 260ms; }
+
+/* Smoked Backdrop & Optical Aperture Modal Transitions */
+.studio-backdrop[data-state="open"] {
+  animation: studioBackdropIn var(--dur-backdrop-in) var(--ease-aperture) both;
+}
+
+.studio-backdrop[data-state="closing"] {
+  animation: studioBackdropOut var(--dur-backdrop-out) var(--ease-aperture) both;
+  pointer-events: none;
+}
+
+.studio-modal {
+  position: relative;
+}
+
+.studio-modal[data-state="open"],
+.m3-modal-enter {
+  animation: aperture-dialog-in var(--dur-modal-in) var(--ease-shutter) both;
+}
+
+.studio-modal[data-state="open"]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 10px;
+  right: 10px;
+  height: 1px;
+  border-radius: 9999px;
+  pointer-events: none;
+  z-index: 10;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 24%,
+    rgba(255, 255, 255, 0.42) 38%,
+    rgba(255, 255, 255, 0.98) 50%,
+    rgba(255, 255, 255, 0.42) 62%,
+    transparent 76%,
+    transparent 100%
+  );
+  background-size: 280% 100%;
+  background-repeat: no-repeat;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.25);
+  opacity: 0;
+  animation: specular-rim-sweep var(--dur-rim-sweep) var(--ease-shutter) 65ms both;
+}
+
+.studio-modal[data-state="closing"] {
+  animation: aperture-dialog-out var(--dur-modal-out) var(--ease-aperture) both;
+  pointer-events: none;
+}
+
+/* Right-Docked Preset Browser / Looks Drawer */
+.studio-drawer-right {
+  position: relative;
+  transform-origin: right center;
+}
+
+.studio-drawer-right[data-state="open"] {
+  animation: studioDrawerRightIn var(--dur-drawer-in) var(--ease-shutter) both;
+}
+
+.studio-drawer-right[data-state="open"]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 8px;
+  right: 8px;
+  height: 1px;
+  border-radius: 9999px;
+  pointer-events: none;
+  z-index: 10;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 24%,
+    rgba(255, 255, 255, 0.42) 38%,
+    rgba(255, 255, 255, 0.98) 50%,
+    rgba(255, 255, 255, 0.42) 62%,
+    transparent 76%,
+    transparent 100%
+  );
+  background-size: 280% 100%;
+  background-repeat: no-repeat;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.25);
+  opacity: 0;
+  animation: specular-rim-sweep var(--dur-rim-sweep) var(--ease-shutter) 65ms both;
+}
+
+.studio-drawer-right[data-state="closing"] {
+  animation: studioDrawerRightOut var(--dur-drawer-out) var(--ease-aperture) both;
+  pointer-events: none;
+}
+
+/* Header Popovers, Dropdowns & Hover Tooltips (190ms Optical Unfold) */
+.studio-popover[data-state="open"],
+.studio-popover-enter {
+  transform-origin: top center;
+  animation: optical-unfold-down-in var(--dur-popover) var(--ease-shutter) both;
+}
+
+.studio-popover[data-state="closing"] {
+  transform-origin: top center;
+  animation: optical-unfold-down-out 130ms var(--ease-aperture) both;
+  pointer-events: none;
+}
+
+.studio-popover[data-placement="top"][data-state="open"] {
+  transform-origin: bottom center;
+  animation: optical-unfold-up-in var(--dur-popover) var(--ease-shutter) both;
+}
+
+.studio-popover[data-placement="top"][data-state="closing"] {
+  transform-origin: bottom center;
+  animation: optical-unfold-up-out 130ms var(--ease-aperture) both;
+  pointer-events: none;
+}
+
+/* Crisp Slide-In Toast Notifications (240ms var(--ease-shutter)) */
+.studio-toast[data-state="open"],
+.m3-toast-enter {
+  animation: studioToastIn var(--dur-toast-in) var(--ease-shutter) both;
+}
+
+.studio-toast[data-state="closing"] {
+  animation: studioToastOut var(--dur-toast-out) var(--ease-aperture) both;
+  pointer-events: none;
+}
+
+.studio-toast-top[data-state="open"] {
+  animation: studioToastTopIn var(--dur-toast-in) var(--ease-shutter) both;
+}
+
+.studio-toast-top[data-state="closing"] {
+  animation: studioToastTopOut var(--dur-toast-out) var(--ease-aperture) both;
+  pointer-events: none;
+}
+
+/* Steel Night 1.5px Optical Calibration Scanline Sweep (450ms) */
+.studio-scanline-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 35;
+}
+
+.studio-scanline-sweep {
+  position: absolute;
+  inset: 0;
+  will-change: transform, opacity;
+  animation: calibration-scanline var(--dur-scanline) var(--ease-shutter) forwards;
+}
+
+.studio-scanline-sweep::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 1.5px;
+  height: 34px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(74, 107, 134, 0.16) 58%,
+    rgba(201, 215, 226, 0.22) 100%
+  );
+}
+
+.studio-scanline-sweep::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1.5px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(127, 163, 194, 0.85) 14%,
+    rgba(244, 247, 251, 0.96) 50%,
+    rgba(127, 163, 194, 0.85) 86%,
+    transparent 100%
+  );
+  box-shadow:
+    0 0 14px 1px rgba(74, 107, 134, 0.55),
+    0 0 5px rgba(244, 247, 251, 0.72);
+}
+
+/* Calibration Diagnostic Progress Rail */
+.studio-calib-beam {
+  width: 42%;
+  animation: studioCalibBeam 760ms var(--ease-aperture) infinite;
+  will-change: transform;
+}
+
+.studio-calib-lock-flash {
+  animation: studioCalibLockFlash 650ms var(--ease-aperture) forwards;
+}
+
+.studio-sliding-pill {
+  will-change: transform, width, height;
+}
+
+@keyframes introShutterPartTop {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, -100%, 0);
+  }
+}
+
+@keyframes introShutterPartBottom {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 100%, 0);
+  }
+}
+
+@keyframes introHorizonExpand {
+  0% {
+    opacity: 0;
+    transform: scale3d(0, 1, 1);
+  }
+  16% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.95;
+    transform: scale3d(1, 1, 1);
+  }
+}
+
+@keyframes introHorizonFade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes introViewfinderLock {
+  from {
+    opacity: 0.01;
+    transform: scale3d(1.06, 1.06, 1);
+  }
+  to {
+    opacity: 1;
+    transform: scale3d(1, 1, 1);
+  }
+}
+
+@keyframes introTelemetryLock {
+  from {
+    opacity: 0.01;
+    transform: translate3d(0, -10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes introColorimeterReveal {
+  from {
+    opacity: 0.01;
+    transform: translateY(8px) scale(0.985);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes introCalibChipIgnite {
+  0% {
+    opacity: 0.14;
+    transform: scale3d(1, 0.8, 1);
+    filter: brightness(1);
+    box-shadow: none;
+  }
+  40% {
+    opacity: 1;
+    transform: scale3d(1, 1.06, 1);
+    filter: brightness(1.55);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.85),
+      0 0 8px rgba(255, 255, 255, 0.32);
+  }
+  100% {
+    opacity: 1;
+    transform: scale3d(1, 1, 1);
+    filter: brightness(1);
+    box-shadow: none;
+  }
+}
+
+@keyframes introColorimeterSilverSweep {
+  0% {
+    opacity: 0;
+    transform: translate3d(-120%, 0, 0);
+  }
+  18% {
+    opacity: 0.96;
+  }
+  82% {
+    opacity: 0.78;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(250%, 0, 0);
+  }
+}
+
+@keyframes introEmblemAperture {
+  from {
+    opacity: 0.01;
+    transform: scale3d(0.88, 0.88, 1);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: scale3d(1, 1, 1);
+    filter: blur(0);
+  }
+}
+
+@keyframes introKineticMaskReveal {
+  from {
+    opacity: 0.01;
+    transform: translateY(14px) scale(0.985);
+    filter: blur(4px);
+    letter-spacing: 0.01em;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+    letter-spacing: -0.025em;
+  }
+}
+
+@keyframes introSubtitleMaskReveal {
+  from {
+    opacity: 0.01;
+    transform: translateY(14px) scale(0.985);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes cinemaIntroReveal {
+  from {
+    opacity: 0.01;
+    transform: translateY(14px) scale(0.985);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes introCtaSpecularSweep {
+  0% {
+    opacity: 0;
+    transform: translate3d(-135%, 0, 0) skewX(-22deg);
+  }
+  16% {
+    opacity: 1;
+  }
+  84% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(275%, 0, 0) skewX(-22deg);
+  }
+}
+
+.intro-shutter-top {
+  animation: introShutterPartTop 650ms cubic-bezier(0.16, 1, 0.3, 1) 300ms both;
+  will-change: transform, opacity;
+}
+
+.intro-shutter-bottom {
+  animation: introShutterPartBottom 650ms cubic-bezier(0.16, 1, 0.3, 1) 300ms both;
+  will-change: transform, opacity;
+}
+
+.intro-horizon-wrap {
+  animation: introHorizonFade 500ms cubic-bezier(0.16, 1, 0.3, 1) 450ms forwards;
+  will-change: opacity;
+}
+
+.intro-horizon-scanline {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.16) 14%,
+    rgba(255, 255, 255, 0.68) 50%,
+    rgba(255, 255, 255, 0.16) 86%,
+    transparent 100%
+  );
+  transform-origin: center center;
+  opacity: 0;
+  animation: introHorizonExpand 450ms cubic-bezier(0.16, 1, 0.3, 1) 0ms both;
+  will-change: transform, opacity;
+}
+
+.intro-vf-frame {
+  transform-origin: center center;
+  opacity: 0.01;
+  animation: introViewfinderLock 850ms cubic-bezier(0.16, 1, 0.3, 1) 100ms both;
+  will-change: transform, opacity;
+}
+
+.intro-boot-telemetry {
+  opacity: 0.01;
+  animation: introTelemetryLock 850ms cubic-bezier(0.16, 1, 0.3, 1) 100ms both;
+  will-change: transform, opacity;
+}
+
+.intro-boot-colorimeter {
+  opacity: 0.01;
+  animation: introColorimeterReveal 480ms cubic-bezier(0.16, 1, 0.3, 1) 820ms both;
+  will-change: transform, opacity, filter;
+}
+
+.intro-calib-chip {
+  opacity: 0.14;
+  transform-origin: center bottom;
+  animation-name: introCalibChipIgnite;
+  animation-duration: 280ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: both;
+  will-change: transform, opacity, filter;
+}
+
+.intro-calib-boot-sweep {
+  background: linear-gradient(
+    102deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.16) 24%,
+    rgba(255, 255, 255, 0.85) 50%,
+    rgba(255, 255, 255, 0.16) 76%,
+    transparent 100%
+  );
+  width: 46%;
+  opacity: 0;
+  animation: introColorimeterSilverSweep 600ms cubic-bezier(0.16, 1, 0.3, 1) 1820ms both;
+  will-change: transform, opacity;
+}
+
+.intro-boot-emblem {
+  opacity: 0.01;
+  animation: introEmblemAperture 800ms cubic-bezier(0.16, 1, 0.3, 1) 1250ms both;
+  will-change: transform, opacity, filter;
+}
+
+.intro-kinetic-mask {
+  opacity: 0.01;
+  animation-name: introKineticMaskReveal;
+  animation-duration: 700ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: both;
+  will-change: transform, opacity, filter;
+}
+
+.intro-kinetic-subtitle {
+  opacity: 0.01;
+  animation-name: introSubtitleMaskReveal;
+  animation-duration: 700ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: both;
+  will-change: transform, opacity, filter;
+}
+
+.m3-intro-item {
+  opacity: 0.01;
+  animation-name: cinemaIntroReveal;
+  animation-duration: 700ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  animation-fill-mode: both;
+  will-change: transform, opacity, filter;
+}
+
+.intro-cta-boot-sweep {
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(161, 161, 170, 0.14) 22%,
+    rgba(255, 255, 255, 0.95) 48%,
+    rgba(255, 255, 255, 0.98) 54%,
+    rgba(161, 161, 170, 0.14) 78%,
+    transparent 100%
+  );
+  width: 48%;
+  opacity: 0;
+  animation: introCtaSpecularSweep 600ms cubic-bezier(0.16, 1, 0.3, 1) 2950ms both;
+  will-change: transform, opacity;
+}
+
+/* Cinema Viewfinder Intro: cursor-reactive 1px silver specular bezel & calibration sweep */
+.intro-specular-bezel {
+  position: relative;
+}
+
+.intro-specular-bezel::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: radial-gradient(
+    240px circle at var(--local-mx, -9999px) var(--local-my, -9999px),
+    rgba(255, 255, 255, 0.44),
+    rgba(255, 255, 255, 0.14) 44%,
+    transparent 74%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: var(--cursor-presence, 0);
+  transition: opacity 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.intro-calib-sweep {
+  background: linear-gradient(
+    102deg,
+    transparent calc(var(--sweep-pct, 50%) - 18%),
+    rgba(255, 255, 255, 0.07) calc(var(--sweep-pct, 50%) - 8%),
+    rgba(255, 255, 255, 0.46) var(--sweep-pct, 50%),
+    rgba(255, 255, 255, 0.07) calc(var(--sweep-pct, 50%) + 8%),
+    transparent calc(var(--sweep-pct, 50%) + 18%)
+  );
+  opacity: calc(0.12 + var(--cursor-presence, 0) * 0.78);
+  transition: opacity 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (hover: none) {
+  .intro-specular-bezel::before {
+    display: none;
+  }
+}
+
+/* Choreographed Intro-to-Workstation Hand-Off (540ms Optical Dive & 3-Column Workstation Stagger) */
+@keyframes introOpticalDive {
+  0% {
+    opacity: 1;
+    transform: scale3d(1, 1, 1);
+    filter: blur(0px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale3d(1.07, 1.07, 1);
+    filter: blur(8px);
+  }
+}
+
+@keyframes introBackdropFadeOut {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes introHandoffRail {
+  0% {
+    opacity: 0;
+    transform: scale3d(0.18, 1, 1);
+  }
+  18% {
+    opacity: 0.7;
+    transform: scale3d(1, 1, 1);
+  }
+  78% {
+    opacity: 0.36;
+    transform: scale3d(1, 1, 1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale3d(1, 1, 1);
+  }
+}
+
+@keyframes introHandoffBeamSweep {
+  0% {
+    opacity: 0;
+    transform: translate3d(-100%, 0, 0);
+  }
+  12% {
+    opacity: 1;
+  }
+  84% {
+    opacity: 0.96;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(280%, 0, 0);
+  }
+}
+
+@keyframes workstationHeaderEnter {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -100%, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes workstationColLeftEnter {
+  0% {
+    opacity: 0;
+    transform: translate3d(-18px, 0, 0) scale3d(0.97, 0.97, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+@keyframes workstationColCenterEnter {
+  0% {
+    opacity: 0;
+    transform: scale3d(0.96, 0.96, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale3d(1, 1, 1);
+  }
+}
+
+@keyframes workstationColRightEnter {
+  0% {
+    opacity: 0;
+    transform: translate3d(18px, 0, 0) scale3d(0.97, 0.97, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+.intro-exit-dive {
+  transform-origin: center center;
+  animation: introOpticalDive 280ms var(--ease-shutter) forwards;
+  will-change: transform, filter, opacity;
+}
+
+.intro-exit-bg {
+  animation: introBackdropFadeOut 340ms var(--ease-shutter) forwards;
+  will-change: opacity;
+}
+
+.intro-exit-chrome {
+  animation: introBackdropFadeOut 240ms var(--ease-shutter) forwards;
+  will-change: opacity;
+}
+
+.intro-handoff-rail {
+  transform-origin: center center;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.22) 16%,
+    rgba(255, 255, 255, 0.65) 50%,
+    rgba(255, 255, 255, 0.22) 84%,
+    transparent 100%
+  );
+  animation: introHandoffRail 360ms var(--ease-shutter) forwards;
+  will-change: transform, opacity;
+}
+
+.intro-handoff-beam {
+  width: 38%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(201, 215, 226, 0.48) 26%,
+    rgba(244, 247, 251, 0.98) 52%,
+    rgba(201, 215, 226, 0.48) 76%,
+    transparent 100%
+  );
+  box-shadow:
+    0 0 12px 1px rgba(244, 247, 251, 0.50),
+    0 0 24px rgba(74, 107, 134, 0.34);
+  animation: introHandoffBeamSweep 360ms var(--ease-shutter) forwards;
+  will-change: transform, opacity;
+}
+
+.workstation-header-enter {
+  animation: workstationHeaderEnter 320ms var(--ease-shutter) 140ms both;
+  will-change: transform, opacity;
+}
+
+.workstation-col-left-enter {
+  transform-origin: left center;
+  animation: workstationColLeftEnter 400ms var(--ease-shutter) 160ms both;
+  will-change: transform, opacity;
+}
+
+.workstation-col-center-enter {
+  transform-origin: center center;
+  animation: workstationColCenterEnter 400ms var(--ease-shutter) 220ms both;
+  will-change: transform, opacity;
+}
+
+.workstation-col-right-enter {
+  transform-origin: right center;
+  animation: workstationColRightEnter 400ms var(--ease-shutter) 280ms both;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-view-enter,
+  .optical-view-reveal,
+  .studio-panel-fade,
+  .studio-card-enter,
+  .studio-backdrop,
+  .studio-modal,
+  .studio-drawer-right,
+  .studio-popover,
+  .studio-popover-enter,
+  .studio-toast,
+  .studio-toast-top,
+  .studio-calib-beam,
+  .studio-calib-lock-flash,
+  .m3-tab-enter,
+  .m3-modal-enter,
+  .m3-toast-enter,
+  .m3-intro-item,
+  .intro-vf-frame,
+  .intro-boot-telemetry,
+  .intro-boot-colorimeter,
+  .intro-calib-chip,
+  .intro-boot-emblem,
+  .intro-kinetic-mask,
+  .intro-kinetic-subtitle,
+  .workstation-header-enter,
+  .workstation-col-left-enter,
+  .workstation-col-center-enter,
+  .workstation-col-right-enter {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    clip-path: none !important;
+    filter: none !important;
+    letter-spacing: inherit;
+  }
+
+  .intro-exit-dive,
+  .intro-exit-bg,
+  .intro-exit-chrome {
+    animation: none !important;
+    opacity: 0 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+
+  .studio-card-enter::after,
+  .studio-modal::after,
+  .studio-drawer-right::after,
+  .studio-scanline-overlay,
+  .studio-scanline-sweep,
+  .intro-handoff-rail,
+  .intro-handoff-beam {
+    display: none !important;
+    animation: none !important;
+  }
+
+  .studio-sliding-pill,
+  .studio-collapse-grid,
+  .m3-collapse-grid,
+  .studio-chevron,
+  .studio-tactile,
+  .m3-btn-morph,
+  .m3-btn-primary-morph,
+  .nle-switch,
+  .nle-switch > span {
+    transition: none !important;
+  }
+
+  .intro-shutter-top,
+  .intro-shutter-bottom,
+  .intro-horizon-wrap,
+  .intro-horizon-scanline,
+  .intro-calib-boot-sweep,
+  .intro-cta-boot-sweep {
+    display: none !important;
+  }
+}
+
+/* Ultra-thin calibrated dark scrollbar for side inspectors */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(170, 183, 197, 0.16);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(147, 184, 216, 0.34);
+}

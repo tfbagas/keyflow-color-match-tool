@@ -1,0 +1,23 @@
+{
+  "name": "ToneBench: 3D OKLab Color Transfer & Editable LUT Studio",
+  "short_name": "ToneBench",
+  "description": "Browser-based 3D OKLab color transfer workbench by TFBAGAS with editable .cube and .lut grading parameters, After Effects (.ffx) presets, and Keyflow (.kfplug) shaders.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#060709",
+  "theme_color": "#060709",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}
