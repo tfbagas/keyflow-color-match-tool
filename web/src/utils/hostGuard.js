@@ -13,6 +13,8 @@ export function checkAllowedHost() {
     host.endsWith(".keyflow-color-match-tool.pages.dev") ||
     host === "tonebench.pages.dev" ||
     host.endsWith(".tonebench.pages.dev") ||
+    host === "tonebenchstudio.pages.dev" ||
+    host.endsWith(".tonebenchstudio.pages.dev") ||
     host === "localhost" ||
     host === "127.0.0.1"
   );
