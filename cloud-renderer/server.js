@@ -628,7 +628,7 @@ function processNext() {
   }
 }
 
-app.get("/health", (_req, res) => {
+function sendStatus(_req, res) {
   res.json({
     ok: true,
     queueLength: getQueueLength(),
@@ -637,7 +637,10 @@ app.get("/health", (_req, res) => {
     queuedJobs: queue.length,
     r2Configured,
   });
-});
+}
+
+app.get("/health", sendStatus);
+app.get("/api/status", sendStatus);
 
 app.get("/api/worker-target", async (_req, res) => {
   const fallback = {

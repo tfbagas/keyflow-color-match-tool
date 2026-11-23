@@ -377,7 +377,7 @@ async function wakeCloudWorker(baseUrl, onStatusChange, abortSignal, options = {
     const attemptTimer = setTimeout(() => attemptController.abort(), remainingMs);
 
     try {
-      const resp = await fetch(`${baseUrl}/health`, {
+      const resp = await fetch(`${baseUrl}/api/status`, {
         method: "GET",
         signal: attemptController.signal,
       });
@@ -397,10 +397,15 @@ async function wakeCloudWorker(baseUrl, onStatusChange, abortSignal, options = {
       if (err?.message?.startsWith("Cloud worker health check failed")) {
         throw err;
       }
-      lastError =
-        err?.name === "AbortError"
-          ? "request timed out"
-          : err?.message || "network/CORS error";
+      if (err instanceof TypeError) {
+        lastError =
+          "network request failed. A browser AdBlocker/Shield (uBlock Origin, Brave Shields) may be blocking the cloud worker connection - try disabling it for this site";
+      } else {
+        lastError =
+          err?.name === "AbortError"
+            ? "request timed out"
+            : err?.message || "network/CORS error";
+      }
     } finally {
       clearTimeout(attemptTimer);
       abortSignal?.removeEventListener("abort", onParentAbort);
@@ -414,7 +419,7 @@ async function wakeCloudWorker(baseUrl, onStatusChange, abortSignal, options = {
 
   const detail = lastError ? `: ${lastError}` : "";
   throw new Error(
-    `Cloud worker did not respond within ${Math.round(WAKE_TIMEOUT_MS / 1000)}s${detail}. Please try again or use Local Render.`
+    `Cloud worker did not respond within ${Math.round(WAKE_TIMEOUT_MS / 1000)}s${detail}. Please try again, disable any AdBlocker for this site, or use the Local Render option.`
   );
 }
 
