@@ -37,8 +37,13 @@ const LiquidGlassSlider = memo(function LiquidGlassSlider({
   const rafRef = useRef(0);
   const pendingValRef = useRef(null);
   const latestValRef = useRef(value);
-  const pointerDownXRef = useRef(0);
-  const pointerMovedRef = useRef(false);
+  const gestureRef = useRef({
+    state: "idle", // "idle" | "pending" | "dragging" | "scrolling"
+    pointerId: null,
+    startX: 0,
+    startY: 0,
+    pointerType: "",
+  });
   const lastTapTimeRef = useRef(0);
   const resetFlashTimerRef = useRef(0);
 
@@ -180,37 +185,94 @@ const LiquidGlassSlider = memo(function LiquidGlassSlider({
     }
   };
 
+  // Only prevent native vertical touch scrolling once horizontal slider scrubbing is locked in
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track) return undefined;
+    const handleTouchMove = (e) => {
+      if (gestureRef.current.state === "dragging" && e.cancelable) {
+        e.preventDefault();
+      }
+    };
+    track.addEventListener("touchmove", handleTouchMove, { passive: false });
+    return () => {
+      track.removeEventListener("touchmove", handleTouchMove);
+    };
+  }, []);
+
   const handleTrackPointerDown = (e) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
-    e.preventDefault();
-    pointerDownXRef.current = e.clientX;
-    pointerMovedRef.current = false;
 
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      // Ignore synthetic pointer environments
-    }
-
-    if (!draggingRef.current) {
-      draggingRef.current = true;
-      setIsDragging(true);
-      onDragChangeRef.current?.(true);
-    }
-    const nextVal = computeValueFromClientX(e.clientX);
-    emitValue(nextVal);
+    // Do NOT call preventDefault(), setPointerCapture(), or mutate value on initial down.
+    // Wait for directional slop check so vertical swipes scroll the panel naturally.
+    gestureRef.current = {
+      state: "pending",
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      pointerType: e.pointerType,
+    };
   };
 
   const handleTrackPointerMove = (e) => {
-    if (!draggingRef.current) return;
-    if (Math.abs(e.clientX - pointerDownXRef.current) > 6) {
-      pointerMovedRef.current = true;
+    const g = gestureRef.current;
+    if (g.pointerId !== e.pointerId || g.state === "idle" || g.state === "scrolling") {
+      return;
     }
-    const nextVal = computeValueFromClientX(e.clientX);
-    emitValue(nextVal);
+
+    if (g.state === "pending") {
+      const dx = e.clientX - g.startX;
+      const dy = e.clientY - g.startY;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+
+      if (absDx > 10 && absDx > absDy * 1.25) {
+        // Horizontal drag intent confirmed: engage active scrubbing & capture pointer
+        g.state = "dragging";
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          // Ignore synthetic pointer environments
+        }
+        if (!draggingRef.current) {
+          draggingRef.current = true;
+          setIsDragging(true);
+          onDragChangeRef.current?.(true);
+        }
+        const nextVal = computeValueFromClientX(e.clientX);
+        emitValue(nextVal);
+        return;
+      }
+
+      if (absDy > 6 && absDy > absDx) {
+        // Vertical scroll intent dominates: release gesture to native scroll container
+        g.state = "scrolling";
+        return;
+      }
+
+      return;
+    }
+
+    if (g.state === "dragging") {
+      const nextVal = computeValueFromClientX(e.clientX);
+      emitValue(nextVal);
+    }
   };
 
   const handleTrackPointerUp = (e) => {
+    const g = gestureRef.current;
+    if (g.pointerId !== e.pointerId) return;
+
+    const prevState = g.state;
+    const pointerType = g.pointerType;
+    gestureRef.current = {
+      state: "idle",
+      pointerId: null,
+      startX: 0,
+      startY: 0,
+      pointerType: "",
+    };
+
     try {
       if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);
@@ -219,16 +281,51 @@ const LiquidGlassSlider = memo(function LiquidGlassSlider({
       // Ignore capture errors
     }
 
-    const wasTap = !pointerMovedRef.current;
     if (draggingRef.current) {
       draggingRef.current = false;
       setIsDragging(false);
       flushPending();
       onDragChangeRef.current?.(false);
+      return;
     }
 
-    if (wasTap && e.pointerType !== "mouse") {
-      registerTapForReset();
+    if (prevState === "pending") {
+      if (pointerType === "mouse") {
+        // Single click with mouse still sets the clicked position; double-click resets via onDoubleClick
+        const nextVal = computeValueFromClientX(e.clientX);
+        emitValue(nextVal);
+      } else {
+        // On touch/pen: clean tap without scrolling checks double-tap reset without accidental value jump
+        registerTapForReset();
+      }
+    }
+  };
+
+  const handleTrackPointerCancel = (e) => {
+    const g = gestureRef.current;
+    if (g.pointerId !== e.pointerId) return;
+
+    gestureRef.current = {
+      state: "idle",
+      pointerId: null,
+      startX: 0,
+      startY: 0,
+      pointerType: "",
+    };
+
+    try {
+      if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // Ignore capture errors
+    }
+
+    if (draggingRef.current) {
+      draggingRef.current = false;
+      setIsDragging(false);
+      flushPending();
+      onDragChangeRef.current?.(false);
     }
   };
 
@@ -297,9 +394,9 @@ const LiquidGlassSlider = memo(function LiquidGlassSlider({
         onPointerDown={handleTrackPointerDown}
         onPointerMove={handleTrackPointerMove}
         onPointerUp={handleTrackPointerUp}
-        onPointerCancel={handleTrackPointerUp}
+        onPointerCancel={handleTrackPointerCancel}
         onKeyDown={handleKeyDown}
-        style={{ touchAction: "none" }}
+        style={{ touchAction: "pan-y" }}
         className={`relative h-11 w-full rounded-2xl overflow-hidden cursor-ew-resize outline-none border transition-[background-color,border-color,box-shadow,transform] duration-150 focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
           justReset
             ? "bg-[#131C2B] border-[#38BDF8]/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_0_16px_-3px_rgba(56,189,248,0.52)]"

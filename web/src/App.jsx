@@ -4578,7 +4578,7 @@ export default function App() {
         {/* MOBILE / TABLET TOOL DECK (< lg, driven by Fixed Mobile Studio Bottom Tab Bar) */}
         <div
           data-testid="mobile-tool-deck-scroll"
-          className="order-2 lg:hidden flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:flex-none md:h-auto md:overflow-visible pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 flex flex-col bg-[#090B10] md:bg-[#0A0C10]"
+          className="order-2 lg:hidden flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:flex-none md:h-auto md:overflow-visible pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 flex flex-col bg-[#090B10] md:bg-[#0A0C10]"
         >
           {/* TAB 1: MATCH (Target & Reference, Color Engine + Match Strength, Borderless Accordions on <768px) */}
           {mobileDeckTab === "match" && (

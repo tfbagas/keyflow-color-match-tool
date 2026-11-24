@@ -673,8 +673,9 @@ export default function LiquidGlassTabBar({
   return (
     <nav
       aria-label={ariaLabel}
+      data-testid="mobile-liquid-glass-nav"
       onContextMenu={(e) => e.preventDefault()}
-      className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] lg:hidden w-[calc(100%-24px)] max-w-[404px] mb-[env(safe-area-inset-bottom)] overflow-visible"
+      className="fixed inset-x-0 bottom-4 z-[60] lg:hidden px-3 pb-[env(safe-area-inset-bottom)] flex justify-center pointer-events-none overflow-visible"
     >
       {/* Hidden SVG optical refraction filter scoped exclusively to the Liquid Lens rim */}
       <svg
@@ -710,19 +711,20 @@ export default function LiquidGlassTabBar({
         </defs>
       </svg>
 
-      {/* Outer Translucent Midnight-Slate Liquid Glass Dock (overflow: visible so inflated droplet shadows never clip) */}
+      {/* Outer Floating Dock Shell (no ancestor transform; overflow-visible so inflated lens never clips) */}
       <div
-        className="liquid-glass-dock relative rounded-full p-1 select-none touch-none overflow-visible"
+        className="liquid-glass-dock pointer-events-auto relative w-full max-w-[404px] rounded-full p-1 select-none touch-none overflow-visible"
       >
-        {/* Clipped subtle Midnight-Slate internal wash (keeps outer dock overflow-visible) */}
+        {/* Dedicated Isolated Backdrop Layer (clipped rounded-full with zero transformed/SVG children so backdrop-filter reliably blurs underlying scroll content on iOS Safari & Android Chrome) */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 rounded-full overflow-hidden"
+          data-testid="liquid-glass-dock-backdrop"
+          className="liquid-glass-dock-backdrop pointer-events-none absolute inset-0 rounded-full overflow-hidden"
         >
-          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.065)_0%,rgba(9,11,16,0.12)_54%,rgba(56,189,248,0.04)_100%)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.07)_0%,rgba(9,11,16,0.08)_54%,rgba(56,189,248,0.045)_100%)]" />
         </div>
 
-        {/* Interactive 5-Slot Tab Track with Full Pointer Capture */}
+        {/* Interactive 5-Slot Tab Track with Full Pointer Capture (sibling above frosted backdrop) */}
         <div
           ref={trackRef}
           role="tablist"
@@ -732,7 +734,7 @@ export default function LiquidGlassTabBar({
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerCancel}
           onLostPointerCapture={handleLostPointerCapture}
-          className="relative grid grid-cols-5 items-center overflow-visible touch-none select-none"
+          className="relative z-10 grid grid-cols-5 items-center overflow-visible touch-none select-none"
         >
           {/* ACTIVE LIQUID LENS ("Glass Droplet") behind tab items */}
           <div
