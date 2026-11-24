@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
-import { motion } from "motion/react";
 import {
   Settings,
   RotateCcw,
@@ -35,6 +34,7 @@ import {
   FileCog,
   ArrowRight,
   ArrowUpRight,
+  MoreHorizontal,
 } from "lucide-react";
 
 import { useLanguage } from "./i18n/LanguageContext";
@@ -50,6 +50,8 @@ import { TfbagasWordmark } from "./components/KeyflowLogo";
 import BrandLogo from "./components/BrandLogo";
 import IntroScreen from "./components/IntroScreen";
 import VideoTransportBar from "./components/VideoTransportBar";
+import LiquidGlassTabBar from "./components/LiquidGlassTabBar";
+import LiquidGlassSlider from "./components/LiquidGlassSlider";
 import { DEFAULT_PARAMS } from "./utils/paramSchema";
 import { simulateGradePixels } from "./utils/previewRenderer";
 import {
@@ -159,6 +161,7 @@ function MobileMediaTile({
   allowPresets = false,
   importedLook = null,
   onClearImportedLook,
+  onOpenLooks = null,
   isAnalyzing = false,
   errorMessage = "",
 }) {
@@ -202,20 +205,30 @@ function MobileMediaTile({
           setIsDragging(false);
           handleFile(e.dataTransfer?.files?.[0]);
         }}
-        className={`relative w-full h-[104px] rounded-lg overflow-hidden border transition-colors select-none ${
+        className={`relative w-full h-[116px] md:h-[104px] rounded-2xl md:rounded-lg overflow-hidden transition-all select-none ${
           isDragging
-            ? "border-[#7FA3C2]/70 bg-[#1C2430]"
+            ? "ring-1 ring-[#38BDF8]/75 bg-[#131D2D]"
             : imageInfo || importedLook
-            ? "border-[#AAB7C5]/18 bg-[#0A0C10]"
-            : "border-dashed border-[#AAB7C5]/22 bg-[#07090D] hover:border-[#4A6B86]/60"
+            ? "bg-[#0E131D] shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] border border-white/[0.08] md:border-[#AAB7C5]/18 md:bg-[#0A0C10]"
+            : "bg-[#0E131D] border border-dashed border-white/16 md:border-[#AAB7C5]/22 md:bg-[#07090D] hover:border-[#38BDF8]/55 md:hover:border-[#4A6B86]/60"
         }`}
       >
-        {/* Primary Tile Trigger Button (Sibling to Overlay Action Buttons) */}
+        {/* Primary Tile Trigger Button (Tapping active Reference preset opens Looks Library to swap looks) */}
         <button
           type="button"
-          onClick={() => inputRef.current?.click()}
-          aria-label={`${label}: ${subtitle || tapToLoadLabel}`}
-          className="relative w-full h-full block text-left cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#7FA3C2]"
+          onClick={() => {
+            if (importedLook && onOpenLooks) {
+              onOpenLooks();
+            } else {
+              inputRef.current?.click();
+            }
+          }}
+          aria-label={
+            importedLook && onOpenLooks
+              ? `${label}: ${importedLook.name}. Tap to browse Looks Library`
+              : `${label}: ${subtitle || tapToLoadLabel}`
+          }
+          className="relative w-full h-full block text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#38BDF8]"
         >
           {imageInfo ? (
             <>
@@ -224,79 +237,139 @@ function MobileMediaTile({
                 alt={label}
                 className="w-full h-full object-cover"
               />
-              <div className="absolute inset-x-0 top-0 p-1.5 pr-20 flex items-start justify-between gap-1 bg-gradient-to-b from-[#07090D]/85 via-[#07090D]/45 to-transparent pointer-events-none">
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#0A0C10]/85 backdrop-blur-sm border border-[#AAB7C5]/18 text-[9px] font-sans font-semibold uppercase tracking-[0.06em] text-[#F4F7FB] truncate">
+              <div className="absolute inset-x-0 top-0 p-2 pr-[70px] flex items-start justify-between gap-1 bg-gradient-to-b from-[#090B10]/80 via-[#090B10]/35 to-transparent pointer-events-none">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full md:rounded bg-[#090B10]/72 backdrop-blur-md border border-white/12 text-[9px] font-sans font-semibold uppercase tracking-[0.03em] text-[#F8FAFC] truncate">
                   {stepIndex && (
-                    <span className="font-mono tabular-nums text-[#93B8D8]">
+                    <span className="font-mono tabular-nums text-[#38BDF8] md:text-[#93B8D8]">
                       {stepIndex}
                     </span>
                   )}
                   {(imageInfo.kind === "video" || imageInfo.sourceKind === "video") && (
-                    <Film className="w-2.5 h-2.5 text-[#93B8D8]" />
+                    <Film className="w-2.5 h-2.5 text-[#38BDF8]" />
                   )}
                   <span className="truncate">{label}</span>
                 </span>
               </div>
 
-              <div className="absolute inset-x-0 bottom-0 px-2 py-1.5 bg-gradient-to-t from-[#07090D]/92 via-[#07090D]/60 to-transparent flex items-center justify-between gap-1.5 pointer-events-none">
-                <span className="text-[10.5px] font-sans font-medium text-[#F4F7FB] truncate">
+              <div
+                data-testid={`mobile-tile-footer-${stepIndex || "media"}`}
+                className="absolute inset-x-0 bottom-0 px-2.5 py-2 bg-gradient-to-t from-[#090B10]/92 via-[#090B10]/62 to-transparent flex items-center justify-between gap-2 pointer-events-none"
+              >
+                <span className="min-w-0 flex-1 text-[11px] font-sans font-medium text-[#F8FAFC] truncate">
                   {imageInfo.name}
                 </span>
                 {imageInfo.formatBadge && (
-                  <span className="shrink-0 text-[9px] font-mono text-[#AAB7C5]">
+                  <span className="shrink-0 text-[8.5px] font-mono uppercase tracking-[0.04em] px-1.5 py-0.5 rounded-md bg-[#090B10]/75 border border-white/12 text-[#CBD5E1]">
                     {imageInfo.formatBadge}
                   </span>
                 )}
               </div>
             </>
           ) : importedLook ? (
-            <div className="w-full h-full p-2.5 pr-11 flex flex-col justify-between bg-[#11161F]">
-              <div className="flex items-center gap-1">
-                {stepIndex && (
-                  <span className="text-[9px] font-mono tabular-nums font-semibold text-[#93B8D8]">
-                    {stepIndex}
-                  </span>
-                )}
-                <span className="text-[9px] font-sans font-semibold uppercase tracking-[0.06em] text-[#93B8D8] truncate">
-                  {label} · PRESET
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 min-w-0">
-                <FileCog className="w-3.5 h-3.5 text-[#93B8D8] shrink-0" />
-                <span className="text-[11px] font-sans font-medium text-[#F4F7FB] truncate">
-                  {importedLook.name}
-                </span>
-              </div>
-            </div>
+            (() => {
+              const presetSwatches =
+                Array.isArray(importedLook.swatches) && importedLook.swatches.length >= 2
+                  ? importedLook.swatches
+                  : ["#1B3440", "#3F6268", "#A37E5B", "#D9A46E", "#F2DFC2"];
+              const s0 = presetSwatches[0] || "#1B2A30";
+              const s1 = presetSwatches[1] || "#3F5A5C";
+              const s2 = presetSwatches[Math.floor(presetSwatches.length / 2)] || "#8A7A62";
+              const s3 = presetSwatches[presetSwatches.length - 2] || "#D2A878";
+              const s4 = presetSwatches[presetSwatches.length - 1] || "#F3E3C6";
+              const formatBadge =
+                importedLook.kind === "cube"
+                  ? "CUBE"
+                  : importedLook.kind === "lut"
+                  ? "LUT"
+                  : importedLook.kind === "kfplug"
+                  ? "KFPLUG"
+                  : importedLook.kind === "ffx"
+                  ? "FFX"
+                  : "PRESET";
+
+              return (
+                <div
+                  data-testid="mobile-reference-preset-card"
+                  className="relative w-full h-full flex flex-col justify-between overflow-hidden bg-[#0E131D] md:bg-[#11161F]"
+                >
+                  {/* Alive Mesh / Aurora Tonal Gradient Derived Directly from Active Preset / LUT Colors */}
+                  <div
+                    data-testid="mobile-reference-aurora"
+                    aria-hidden="true"
+                    className="md:hidden pointer-events-none absolute inset-0"
+                    style={{
+                      background: `
+                        radial-gradient(125% 110% at 12% 14%, ${s1} 0%, transparent 62%),
+                        radial-gradient(115% 105% at 88% 22%, ${s4}CC 0%, transparent 58%),
+                        radial-gradient(120% 100% at 62% 92%, ${s3}DD 0%, transparent 64%),
+                        linear-gradient(135deg, ${s0} 0%, ${s2} 52%, ${s3} 100%)
+                      `,
+                    }}
+                  />
+                  {/* Soft depth vignette for legible white typography */}
+                  <div
+                    aria-hidden="true"
+                    className="md:hidden pointer-events-none absolute inset-0 bg-gradient-to-b from-[#090B10]/30 via-[#090B10]/10 to-[#090B10]/80"
+                  />
+
+                  {/* Top-left step badge matching Target with cyan 02 index */}
+                  <div className="relative z-10 p-2 pr-[70px] flex items-start justify-between gap-1 pointer-events-none">
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full md:rounded bg-[#090B10]/72 backdrop-blur-md border border-white/12 text-[9px] font-sans font-semibold uppercase tracking-[0.03em] text-[#F8FAFC] truncate">
+                      {stepIndex && (
+                        <span className="font-mono tabular-nums text-[#38BDF8] md:text-[#93B8D8]">
+                          {stepIndex}
+                        </span>
+                      )}
+                      <span className="truncate">{label}</span>
+                    </span>
+                  </div>
+
+                  {/* Bottom: Clean Truncated Look Name & Sky-Cyan Format Badge */}
+                  <div className="relative z-10 px-2.5 py-2 pointer-events-none">
+                    <div
+                      data-testid={`mobile-tile-footer-${stepIndex || "preset"}`}
+                      className="flex items-center justify-between gap-2"
+                    >
+                      <span className="min-w-0 flex-1 text-[11px] font-sans font-semibold text-[#F8FAFC] drop-shadow-[0_1px_4px_rgba(0,0,0,0.65)] truncate">
+                        {importedLook.name}
+                      </span>
+                      <span className="shrink-0 text-[8.5px] font-mono uppercase tracking-[0.04em] px-1.5 py-0.5 rounded-md bg-[#090B10]/75 border border-[#38BDF8]/35 text-[#7DD3FC]">
+                        {formatBadge}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()
           ) : (
-            <div className="w-full h-full p-2.5 flex flex-col justify-between">
-              <div className="pr-16 min-w-0">
+            <div className="w-full h-full p-2.5 md:p-3 flex flex-col justify-between">
+              <div className="pr-[72px] min-w-0">
                 <div className="flex items-center gap-1 min-w-0">
                   {stepIndex && (
-                    <span className="text-[9.5px] font-mono tabular-nums font-semibold text-[#93B8D8] shrink-0">
+                    <span className="text-[9.5px] font-mono tabular-nums font-semibold text-[#38BDF8] md:text-[#93B8D8] shrink-0">
                       {stepIndex}
                     </span>
                   )}
-                  <span className="text-[9.5px] font-sans font-semibold uppercase tracking-[0.06em] text-[#F4F7FB] truncate">
+                  <span className="text-[9.5px] font-sans font-semibold uppercase tracking-[0.04em] md:tracking-[0.06em] text-[#F8FAFC] truncate">
                     {label}
                   </span>
                 </div>
                 {subtitle && (
-                  <div className="text-[10px] font-sans text-[#AAB7C5] leading-tight truncate mt-0.5">
+                  <div className="text-[10px] font-sans text-[#94A3B8] md:text-[#AAB7C5] leading-tight truncate mt-0.5">
                     {subtitle}
                   </div>
                 )}
               </div>
               <div className="flex items-center gap-2 text-left">
-                <div className="w-7 h-7 rounded-md bg-[#11161F] border border-[#AAB7C5]/14 flex items-center justify-center shrink-0">
-                  <Upload className="w-3.5 h-3.5 text-[#AAB7C5]" />
+                <div className="w-7 h-7 rounded-lg bg-[#131A26] md:bg-[#11161F] border border-white/10 md:border-[#AAB7C5]/14 flex items-center justify-center shrink-0">
+                  <Upload className="w-3.5 h-3.5 text-[#7DD3FC] md:text-[#AAB7C5]" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-[11px] font-sans font-medium text-[#F4F7FB] leading-tight truncate">
+                  <div className="text-[11px] font-sans font-medium text-[#F8FAFC] leading-tight truncate">
                     {tapToLoadLabel}
                   </div>
-                  <div className="text-[9.5px] font-mono text-[#AAB7C5] truncate mt-0.5">
-                    {allowPresets ? "Img · Vid · .cube · .lut" : "Img · Vid · RAW"}
+                  <div className="text-[9.5px] font-mono text-[#94A3B8] md:text-[#AAB7C5] truncate mt-0.5">
+                    {allowPresets ? "Photo · .cube · .lut" : "Photo · Video · RAW"}
                   </div>
                 </div>
               </div>
@@ -304,7 +377,7 @@ function MobileMediaTile({
           )}
         </button>
 
-        {/* Sibling Overlay Action Controls (Outside primary <button>, >= 44x44px hit areas) */}
+        {/* Sibling Overlay Action Controls (Mirrored Replace + Clear on both Target and active Reference) */}
         {imageInfo ? (
           <div className="absolute top-0 right-0 z-10 flex items-center">
             <button
@@ -314,7 +387,7 @@ function MobileMediaTile({
               aria-label={`${replaceLabel} ${label}`}
               className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center cursor-pointer group"
             >
-              <span className="w-7 h-7 rounded-md bg-[#0A0C10]/85 backdrop-blur-sm border border-[#AAB7C5]/22 text-[#C9D7E2] group-hover:text-[#F4F7FB] inline-flex items-center justify-center">
+              <span className="w-7 h-7 rounded-full md:rounded-md bg-black/55 md:bg-[#0A0C10]/85 backdrop-blur-md border border-white/15 md:border-[#AAB7C5]/22 text-[#E4E4E7] group-hover:text-white inline-flex items-center justify-center">
                 <RefreshCw className={`w-3 h-3 ${isAnalyzing ? "animate-spin" : ""}`} />
               </span>
             </button>
@@ -325,7 +398,7 @@ function MobileMediaTile({
               aria-label={`${clearLabel} ${label}`}
               className="min-w-[44px] min-h-[44px] -ml-1.5 inline-flex items-center justify-center cursor-pointer group"
             >
-              <span className="w-7 h-7 rounded-md bg-[#0A0C10]/85 backdrop-blur-sm border border-[#AAB7C5]/22 text-[#AAB7C5] group-hover:text-red-400 inline-flex items-center justify-center">
+              <span className="w-7 h-7 rounded-full md:rounded-md bg-black/55 md:bg-[#0A0C10]/85 backdrop-blur-md border border-white/15 md:border-[#AAB7C5]/22 text-[#E4E4E7] group-hover:text-red-400 inline-flex items-center justify-center">
                 <X className="w-3 h-3" />
               </span>
             </button>
@@ -334,11 +407,22 @@ function MobileMediaTile({
           <div className="absolute top-0 right-0 z-10 flex items-center">
             <button
               type="button"
-              onClick={() => onClearImportedLook?.()}
-              aria-label={`${clearLabel} preset`}
+              onClick={() => inputRef.current?.click()}
+              title={`${replaceLabel} ${label}`}
+              aria-label={`${replaceLabel} ${label}`}
               className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center cursor-pointer group"
             >
-              <span className="w-7 h-7 rounded-md bg-[#1C2430] border border-[#AAB7C5]/18 text-[#AAB7C5] group-hover:text-red-400 inline-flex items-center justify-center">
+              <span className="w-7 h-7 rounded-full md:rounded-md bg-black/55 md:bg-[#0A0C10]/85 backdrop-blur-md border border-white/15 md:border-[#AAB7C5]/22 text-[#E4E4E7] group-hover:text-white inline-flex items-center justify-center">
+                <RefreshCw className={`w-3 h-3 ${isAnalyzing ? "animate-spin" : ""}`} />
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onClearImportedLook?.()}
+              aria-label={`${clearLabel} preset`}
+              className="min-w-[44px] min-h-[44px] -ml-1.5 inline-flex items-center justify-center cursor-pointer group"
+            >
+              <span className="w-7 h-7 rounded-full md:rounded-md bg-black/55 md:bg-[#0A0C10]/85 backdrop-blur-md border border-white/15 md:border-[#AAB7C5]/22 text-[#E4E4E7] group-hover:text-red-400 inline-flex items-center justify-center">
                 <X className="w-3 h-3" />
               </span>
             </button>
@@ -349,10 +433,10 @@ function MobileMediaTile({
               <button
                 type="button"
                 onClick={() => onTrySample()}
-                className="min-h-[44px] px-2.5 inline-flex items-center justify-center cursor-pointer group"
+                className="min-h-[44px] px-2 inline-flex items-center justify-center cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] rounded-xl"
               >
-                <span className="px-2 py-1 rounded bg-[#11161F] group-hover:bg-[#1C2430] border border-[#AAB7C5]/18 text-[10px] font-sans font-medium text-[#C9D7E2] group-hover:text-[#F4F7FB] inline-flex items-center gap-1">
-                  <ImageIcon className="w-2.5 h-2.5 text-[#93B8D8]" />
+                <span className="px-2 py-0.5 rounded-full md:rounded bg-[#131A26] md:bg-[#11161F] group-hover:bg-[#1B2536] md:group-hover:bg-[#1C2430] border border-white/12 md:border-[#AAB7C5]/18 text-[9.5px] md:text-[10px] font-sans font-medium text-[#F8FAFC] md:text-[#C9D7E2] inline-flex items-center gap-1">
+                  <ImageIcon className="w-2.5 h-2.5 text-[#38BDF8] md:text-[#93B8D8]" />
                   <span>{sampleLabel}</span>
                 </span>
               </button>
@@ -393,6 +477,13 @@ export default function App() {
   const [mobileExportedKey, setMobileExportedKey] = useState(null);
   const [mobileShowRefSamples, setMobileShowRefSamples] = useState(false);
   const [mobileCopiedHex, setMobileCopiedHex] = useState("");
+  const [isMobileMoreOpen, setIsMobileMoreOpen] = useState(false);
+  const [isMobileInputProfileOpen, setIsMobileInputProfileOpen] = useState(false);
+  const [isMobilePaletteOpen, setIsMobilePaletteOpen] = useState(false);
+  const [isMobileEngineExtrasOpen, setIsMobileEngineExtrasOpen] = useState(false);
+  const [mobileShareFormat, setMobileShareFormat] = useState("kfplug"); // "kfplug" | "cube" | "image"
+  const [isMobileSharingFile, setIsMobileSharingFile] = useState(false);
+  const mobileMoreRef = useRef(null);
   const mobileExportTimerRef = useRef(0);
   const mobileCopyTimerRef = useRef(0);
   const [showSplash, setShowSplash] = useState(() => {
@@ -2922,7 +3013,12 @@ export default function App() {
       liveParamsRef.current = nextParams;
       setGradingParams(nextParams);
       setPresetName(look.name || "Custom Look");
-      setImportedLook({ name: look.name || "Custom Look", source: "looks-drawer" });
+      setImportedLook({
+        name: look.name || "Custom Look",
+        source: "looks-drawer",
+        swatches:
+          Array.isArray(look.swatches) && look.swatches.length >= 2 ? look.swatches : null,
+      });
       setStatusText("Applied Look");
       triggerViewportScan();
       showMobileToast(t("toasts.appliedLook", { name: look.name }));
@@ -3081,6 +3177,25 @@ export default function App() {
     t,
   ]);
 
+  // Mobile (< 768px): close streamlined top-bar "More" popover on outside click / Escape
+  useEffect(() => {
+    if (!isMobileMoreOpen) return undefined;
+    const onPointerDown = (e) => {
+      if (mobileMoreRef.current && !mobileMoreRef.current.contains(e.target)) {
+        setIsMobileMoreOpen(false);
+      }
+    };
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setIsMobileMoreOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isMobileMoreOpen]);
+
   const handleSelectReference = useCallback(
     (file) => loadImageFile(file, "reference"),
     [loadImageFile]
@@ -3162,6 +3277,142 @@ export default function App() {
   );
 
   const hasPreviewImage = Boolean(activePreviewImageUrl) || Boolean(videoEl);
+
+  // Native Web Share API file sharing for mobile Export tab (.kfplug, .cube, or graded PNG)
+  const handleMobileNativeShare = useCallback(
+    async (format = mobileShareFormat) => {
+      if (isMobileSharingFile) return;
+      if (format === "image" && !hasPreviewImage) return;
+      if (format !== "image" && !canExportGrade) return;
+
+      setIsMobileSharingFile(true);
+      try {
+        let blob;
+        let fileName;
+        let mimeType;
+        const rawName = withEngineSuffix(
+          presetName || referenceImage?.baseName || importedLook?.name || "Custom Look",
+          activeEngineId
+        );
+        const safePreset = sanitizeMetadataText(rawName, "Custom Look", 64);
+
+        if (format === "kfplug") {
+          const calibratedParams = applyCalibrationToParams(effectiveParams, calibration);
+          const { generateKfplug } = await import("./utils/kfplugPackager");
+          const res = await generateKfplug(
+            calibratedParams,
+            safePreset,
+            sanitizeMetadataText(authorName, "TFBAGAS", 64),
+            sanitizeMetadataText(description, "", 200),
+            simulateLogInput,
+            activeLut,
+            matchStrength / 100,
+            { skinProtect: skinProtect / 100 }
+          );
+          blob = res.blob;
+          fileName = res.fileName;
+          mimeType = "application/zip";
+        } else if (format === "cube") {
+          const calibratedParams = applyCalibrationToParams(effectiveParams, calibration);
+          const { generateLutFile } = await import("./utils/lutExporter");
+          const res = generateLutFile(
+            calibratedParams,
+            safePreset,
+            "cube",
+            simulateLogInput,
+            mobileCubeSize,
+            activeLut,
+            matchStrength / 100,
+            { skinProtect: skinProtect / 100 }
+          );
+          blob = res.blob;
+          fileName = res.fileName;
+          mimeType = "text/plain";
+        } else {
+          const isVideo = targetImage?.kind === "video" && videoEl;
+          const activeImg = isVideo ? null : targetImage?.imgElement || referenceImage?.imgElement;
+          const w = isVideo ? videoEl.videoWidth : activeImg?.naturalWidth;
+          const h = isVideo ? videoEl.videoHeight : activeImg?.naturalHeight;
+          if (!w || !h) return;
+          const { exportGradedImage } = await import("./utils/imageExporter");
+          const res = await exportGradedImage({
+            source: isVideo ? videoEl : activeImg,
+            width: w,
+            height: h,
+            params: effectiveParams,
+            format: "png",
+            quality: 95,
+            layout: "graded",
+            splitPos: exportSplitPos,
+            simulateLogInput,
+            baseName: withEngineSuffix(
+              targetImage?.baseName || referenceImage?.baseName || presetName || "Target",
+              activeEngineId
+            ),
+            presetTitle: safePreset,
+            engineId: activeEngineId,
+            activeLut,
+            lutMix: matchStrength / 100,
+            returnBlobOnly: true,
+          });
+          blob = res.blob;
+          fileName = res.fileName;
+          mimeType = "image/png";
+        }
+
+        const shareFile = new File([blob], fileName, { type: mimeType });
+        const canShareFile =
+          typeof navigator !== "undefined" &&
+          typeof navigator.share === "function" &&
+          typeof navigator.canShare === "function" &&
+          navigator.canShare({ files: [shareFile] });
+
+        if (canShareFile) {
+          try {
+            navigator.vibrate?.(6);
+          } catch {
+            // ignore
+          }
+          await navigator.share({ files: [shareFile], title: safePreset });
+          setStatusText("Shared!");
+          showMobileToast(`Shared ${fileName}`);
+        } else {
+          downloadBlob(blob, fileName);
+          setStatusText("Exported!");
+          showMobileToast(`Saved ${fileName}`);
+        }
+      } catch (err) {
+        if (err?.name !== "AbortError") {
+          setStatusText("Share Error");
+        }
+      } finally {
+        setIsMobileSharingFile(false);
+      }
+    },
+    [
+      mobileShareFormat,
+      isMobileSharingFile,
+      hasPreviewImage,
+      canExportGrade,
+      presetName,
+      referenceImage,
+      importedLook,
+      activeEngineId,
+      effectiveParams,
+      calibration,
+      authorName,
+      description,
+      simulateLogInput,
+      activeLut,
+      matchStrength,
+      skinProtect,
+      mobileCubeSize,
+      targetImage,
+      videoEl,
+      exportSplitPos,
+      showMobileToast,
+    ]
+  );
 
   // Extract 6 dominant colors from REFERENCE media for 6-Swatch Palette Droplets
   const referencePalette = useMemo(() => {
@@ -3559,8 +3810,10 @@ export default function App() {
   return (
     <div
       className={`min-h-screen ${
-        activeTab === "home" ? "lg:h-screen lg:overflow-hidden" : ""
-      } flex flex-col bg-[#0A0C10] text-[#F4F7FB] font-sans`}
+        activeTab === "home"
+          ? "h-[100dvh] overflow-hidden md:h-auto md:overflow-visible lg:h-screen lg:overflow-hidden"
+          : ""
+      } flex flex-col bg-[#090B10] md:bg-[#0A0C10] text-[#F8FAFC] md:text-[#F4F7FB] font-sans`}
     >
       {/* Hidden Preset Importer (.cube / .kfplug / .ffx / .lut) */}
       <input
@@ -3592,10 +3845,10 @@ export default function App() {
 
       {hasEnteredStudio && (
       <>
-      {/* TIER 1: DESKTOP TOP BAR WITH FLOATING PILL NAV + CLEAN SINGLE-ROW MOBILE HEADER */}
+      {/* TIER 1: DESKTOP TOP BAR WITH FLOATING PILL NAV + STREAMLINED LIQUID GLASS MOBILE HEADER (<768px) */}
       <header
-        className={`${
-          activeTab === "home" ? "relative lg:sticky lg:top-0" : "sticky top-0"
+        className={`mobile-glass-header sticky top-0 ${
+          activeTab === "home" ? "md:relative lg:sticky lg:top-0" : ""
         } z-40 shrink-0 w-full bg-[#0A0C10]/95 backdrop-blur-md border-b border-[#AAB7C5]/14 flex flex-col font-sans ${
           workspacePhase === "hidden"
             ? "opacity-0 pointer-events-none"
@@ -3604,7 +3857,7 @@ export default function App() {
             : "opacity-100"
         }`}
       >
-        <div className="h-12 w-full px-3 sm:px-4 flex items-center justify-between gap-3 sm:gap-3.5">
+        <div className="h-14 md:h-12 w-full px-3 sm:px-4 flex items-center justify-between gap-3 sm:gap-3.5">
         {/* Left: Collapse Left + Original 3D Cube Brand Logo + Live Engine Status */}
         <div className="flex items-center gap-3 sm:gap-3.5 min-w-0">
           {activeTab === "home" && (
@@ -3732,8 +3985,156 @@ export default function App() {
           </button>
         </nav>
 
-        {/* Right: Clean Utility Cluster */}
-        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+        {/* Right: Mobile (< 768px) Streamlined Midnight-Slate & Sky-Cyan Controls (Undo, Redo, More Popover) */}
+        <div ref={mobileMoreRef} className="relative flex md:hidden items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              if (!historyState.canUndo) return;
+              try {
+                navigator.vibrate?.(5);
+              } catch {
+                // ignore
+              }
+              handleUndo();
+            }}
+            disabled={!historyState.canUndo}
+            title={t("paramsCard.undoTitle")}
+            aria-label={t("paramsCard.undoTitle")}
+            className={`mobile-glass-pill min-w-[40px] min-h-[40px] rounded-full inline-flex items-center justify-center transition-all active:scale-[0.94] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+              historyState.canUndo
+                ? "text-[#F8FAFC] hover:text-white cursor-pointer"
+                : "text-[#94A3B8]/35 opacity-55 cursor-not-allowed"
+            }`}
+          >
+            <Undo2 className="w-4 h-4" strokeWidth={1.7} aria-hidden="true" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (!historyState.canRedo) return;
+              try {
+                navigator.vibrate?.(5);
+              } catch {
+                // ignore
+              }
+              handleRedo();
+            }}
+            disabled={!historyState.canRedo}
+            title={t("paramsCard.redoTitle")}
+            aria-label={t("paramsCard.redoTitle")}
+            className={`mobile-glass-pill min-w-[40px] min-h-[40px] rounded-full inline-flex items-center justify-center transition-all active:scale-[0.94] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+              historyState.canRedo
+                ? "text-[#F8FAFC] hover:text-white cursor-pointer"
+                : "text-[#94A3B8]/35 opacity-55 cursor-not-allowed"
+            }`}
+          >
+            <Redo2 className="w-4 h-4" strokeWidth={1.7} aria-hidden="true" />
+          </button>
+
+          <button
+            type="button"
+            data-testid="mobile-more-trigger"
+            aria-label="More options"
+            aria-haspopup="menu"
+            aria-expanded={isMobileMoreOpen}
+            onClick={() => {
+              try {
+                navigator.vibrate?.(5);
+              } catch {
+                // ignore
+              }
+              setIsMobileMoreOpen((v) => !v);
+            }}
+            className={`mobile-glass-pill min-w-[40px] min-h-[40px] rounded-full inline-flex items-center justify-center transition-all active:scale-[0.94] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+              isMobileMoreOpen
+                ? "mobile-glass-active text-[#E0F2FE]"
+                : "text-[#F8FAFC] hover:text-white"
+            }`}
+          >
+            <MoreHorizontal className="w-4 h-4" strokeWidth={1.8} aria-hidden="true" />
+          </button>
+
+          {/* Compact Mobile Liquid Glass More Popover */}
+          {isMobileMoreOpen && (
+            <div
+              role="menu"
+              data-testid="mobile-more-menu"
+              className="mobile-glass-popover studio-popover-enter absolute right-0 top-full mt-2 z-50 w-52 rounded-2xl p-1.5 space-y-0.5 text-left"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setIsMobileMoreOpen(false);
+                  handleLoadStudioSamplePhoto();
+                }}
+                className="w-full min-h-[44px] px-3 rounded-xl flex items-center gap-2.5 text-xs font-medium text-[#F8FAFC] hover:bg-white/[0.08] active:scale-[0.98] transition-all cursor-pointer"
+              >
+                <ImageIcon className="w-4 h-4 text-[#38BDF8] shrink-0" aria-hidden="true" />
+                <span>Load Sample</span>
+              </button>
+
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setIsMobileMoreOpen(false);
+                  setIsGuideOpen(true);
+                }}
+                className="w-full min-h-[44px] px-3 rounded-xl flex items-center gap-2.5 text-xs font-medium text-[#F8FAFC] hover:bg-white/[0.08] active:scale-[0.98] transition-all cursor-pointer"
+              >
+                <HelpCircle className="w-4 h-4 text-[#38BDF8] shrink-0" aria-hidden="true" />
+                <span>How to Use</span>
+              </button>
+
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setIsMobileMoreOpen(false);
+                  setIsShareOpen(true);
+                }}
+                className="w-full min-h-[44px] px-3 rounded-xl flex items-center gap-2.5 text-xs font-medium text-[#F8FAFC] hover:bg-white/[0.08] active:scale-[0.98] transition-all cursor-pointer"
+              >
+                <Share2 className="w-4 h-4 text-[#38BDF8] shrink-0" aria-hidden="true" />
+                <span>Share App Link</span>
+              </button>
+
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setIsMobileMoreOpen(false);
+                  setActiveTab(activeTab === "home" ? "settings" : "home");
+                }}
+                className="w-full min-h-[44px] px-3 rounded-xl flex items-center gap-2.5 text-xs font-medium text-[#F8FAFC] hover:bg-white/[0.08] active:scale-[0.98] transition-all cursor-pointer"
+              >
+                <Settings className="w-4 h-4 text-[#38BDF8] shrink-0" aria-hidden="true" />
+                <span>{activeTab === "home" ? t("nav.settings") : t("nav.workspace")}</span>
+              </button>
+
+              <div className="my-1 border-t border-white/[0.08]" />
+
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setIsMobileMoreOpen(false);
+                  presetImportInputRef.current?.click();
+                }}
+                className="w-full min-h-[44px] px-3 rounded-xl flex items-center gap-2.5 text-xs font-medium text-[#CBD5E1] hover:text-white hover:bg-white/[0.08] active:scale-[0.98] transition-all cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5 text-[#94A3B8] shrink-0" aria-hidden="true" />
+                <span>Import Preset</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Right: Clean Utility Cluster (Tablet & Desktop >= 768px untouched) */}
+        <div className="hidden md:flex items-center gap-1 sm:gap-1.5 shrink-0">
           {/* Mobile Command Palette Trigger (< lg) */}
           <button
             type="button"
@@ -3889,11 +4290,11 @@ export default function App() {
         </div>
       </header>
 
-      {/* WORKSPACE VIEW: Edge-to-Edge 3-Column 100vh on Desktop (Collapsible Inspectors), Sticky-Viewport Stack on <1024px */}
+      {/* WORKSPACE VIEW: Edge-to-Edge 3-Column 100vh on Desktop, Fixed-Split 100dvh Layout on <768px */}
       <div
         className={
           activeTab === "home"
-            ? `flex-1 min-h-0 flex flex-col lg:grid ${desktopGridColsClass} ${
+            ? `flex-1 min-h-0 flex flex-col overflow-hidden md:overflow-visible lg:grid ${desktopGridColsClass} ${
                 workspacePhase === "hidden"
                   ? "opacity-0 pointer-events-none"
                   : workspacePhase === "entering"
@@ -3976,13 +4377,15 @@ export default function App() {
           </Suspense>
         </aside>
 
-        {/* B. CENTER VIEWPORT (Fluid on desktop, Sticky Top on <1024px) */}
+        {/* B. CENTER VIEWPORT (Fluid on desktop, Fixed Non-Scrolling Top Region on <768px for zero scroll shutter) */}
         <section
-          className={`order-1 lg:order-2 sticky top-0 z-20 lg:static lg:z-auto bg-[#07090D] lg:bg-[#0A0C10] flex flex-col lg:min-h-0 lg:overflow-hidden border-b lg:border-b-0 border-[#AAB7C5]/14 ${
+          data-testid="studio-preview-section"
+          className={`order-1 lg:order-2 shrink-0 md:sticky md:top-0 z-30 md:z-20 lg:static lg:z-auto bg-[#090B10] md:bg-[#07090D] lg:bg-[#0A0C10] flex flex-col lg:min-h-0 lg:overflow-hidden border-b border-white/[0.08] md:border-[#AAB7C5]/14 lg:border-b-0 ${
             workspacePhase === "entering" ? "workstation-col-center-enter" : ""
           }`}
         >
           <ComparisonSlider
+            onResetGrade={handleResetParams}
             originalImage={activePreviewImageUrl}
             imageEl={activePreviewImgElement}
             gradedCanvasRef={gradedCanvasRef}
@@ -4173,13 +4576,16 @@ export default function App() {
         </section>
 
         {/* MOBILE / TABLET TOOL DECK (< lg, driven by Fixed Mobile Studio Bottom Tab Bar) */}
-        <div className="order-2 lg:hidden h-auto pb-24 flex flex-col bg-[#0A0C10]">
-          {/* TAB 1: MATCH (01 Target -> 02 Reference, Compact Segmented Solver, Input Profile, Extracted Palette) */}
+        <div
+          data-testid="mobile-tool-deck-scroll"
+          className="order-2 lg:hidden flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:flex-none md:h-auto md:overflow-visible pb-[calc(8rem+env(safe-area-inset-bottom))] md:pb-24 flex flex-col bg-[#090B10] md:bg-[#0A0C10]"
+        >
+          {/* TAB 1: MATCH (Target & Reference, Color Engine + Match Strength, Borderless Accordions on <768px) */}
           {mobileDeckTab === "match" && (
-            <div className="divide-y divide-[#AAB7C5]/14 studio-panel-fade">
-              <div className="p-3 space-y-2.5">
-                {/* Compact 2-Column Media Cards (01 Target First, 02 Reference Second) */}
-                <div className="grid grid-cols-2 gap-2.5">
+            <div className="md:divide-y md:divide-[#AAB7C5]/14 studio-panel-fade">
+              <div className="px-4 pt-4 pb-2 md:p-3 space-y-2.5">
+                {/* 2-Column Media Cards (Target & Reference) */}
+                <div className="grid grid-cols-2 gap-3 md:gap-2.5">
                   <MobileMediaTile
                     stepIndex="01"
                     label={t("dropCard.targetShort")}
@@ -4212,6 +4618,7 @@ export default function App() {
                     onTrySample={() => setMobileShowRefSamples((v) => !v)}
                     importedLook={importedLook}
                     onClearImportedLook={handleClearImportedLook}
+                    onOpenLooks={() => setIsLooksOpen(true)}
                     isAnalyzing={isAnalyzing}
                     errorMessage={referenceError}
                   />
@@ -4219,19 +4626,19 @@ export default function App() {
 
                 {/* Quick Sample Look Strip (when Reference Sample is toggled) */}
                 {mobileShowRefSamples && !referenceImage && (
-                  <div className="pt-2 border-t border-[#AAB7C5]/14 space-y-1.5">
-                    <div className="flex items-center justify-between text-[10px] font-sans font-semibold uppercase tracking-[0.06em] text-[#AAB7C5]">
+                  <div className="pt-3 mt-1 border-t border-white/[0.08] md:border-[#AAB7C5]/14 space-y-2">
+                    <div className="flex items-center justify-between text-[11px] font-sans font-medium text-[#94A3B8]">
                       <span>{t("inspector.sampleReferenceLooks")}</span>
                       <button
                         type="button"
                         onClick={() => setMobileShowRefSamples(false)}
                         aria-label={t("changelogModal.closeAria")}
-                        className="p-1 text-[#AAB7C5] hover:text-[#F4F7FB] cursor-pointer"
+                        className="p-1 text-[#94A3B8] hover:text-[#F8FAFC] cursor-pointer"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
                     </div>
-                    <div className="grid grid-cols-2 gap-1.5">
+                    <div className="grid grid-cols-2 gap-2">
                       {SAMPLE_LOOKS.map((opt) => (
                         <button
                           key={opt.id}
@@ -4240,7 +4647,7 @@ export default function App() {
                             setMobileShowRefSamples(false);
                             handleTryReferenceSample(opt.id);
                           }}
-                          className="min-h-[40px] px-2.5 py-1.5 rounded-md bg-[#11161F] hover:bg-[#1C2430] border border-[#AAB7C5]/14 text-[11px] font-sans font-medium text-[#C9D7E2] text-left truncate cursor-pointer"
+                          className="min-h-[42px] px-3 py-1.5 rounded-xl md:rounded-md bg-[#131A26] md:bg-[#11161F] hover:bg-[#1B2536] md:hover:bg-[#1C2430] border border-white/[0.08] md:border-[#AAB7C5]/14 text-xs font-sans font-medium text-[#F8FAFC] text-left truncate cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8]"
                         >
                           {lang === "id" && SAMPLE_LOOK_LABELS_ID[opt.id]
                             ? SAMPLE_LOOK_LABELS_ID[opt.id]
@@ -4252,6 +4659,237 @@ export default function App() {
                 )}
               </div>
 
+              {/* MOBILE (< 768px): De-Boxed Midnight-Slate & Sky-Cyan Match Workspace */}
+              <div className="md:hidden px-4 pt-3 pb-4 space-y-5">
+                {/* Color Engine & Match Strength (Flat, de-boxed separation) */}
+                <div className="space-y-3">
+                  <div className="flex items-baseline justify-between gap-2 px-0.5">
+                    <div>
+                      <div className="text-[13px] font-sans font-semibold text-[#F8FAFC]">
+                        Color Engine
+                      </div>
+                      <div className="text-[11.5px] font-sans text-[#94A3B8] mt-0.5">
+                        {activeEngineId === "altair_refresh"
+                          ? "Balanced film tone & skin fidelity"
+                          : activeEngineId === "altair"
+                          ? "Filmic highlight roll-off"
+                          : activeEngineId === "v3"
+                          ? "High-contrast stylized curve"
+                          : "Neutral color match"}
+                      </div>
+                    </div>
+                    {liveMetrics.deltaE !== null && (
+                      <span className="text-[11px] font-mono text-[#7DD3FC] tabular-nums shrink-0">
+                        ΔE {liveMetrics.deltaE.toFixed(2)}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Midnight-Slate Segmented Engine Switcher with Sky-Cyan Active Pill */}
+                  <div
+                    role="tablist"
+                    aria-label={t("engineCard.selectorAria")}
+                    className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-[#0E131D] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                  >
+                    {engineOptions.map((eng) => {
+                      const isActive = activeEngineId === eng.id;
+                      const shortName =
+                        eng.id === "altair_refresh"
+                          ? "Altair 4.5"
+                          : `${eng.name} ${eng.versionBadge}`;
+                      return (
+                        <button
+                          key={eng.id}
+                          type="button"
+                          role="tab"
+                          aria-selected={isActive}
+                          onClick={() => {
+                            try {
+                              navigator.vibrate?.(5);
+                            } catch {
+                              // ignore
+                            }
+                            handleEngineChange(eng.id);
+                          }}
+                          className={`min-h-[38px] px-2 py-1 rounded-xl text-center transition-all cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+                            isActive
+                              ? "mobile-glass-active text-[#F8FAFC] font-semibold"
+                              : "bg-transparent text-[#94A3B8] hover:text-[#F8FAFC] font-medium"
+                          }`}
+                        >
+                          <div className="text-[12px] font-sans leading-tight truncate">
+                            {shortName}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Thick iOS Control-Center Master Match Strength Pill Slider */}
+                  <LiquidGlassSlider
+                    paramKey="matchStrength"
+                    label="Match Strength"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={Math.min(100, matchStrength)}
+                    defaultValue={100}
+                    isBipolar={false}
+                    decimals={0}
+                    valueSuffix="%"
+                    onChange={handleMatchStrengthChange}
+                    onDragChange={handleControlDragChange}
+                  />
+                </div>
+
+                {/* Borderless Tonal Collapsible Accordions (Midnight-Slate Harmony) */}
+                <div className="space-y-2.5">
+                  {/* Accordion 1: Input Profile */}
+                  <div className="rounded-2xl bg-[#0E131D] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] overflow-hidden">
+                    <button
+                      type="button"
+                      data-testid="mobile-accordion-input-profile"
+                      aria-expanded={isMobileInputProfileOpen}
+                      onClick={() => {
+                        try {
+                          navigator.vibrate?.(5);
+                        } catch {
+                          // ignore
+                        }
+                        setIsMobileInputProfileOpen((v) => !v);
+                      }}
+                      className="w-full min-h-[50px] px-4 py-3 flex items-center justify-between gap-2 text-left cursor-pointer active:bg-white/[0.03] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#38BDF8]"
+                    >
+                      <span className="text-[13px] font-sans font-medium text-[#F8FAFC]">
+                        {t("dropCard.inputProfileTitle")}
+                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[11px] font-mono text-[#7DD3FC]">
+                          {getLogProfile(simulateLogInput).shortLabel}
+                        </span>
+                        <ChevronDown
+                          className={`studio-chevron w-4 h-4 text-[#94A3B8] ${
+                            isMobileInputProfileOpen ? "rotate-180 text-[#38BDF8]" : "rotate-0"
+                          }`}
+                          aria-hidden="true"
+                        />
+                      </div>
+                    </button>
+                    <div
+                      className="studio-collapse-grid"
+                      data-expanded={isMobileInputProfileOpen}
+                      aria-hidden={!isMobileInputProfileOpen}
+                    >
+                      <div className="studio-collapse-inner">
+                        <div className="px-4 pb-4 pt-1">
+                          <InputProfileDropdown
+                            value={simulateLogInput}
+                            onChange={handleTargetInputProfileChange}
+                            ariaLabel={t("dropCard.targetInputProfileAria")}
+                            compact
+                            className="w-full"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Accordion 2: Extracted Palette */}
+                  <div className="rounded-2xl bg-[#0E131D] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] overflow-hidden">
+                    <button
+                      type="button"
+                      data-testid="mobile-accordion-palette"
+                      aria-expanded={isMobilePaletteOpen}
+                      onClick={() => {
+                        try {
+                          navigator.vibrate?.(5);
+                        } catch {
+                          // ignore
+                        }
+                        setIsMobilePaletteOpen((v) => !v);
+                      }}
+                      className="w-full min-h-[50px] px-4 py-3 flex items-center justify-between gap-2 text-left cursor-pointer active:bg-white/[0.03] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#38BDF8]"
+                    >
+                      <span className="text-[13px] font-sans font-medium text-[#F8FAFC]">
+                        {t("inspector.extractedPalette")}
+                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="inline-flex items-center gap-1" aria-hidden="true">
+                          {(Array.isArray(referencePalette) && referencePalette.length > 0
+                            ? referencePalette.slice(0, 5)
+                            : ["#1E293B", "#334155", "#475569", "#334155", "#1E293B"]
+                          ).map((hex, i) => (
+                            <span
+                              key={`${hex}-${i}`}
+                              className="w-3 h-3 rounded-full"
+                              style={{ backgroundColor: hex }}
+                            />
+                          ))}
+                        </span>
+                        <ChevronDown
+                          className={`studio-chevron w-4 h-4 text-[#94A3B8] ${
+                            isMobilePaletteOpen ? "rotate-180 text-[#38BDF8]" : "rotate-0"
+                          }`}
+                          aria-hidden="true"
+                        />
+                      </div>
+                    </button>
+                    <div
+                      className="studio-collapse-grid"
+                      data-expanded={isMobilePaletteOpen}
+                      aria-hidden={!isMobilePaletteOpen}
+                    >
+                      <div className="studio-collapse-inner">
+                        <div className="px-4 pb-4 pt-1 space-y-2">
+                          {mobileCopiedHex && (
+                            <div className="inline-flex items-center gap-1 text-[11px] font-mono text-[#7DD3FC]">
+                              <Check className="w-3 h-3 text-[#38BDF8]" aria-hidden="true" />
+                              <span>{t("toasts.copiedHex", { hex: mobileCopiedHex })}</span>
+                            </div>
+                          )}
+                          <div className="grid grid-cols-6 gap-1.5">
+                            {Array.isArray(referencePalette) && referencePalette.length > 0
+                              ? referencePalette.slice(0, 6).map((hex, idx) => (
+                                  <button
+                                    key={`${hex}-${idx}`}
+                                    type="button"
+                                    onClick={() => handleMobileSwatchCopy(hex)}
+                                    title={t("dropCard.copyHexTitle", { hex })}
+                                    aria-label={t("dropCard.copyHexTitle", { hex })}
+                                    className="min-h-[46px] flex flex-col items-center justify-center gap-1 py-1 rounded-xl hover:bg-[#38BDF8]/10 active:scale-95 transition-[transform,background-color] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8]"
+                                  >
+                                    <span
+                                      className="w-5 h-5 rounded-full"
+                                      style={{
+                                        backgroundColor: hex,
+                                        boxShadow:
+                                          "inset 0 1px 1px rgba(255,255,255,0.3), 0 2px 5px rgba(0,0,0,0.6)",
+                                      }}
+                                    />
+                                    <span className="text-[8.5px] font-mono tabular-nums text-[#94A3B8] tracking-tight">
+                                      {String(hex).toUpperCase()}
+                                    </span>
+                                  </button>
+                                ))
+                              : Array.from({ length: 6 }).map((_, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="flex flex-col items-center gap-1 py-1"
+                                  >
+                                    <span className="w-5 h-5 rounded-full bg-white/[0.06]" />
+                                    <span className="text-[9px] font-mono text-[#64748B]">-</span>
+                                  </div>
+                                ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* TABLET (768px..1023px): Preserved Original Match Controls */}
+              <div className="hidden md:block divide-y divide-[#AAB7C5]/14">
               {/* Compact Single-Row Segmented Solver Tier Bar (Altair 4.5 · Altair 4.0 · Polaris 3.5) */}
               <div className="p-3 space-y-2">
                 <div className="flex items-center justify-between">
@@ -4364,12 +5002,345 @@ export default function App() {
                       ))}
                 </div>
               </div>
+              </div>
             </div>
           )}
 
-          {/* TAB 2: ADJUST (Match Intensity, Primary, Color Wheels, Hue 6V) */}
+          {/* TAB 2: ADJUST (Mobile <768px Liquid Glass Basic/Wheels/Curves + Thick Glass Sliders; Tablet preserved) */}
           {mobileDeckTab === "adjust" && (
-            <div className="divide-y divide-[#AAB7C5]/14 studio-panel-fade">
+            <div className="studio-panel-fade">
+              {/* MOBILE (< 768px): De-Boxed Midnight-Slate & Sky-Cyan Adjust Workspace */}
+              <div className="md:hidden px-4 pt-4 pb-4 space-y-5">
+                {/* Midnight-Slate Segmented Sub-Tab Switcher: Basic | Wheels | Curves */}
+                <div
+                  role="tablist"
+                  aria-label="Adjust sub-tabs"
+                  data-testid="mobile-adjust-subtabs"
+                  className="rounded-2xl bg-[#0E131D] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] p-1 grid grid-cols-3 gap-1"
+                >
+                  {[
+                    { id: "primary", label: "Basic", modified: isPrimaryModified },
+                    { id: "wheels", label: "Wheels", modified: isWheelsModified },
+                    { id: "hue6v", label: "Curves", modified: isHue6VModified },
+                  ].map((tab) => {
+                    const active = gradingTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        onClick={() => {
+                          try {
+                            navigator.vibrate?.(5);
+                          } catch {
+                            // ignore
+                          }
+                          setGradingTab(tab.id);
+                        }}
+                        className={`min-h-[38px] px-2 rounded-xl text-[12px] font-sans inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+                          active
+                            ? "mobile-glass-active text-[#F8FAFC] font-semibold"
+                            : "bg-transparent text-[#94A3B8] hover:text-[#F8FAFC] font-medium"
+                        }`}
+                      >
+                        <span>{tab.label}</span>
+                        {tab.modified && (
+                          <span
+                            aria-hidden="true"
+                            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                              active
+                                ? "bg-[#38BDF8] shadow-[0_0_6px_rgba(56,189,248,0.85)]"
+                                : "bg-[#38BDF8]/80"
+                            }`}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Quiet Sub-Header: Double-Tap Hint + Midnight-Slate Reset Pill */}
+                <div className="flex items-center justify-between gap-2 px-0.5">
+                  <span className="text-[11px] font-sans text-[#94A3B8]">
+                    Double-tap any bar to reset
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        navigator.vibrate?.(8);
+                      } catch {
+                        // ignore
+                      }
+                      handleResetParams();
+                    }}
+                    className="min-h-[34px] inline-flex items-center gap-1.5 px-3 rounded-full bg-[#131A26] hover:bg-[#1B2536] border border-white/[0.1] text-[11px] font-sans font-medium text-[#F8FAFC] active:scale-[0.96] transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8]"
+                  >
+                    <RotateCcw className="w-3 h-3 text-[#38BDF8]" aria-hidden="true" />
+                    <span>{t("paramsCard.reset")}</span>
+                  </button>
+                </div>
+
+                {/* SUB-TAB 1: BASIC (Flat Stack of Thick iOS Control-Center Bipolar Pill Sliders) */}
+                {gradingTab === "primary" && (
+                  <div className="space-y-5 studio-panel-fade">
+                    <div className="space-y-2">
+                      {primaryControls.map((ctrl) => (
+                        <LiquidGlassSlider
+                          key={ctrl.key}
+                          paramKey={ctrl.key}
+                          label={ctrl.label}
+                          min={ctrl.min}
+                          max={ctrl.max}
+                          step={ctrl.step}
+                          value={ctrl.value}
+                          defaultValue={ctrl.defaultValue}
+                          isBipolar={ctrl.isBipolar}
+                          showPlusSign={ctrl.showPlusSign}
+                          decimals={2}
+                          onChange={ctrl.onChange}
+                          onDragChange={handleControlDragChange}
+                        />
+                      ))}
+                    </div>
+
+                    {/* Borderless Tonal Accordion: Engine & Tone Roll-Off */}
+                    <div className="rounded-2xl bg-[#0E131D] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] overflow-hidden">
+                      <button
+                        type="button"
+                        aria-expanded={isMobileEngineExtrasOpen}
+                        onClick={() => {
+                          try {
+                            navigator.vibrate?.(5);
+                          } catch {
+                            // ignore
+                          }
+                          setIsMobileEngineExtrasOpen((v) => !v);
+                        }}
+                        className="w-full min-h-[50px] px-4 py-3 flex items-center justify-between gap-2 text-left cursor-pointer active:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#38BDF8]"
+                      >
+                        <span className="text-[13px] font-sans font-medium text-[#F8FAFC]">
+                          Tone Roll-Off &amp; Skin
+                        </span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[11px] font-mono text-[#7DD3FC]">
+                            Skin {skinProtect}%
+                          </span>
+                          <ChevronDown
+                            className={`studio-chevron w-4 h-4 text-[#94A3B8] ${
+                              isMobileEngineExtrasOpen ? "rotate-180 text-[#38BDF8]" : "rotate-0"
+                            }`}
+                            aria-hidden="true"
+                          />
+                        </div>
+                      </button>
+                      <div
+                        className="studio-collapse-grid"
+                        data-expanded={isMobileEngineExtrasOpen}
+                        aria-hidden={!isMobileEngineExtrasOpen}
+                      >
+                        <div className="studio-collapse-inner">
+                          <div className="px-3 pb-3 pt-1 space-y-2">
+                            {activeEngineId === "altair_refresh" && (
+                              <>
+                                <LiquidGlassSlider
+                                  paramKey="sourceNormalize"
+                                  label={t("inspector.sourceNormalize")}
+                                  min={0}
+                                  max={100}
+                                  step={1}
+                                  value={sourceNormalize}
+                                  defaultValue={100}
+                                  isBipolar={false}
+                                  decimals={0}
+                                  valueSuffix="%"
+                                  onChange={handleSourceNormalizeChange}
+                                  onDragChange={handleControlDragChange}
+                                />
+                                <LiquidGlassSlider
+                                  paramKey="styleSigma"
+                                  label={t("inspector.styleSigma")}
+                                  min={0}
+                                  max={100}
+                                  step={1}
+                                  value={styleSigma}
+                                  defaultValue={100}
+                                  isBipolar={false}
+                                  decimals={0}
+                                  valueSuffix="%"
+                                  onChange={handleStyleSigmaChange}
+                                  onDragChange={handleControlDragChange}
+                                />
+                              </>
+                            )}
+                            <LiquidGlassSlider
+                              paramKey="skinProtect"
+                              label={t("inspector.skinProtect")}
+                              min={0}
+                              max={100}
+                              step={5}
+                              value={skinProtect}
+                              defaultValue={75}
+                              isBipolar={false}
+                              decimals={0}
+                              valueSuffix="%"
+                              onChange={handleSkinProtectChange}
+                              onDragChange={handleControlDragChange}
+                            />
+                            <LiquidGlassSlider
+                              paramKey="pivot"
+                              label="Contrast Pivot"
+                              min={0.1}
+                              max={0.9}
+                              step={0.02}
+                              value={gradingParams.pivot ?? DEFAULT_PARAMS.pivot}
+                              defaultValue={DEFAULT_PARAMS.pivot}
+                              isBipolar={false}
+                              decimals={2}
+                              onChange={handleParamChange}
+                              onDragChange={handleControlDragChange}
+                            />
+                            <LiquidGlassSlider
+                              paramKey="shadowTint"
+                              label="Shadow Tint"
+                              min={-1.0}
+                              max={1.0}
+                              step={0.02}
+                              value={shadowTintVal}
+                              defaultValue={0.0}
+                              isBipolar
+                              decimals={2}
+                              onChange={handleShadowTintChange}
+                              onDragChange={handleControlDragChange}
+                            />
+                            <LiquidGlassSlider
+                              paramKey="highlightTint"
+                              label="Highlight Tint"
+                              min={-1.0}
+                              max={1.0}
+                              step={0.02}
+                              value={highlightTintVal}
+                              defaultValue={0.0}
+                              isBipolar
+                              decimals={2}
+                              onChange={handleHighlightTintChange}
+                              onDragChange={handleControlDragChange}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SUB-TAB 2: WHEELS (De-Boxed Midnight-Slate Surface + Thick Cyan Pill Sliders) */}
+                {gradingTab === "wheels" && (
+                  <div className="space-y-4 studio-panel-fade">
+                    <div className="rounded-2xl bg-[#0E131D] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] p-4 grid grid-cols-3 gap-2">
+                      <ColorWheel
+                        title="Lift"
+                        rgb={liftRgb}
+                        onChange={handleLiftChange}
+                        onReset={handleLiftReset}
+                        onDragChange={handleControlDragChange}
+                      />
+                      <ColorWheel
+                        title="Gamma"
+                        rgb={gammaRgb}
+                        onChange={handleGammaChange}
+                        onReset={handleGammaReset}
+                        onDragChange={handleControlDragChange}
+                      />
+                      <ColorWheel
+                        title="Gain"
+                        rgb={gainRgb}
+                        onChange={handleGainChange}
+                        onReset={handleGainReset}
+                        onDragChange={handleControlDragChange}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between px-0.5 pb-1">
+                        <span className="text-[12px] font-sans font-medium text-[#94A3B8]">
+                          {t("inspector.masterLevelsOffset")}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleResetAllWheels}
+                          disabled={!isWheelsModified}
+                          className={`text-[11px] font-sans font-medium ${
+                            isWheelsModified
+                              ? "text-[#7DD3FC] hover:text-[#BAE6FD] cursor-pointer"
+                              : "text-[#64748B] cursor-not-allowed"
+                          }`}
+                        >
+                          {t("inspector.resetWheels")}
+                        </button>
+                      </div>
+                      <LiquidGlassSlider
+                        paramKey="liftLevel"
+                        label="Lift Level"
+                        min={-1.0}
+                        max={1.0}
+                        step={0.02}
+                        value={blacksVal}
+                        defaultValue={0.0}
+                        isBipolar
+                        decimals={2}
+                        onChange={handleBlacksChange}
+                        onDragChange={handleControlDragChange}
+                      />
+                      <LiquidGlassSlider
+                        paramKey="gammaLevel"
+                        label="Gamma Level"
+                        min={-1.0}
+                        max={1.0}
+                        step={0.02}
+                        value={gammaLevelVal}
+                        defaultValue={0.0}
+                        isBipolar
+                        decimals={2}
+                        onChange={handleGammaLevelChange}
+                        onDragChange={handleControlDragChange}
+                      />
+                      <LiquidGlassSlider
+                        paramKey="gainLevel"
+                        label="Gain Level"
+                        min={-1.0}
+                        max={1.0}
+                        step={0.02}
+                        value={whitesVal}
+                        defaultValue={0.0}
+                        isBipolar
+                        decimals={2}
+                        onChange={handleWhitesChange}
+                        onDragChange={handleControlDragChange}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* SUB-TAB 3: CURVES (6-Vector HSL Precision Curves) */}
+                {gradingTab === "hue6v" && (
+                  <div className="rounded-2xl bg-[#0E131D] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] p-3.5 space-y-3 studio-panel-fade">
+                    <Hue6VPanel
+                      hueShift={gradingParams.hueShift || IDENTITY_HUE6}
+                      hueSat={gradingParams.hueSat || IDENTITY_HUE6}
+                      hueLuma={gradingParams.hueLuma || IDENTITY_HUE6}
+                      skinProtect={skinProtect}
+                      skinSafe={liveMetrics.skinSafe}
+                      onChangeHueVector={handleHue6VChange}
+                      onResetHue6V={handleResetHue6V}
+                      onResetHueChannel={handleResetHueChannel}
+                      onDragChange={handleControlDragChange}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* TABLET (768px..1023px): Preserved Original Adjust Workspace */}
+              <div className="hidden md:block divide-y divide-[#AAB7C5]/14">
               {/* Match Intensity & Skin Protect + Reset */}
               <div className="p-3 space-y-2.5">
                 <div className="flex items-center justify-between gap-2 pb-1">
@@ -4698,28 +5669,386 @@ export default function App() {
                   </div>
                 )}
               </div>
+              </div>
             </div>
           )}
 
-          {/* TAB 3: SCOPES (Full Mobile Width Live ProScopes) */}
-          <div className={mobileDeckTab === "scopes" ? "w-full studio-panel-fade" : "hidden"}>
-            <Suspense fallback={null}>
-              <ProScopes
-                ref={mobileScopeRef}
-                hasMedia={hasPreviewImage}
-                isDragging={isScopeFrozen}
-                isVideoPlaying={isVideoPlaying}
-                isDesktopRealtime={isDesktopRealtime}
-                isCollapsed={mobileDeckTab !== "scopes"}
-                skinSafe={liveMetrics.skinSafe}
-                skinProtect={skinProtect}
-              />
-            </Suspense>
+          {/* TAB 3: SCOPES (Borderless Midnight-Slate ProScopes on <768px) */}
+          <div
+            className={
+              mobileDeckTab === "scopes"
+                ? "w-full px-4 pt-4 md:px-0 md:pt-0 studio-panel-fade"
+                : "hidden"
+            }
+          >
+            <div className="rounded-2xl bg-[#0E131D] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] md:shadow-none md:rounded-none md:bg-transparent overflow-hidden">
+              <Suspense fallback={null}>
+                <ProScopes
+                  ref={mobileScopeRef}
+                  hasMedia={hasPreviewImage}
+                  isDragging={isScopeFrozen}
+                  isVideoPlaying={isVideoPlaying}
+                  isDesktopRealtime={isDesktopRealtime}
+                  isCollapsed={mobileDeckTab !== "scopes"}
+                  skinSafe={liveMetrics.skinSafe}
+                  skinProtect={skinProtect}
+                />
+              </Suspense>
+            </div>
           </div>
 
-          {/* TAB 4: EXPORT (.kfplug, .cube, .ffx, Export Promo Card) */}
+          {/* TAB 4: EXPORT (Mobile <768px De-Boxed Midnight-Slate & Sky-Cyan + Native Web Share; Tablet preserved) */}
           {mobileDeckTab === "export" && (
-            <div className="divide-y divide-[#AAB7C5]/14 studio-panel-fade">
+            <div className="studio-panel-fade">
+              {/* MOBILE (< 768px): De-Boxed Midnight-Slate & Sky-Cyan Export Workspace */}
+              <div className="md:hidden px-4 pt-4 pb-4 space-y-6">
+                {/* Look / Preset Name Input */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2 px-0.5">
+                    <label
+                      htmlFor="mobile-glass-preset-name"
+                      className="text-[12px] font-sans font-medium text-[#94A3B8]"
+                    >
+                      Look Name
+                    </label>
+                    <span className="text-[10.5px] font-mono text-[#7DD3FC]/80 truncate max-w-[190px]">
+                      {withEngineSuffix(
+                        presetName || referenceImage?.baseName || importedLook?.name || "Custom Look",
+                        activeEngineId
+                      ).replace(/[^a-zA-Z0-9._-]+/g, "_")}.kfplug
+                    </span>
+                  </div>
+                  <input
+                    id="mobile-glass-preset-name"
+                    type="text"
+                    value={presetName}
+                    onChange={(e) => setPresetName(e.target.value)}
+                    placeholder={referenceImage?.baseName || importedLook?.name || "Custom Look"}
+                    className="w-full h-11 px-3.5 rounded-2xl bg-[#0E131D] border border-white/[0.1] text-[13px] text-[#F8FAFC] placeholder:text-[#64748B] focus:outline-none focus:ring-2 focus:ring-[#38BDF8]"
+                  />
+                  {isNeutralGrade && hasLook && (
+                    <div className="px-3 py-2 rounded-xl bg-amber-500/10 text-[11px] text-amber-200">
+                      {t("exportCard.neutralWarning")}
+                    </div>
+                  )}
+                </div>
+
+                {/* 1. Primary Mobile Formats (.kfplug, .cube LUT, Graded Image) */}
+                <div data-testid="mobile-export-primary" className="space-y-3">
+                  <div className="text-[12px] font-sans font-medium text-[#94A3B8] px-0.5">
+                    Mobile Formats
+                  </div>
+
+                  {/* Primary .kfplug CTA */}
+                  <button
+                    type="button"
+                    disabled={!canExportGrade || isExporting}
+                    onClick={() => handleMobileExportTrigger("kfplug", handleExport)}
+                    className={`w-full min-h-[48px] px-4 rounded-2xl text-[13px] font-sans font-semibold inline-flex items-center justify-between transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+                      !canExportGrade || isExporting
+                        ? "bg-[#0E131D] text-[#64748B] cursor-not-allowed"
+                        : "bg-[#F8FAFC] hover:bg-white text-[#090B10] shadow-[0_6px_20px_rgba(56,189,248,0.16)] cursor-pointer"
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      {mobileExportedKey === "kfplug" ? (
+                        <Check className="w-4 h-4" aria-hidden="true" />
+                      ) : (
+                        <Download className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+                      )}
+                      <span>
+                        {mobileExportedKey === "kfplug"
+                          ? t("exportCard.exported")
+                          : t("exportCard.exportToKfplug")}
+                      </span>
+                    </span>
+                    <span className="text-[11px] font-mono opacity-65">.kfplug</span>
+                  </button>
+
+                  {/* .cube 3D LUT with Sky-Cyan Resolution Pills */}
+                  <div className="rounded-2xl bg-[#0E131D] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] p-3.5 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[13px] font-sans font-medium text-[#F8FAFC]">
+                        3D LUT (.cube)
+                      </span>
+                      <div className="inline-flex items-center gap-1 p-0.5 rounded-full bg-[#131A26] border border-white/[0.08]">
+                        {[17, 33, 65].map((sz) => (
+                          <button
+                            key={sz}
+                            type="button"
+                            onClick={() => {
+                              try {
+                                navigator.vibrate?.(5);
+                              } catch {
+                                // ignore
+                              }
+                              setMobileCubeSize(sz);
+                            }}
+                            className={`min-w-[38px] min-h-[32px] px-2.5 rounded-full text-[11px] font-mono tabular-nums inline-flex items-center justify-center cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+                              mobileCubeSize === sz
+                                ? "mobile-glass-active text-[#F8FAFC] font-semibold"
+                                : "text-[#94A3B8] hover:text-[#F8FAFC]"
+                            }`}
+                          >
+                            {sz}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!canExportGrade || isExporting}
+                      onClick={() =>
+                        handleMobileExportTrigger("cube", () => handleExportCube(mobileCubeSize))
+                      }
+                      className={`w-full min-h-[44px] px-3 rounded-xl text-[12.5px] font-sans font-medium inline-flex items-center justify-center gap-2 transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+                        !canExportGrade || isExporting
+                          ? "bg-[#131A26] text-[#64748B] cursor-not-allowed"
+                          : "bg-[#131A26] hover:bg-[#1B2536] border border-white/[0.09] text-[#F8FAFC] cursor-pointer"
+                      }`}
+                    >
+                      {mobileExportedKey === "cube" ? (
+                        <Check className="w-4 h-4 text-[#38BDF8]" aria-hidden="true" />
+                      ) : (
+                        <Download className="w-4 h-4 text-[#38BDF8]" aria-hidden="true" />
+                      )}
+                      <span>
+                        {mobileExportedKey === "cube"
+                          ? t("exportCard.exported")
+                          : `Export .cube (${mobileCubeSize}³)`}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Export Graded Image / Frame */}
+                  <button
+                    type="button"
+                    disabled={!hasPreviewImage || isSavingFrame}
+                    onClick={() =>
+                      handleMobileExportTrigger("gradedImage", () =>
+                        handleSaveImage({
+                          format: "png",
+                          quality: 95,
+                          layout: "graded",
+                          splitPos: exportSplitPos,
+                        })
+                      )
+                    }
+                    className={`w-full min-h-[48px] px-4 rounded-2xl text-[13px] font-sans font-medium inline-flex items-center justify-between transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+                      !hasPreviewImage || isSavingFrame
+                        ? "bg-[#0E131D] text-[#64748B] cursor-not-allowed"
+                        : "bg-[#0E131D] hover:bg-[#131A26] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] text-[#F8FAFC] cursor-pointer"
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-2.5">
+                      {mobileExportedKey === "gradedImage" ? (
+                        <Check className="w-4 h-4 text-[#38BDF8]" aria-hidden="true" />
+                      ) : (
+                        <ImageIcon className="w-4 h-4 text-[#38BDF8]" aria-hidden="true" />
+                      )}
+                      <span>
+                        {isSavingFrame
+                          ? t("savePopover.rendering")
+                          : mobileExportedKey === "gradedImage"
+                          ? "Graded Frame Saved"
+                          : "Export Graded Frame"}
+                      </span>
+                    </span>
+                    <span className="text-[11px] font-mono text-[#7DD3FC]">PNG</span>
+                  </button>
+                </div>
+
+                {/* 2. Native Share File */}
+                <div
+                  data-testid="mobile-native-share-card"
+                  className="rounded-2xl bg-[#0E131D] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] p-4 space-y-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-sans font-semibold text-[#F8FAFC]">
+                        Share File
+                      </div>
+                      <div className="text-[11px] font-sans text-[#94A3B8] truncate">
+                        Send to KeyFlow, Messages, or Files
+                      </div>
+                    </div>
+                    <div className="inline-flex items-center gap-0.5 p-0.5 rounded-full bg-[#131A26] border border-white/[0.08] shrink-0">
+                      {[
+                        { id: "kfplug", label: ".kfplug" },
+                        { id: "cube", label: ".cube" },
+                        { id: "image", label: "PNG" },
+                      ].map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setMobileShareFormat(opt.id)}
+                          className={`min-h-[30px] px-2.5 rounded-full text-[10.5px] font-mono cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+                            mobileShareFormat === opt.id
+                              ? "mobile-glass-active text-[#F8FAFC] font-semibold"
+                              : "text-[#94A3B8] hover:text-[#F8FAFC]"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    data-testid="mobile-share-file-btn"
+                    disabled={
+                      isMobileSharingFile ||
+                      (mobileShareFormat === "image" ? !hasPreviewImage : !canExportGrade)
+                    }
+                    onClick={() => handleMobileNativeShare(mobileShareFormat)}
+                    className={`w-full min-h-[46px] px-4 rounded-xl text-[13px] font-sans font-semibold inline-flex items-center justify-center gap-2 transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+                      isMobileSharingFile ||
+                      (mobileShareFormat === "image" ? !hasPreviewImage : !canExportGrade)
+                        ? "bg-[#131A26] text-[#64748B] cursor-not-allowed"
+                        : "bg-[#38BDF8]/18 hover:bg-[#38BDF8]/26 border border-[#38BDF8]/40 text-[#F8FAFC] shadow-[inset_0_1px_0_rgba(186,230,253,0.3)] cursor-pointer"
+                    }`}
+                  >
+                    <Share2 className="w-4 h-4 text-[#7DD3FC]" aria-hidden="true" />
+                    <span>
+                      {isMobileSharingFile
+                        ? "Preparing File..."
+                        : `Share ${
+                            mobileShareFormat === "image"
+                              ? "Graded PNG"
+                              : `.${mobileShareFormat}`
+                          }`}
+                    </span>
+                  </button>
+                </div>
+
+                {/* 3. Secondary Desktop & Bundles (.ffx, Promo Card, Full .ZIP Bundle) */}
+                <div data-testid="mobile-export-secondary" className="space-y-3">
+                  <div className="text-[12px] font-sans font-medium text-[#94A3B8] px-0.5">
+                    Desktop &amp; Bundles
+                  </div>
+
+                  {/* Export .ffx (AE Lumetri) */}
+                  <button
+                    type="button"
+                    disabled={!canExportGrade || isExporting}
+                    onClick={() => handleMobileExportTrigger("ffx", handleExportFfx)}
+                    className={`w-full min-h-[46px] px-4 rounded-2xl text-[13px] font-sans font-medium inline-flex items-center justify-between transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+                      !canExportGrade || isExporting
+                        ? "bg-[#0E131D] text-[#64748B] cursor-not-allowed"
+                        : "bg-[#0E131D] hover:bg-[#131A26] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] text-[#F8FAFC] cursor-pointer"
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-2.5">
+                      {mobileExportedKey === "ffx" ? (
+                        <Check className="w-4 h-4 text-[#38BDF8]" aria-hidden="true" />
+                      ) : (
+                        <Download className="w-4 h-4 text-[#94A3B8]" aria-hidden="true" />
+                      )}
+                      <span>
+                        {mobileExportedKey === "ffx"
+                          ? t("exportCard.exportedFfx")
+                          : "After Effects Lumetri"}
+                      </span>
+                    </span>
+                    <span className="text-[11px] font-mono text-[#7DD3FC]">.ffx</span>
+                  </button>
+
+                  {/* Promo Card with Sky-Cyan Aspect Pills */}
+                  <div className="rounded-2xl bg-[#0E131D] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] p-3.5 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[13px] font-sans font-medium text-[#F8FAFC]">
+                        {t("savePopover.promoCard")}
+                      </span>
+                      <div className="inline-flex items-center gap-1 p-0.5 rounded-full bg-[#131A26] border border-white/[0.08]">
+                        {["16:9", "9:16", "1:1"].map((ar) => (
+                          <button
+                            key={ar}
+                            type="button"
+                            onClick={() => setMobilePromoAspect(ar)}
+                            className={`min-h-[30px] px-2.5 rounded-full text-[10.5px] font-mono tabular-nums cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+                              mobilePromoAspect === ar
+                                ? "mobile-glass-active text-[#F8FAFC] font-semibold"
+                                : "text-[#94A3B8] hover:text-[#F8FAFC]"
+                            }`}
+                          >
+                            {ar}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!hasPreviewImage || isSavingFrame}
+                      onClick={() =>
+                        handleMobileExportTrigger("promo", () =>
+                          handleSaveImage({
+                            format: "png",
+                            quality: 95,
+                            layout: "promo",
+                            splitPos: exportSplitPos,
+                            promoAspect: mobilePromoAspect,
+                            includeQr: true,
+                            qrMode: "grade",
+                          })
+                        )
+                      }
+                      className={`w-full min-h-[44px] px-3 rounded-xl text-[12.5px] font-sans font-medium inline-flex items-center justify-center gap-2 transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+                        !hasPreviewImage || isSavingFrame
+                          ? "bg-[#131A26] text-[#64748B] cursor-not-allowed"
+                          : "bg-[#131A26] hover:bg-[#1B2536] border border-white/[0.09] text-[#F8FAFC] cursor-pointer"
+                      }`}
+                    >
+                      {mobileExportedKey === "promo" ? (
+                        <Check className="w-4 h-4 text-[#38BDF8]" aria-hidden="true" />
+                      ) : (
+                        <QrCode className="w-4 h-4 text-[#38BDF8]" aria-hidden="true" />
+                      )}
+                      <span>
+                        {isSavingFrame
+                          ? t("savePopover.rendering")
+                          : mobileExportedKey === "promo"
+                          ? t("inspector.promoCardSaved")
+                          : t("inspector.exportPromoCard")}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Full .ZIP Bundle + Video / More */}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      disabled={!canExportGrade || isExporting}
+                      onClick={() =>
+                        handleMobileExportTrigger("zip", () => handleExportZipPack(mobileCubeSize))
+                      }
+                      className={`min-h-[46px] px-3 rounded-2xl text-[12px] font-sans font-medium inline-flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+                        !canExportGrade || isExporting
+                          ? "bg-[#0E131D] text-[#64748B] cursor-not-allowed"
+                          : "bg-[#0E131D] hover:bg-[#131A26] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] text-[#F8FAFC] cursor-pointer"
+                      }`}
+                    >
+                      {mobileExportedKey === "zip" ? (
+                        <Check className="w-3.5 h-3.5 text-[#38BDF8]" aria-hidden="true" />
+                      ) : (
+                        <Package className="w-3.5 h-3.5 text-[#38BDF8]" aria-hidden="true" />
+                      )}
+                      <span>Full .ZIP Pack</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsExportModalOpen(true)}
+                      className="min-h-[46px] px-3 rounded-2xl bg-[#0E131D] hover:bg-[#131A26] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] text-[12px] font-sans font-medium text-[#CBD5E1] hover:text-[#F8FAFC] inline-flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8]"
+                    >
+                      <Film className="w-3.5 h-3.5 text-[#94A3B8]" aria-hidden="true" />
+                      <span>Video &amp; More</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* TABLET (768px..1023px): Preserved Original Export Workspace */}
+              <div className="hidden md:block divide-y divide-[#AAB7C5]/14">
               {/* Preset Name Input (Flush Section) */}
               <div className="p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
@@ -4927,6 +6256,7 @@ export default function App() {
                   <Package className="w-3.5 h-3.5 text-[#93B8D8]" />
                   <span>{t("inspector.moreExportOptions")}</span>
                 </button>
+              </div>
               </div>
             </div>
           )}
@@ -5631,68 +6961,31 @@ export default function App() {
 
       {/* TIER 2: FLOATING LIQUID-GLASS MOBILE STUDIO BOTTOM PILL (< lg when in Studio) */}
       {activeTab === "home" && workspacePhase !== "hidden" && (
-        <nav
-          aria-label="Mobile studio navigation"
-          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 lg:hidden w-[calc(100%-24px)] max-w-[400px] mb-[env(safe-area-inset-bottom)] rounded-full bg-[#11161F]/65 backdrop-blur-xl backdrop-saturate-150 border border-[#C9D7E2]/20 shadow-[0_14px_34px_rgba(3,6,12,0.65),inset_0_1px_0_rgba(244,247,251,0.18)] p-1"
-        >
-          <div className="grid grid-cols-5 items-center gap-0.5">
-            {[
-              { id: "match", label: t("inspector.tabMatch"), icon: Cpu },
-              { id: "adjust", label: t("inspector.tabAdjust"), icon: Sliders },
-              { id: "scopes", label: t("inspector.tabScopes"), icon: Activity },
-              { id: "looks", label: t("nav.looks"), icon: Bookmark },
-              { id: "export", label: t("inspector.tabExport"), icon: Package },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              const isActive =
-                tab.id === "looks"
-                  ? isLooksOpen
-                  : !isLooksOpen && mobileDeckTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  aria-current={isActive ? "page" : undefined}
-                  onClick={() => {
-                    if (tab.id === "looks") {
-                      setIsLooksOpen((v) => !v);
-                    } else {
-                      setIsLooksOpen(false);
-                      setMobileDeckTab(tab.id);
-                    }
-                  }}
-                  className={`relative min-h-[48px] rounded-full flex flex-col items-center justify-center gap-1 px-1 py-1.5 font-sans text-[10.5px] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#7FA3C2] ${
-                    isActive
-                      ? "text-[#F4F7FB] font-semibold"
-                      : "text-[#AAB7C5] hover:text-[#F4F7FB] font-medium"
-                  }`}
-                >
-                  {isActive && (
-                    <motion.span
-                      layoutId="mobile-glass-pill"
-                      aria-hidden="true"
-                      transition={{
-                        type: "spring",
-                        stiffness: 400,
-                        damping: 32,
-                      }}
-                      className="pointer-events-none absolute inset-0 rounded-full bg-[#7FA3C2]/20 border border-[#C9D7E2]/25"
-                    />
-                  )}
-                  <Icon
-                    className={`relative z-10 w-[17px] h-[17px] shrink-0 ${
-                      isActive ? "text-[#93B8D8]" : "text-[#AAB7C5]"
-                    }`}
-                    strokeWidth={1.5}
-                  />
-                  <span className="relative z-10 leading-none truncate">
-                    {tab.label}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </nav>
+        <LiquidGlassTabBar
+          ariaLabel="Mobile studio navigation"
+          activeTabId={isLooksOpen ? "looks" : mobileDeckTab}
+          tabs={[
+            { id: "match", label: t("inspector.tabMatch"), icon: Cpu },
+            { id: "adjust", label: t("inspector.tabAdjust"), icon: Sliders },
+            { id: "scopes", label: t("inspector.tabScopes"), icon: Activity },
+            { id: "looks", label: t("nav.looks"), icon: Bookmark },
+            { id: "export", label: t("inspector.tabExport"), icon: Package },
+          ]}
+          onPreviewTab={(tabId) => {
+            if (tabId !== "looks") {
+              setIsLooksOpen(false);
+              setMobileDeckTab(tabId);
+            }
+          }}
+          onCommitTab={(tabId, { isTap }) => {
+            if (tabId === "looks") {
+              setIsLooksOpen((prev) => (isTap ? !prev : true));
+            } else {
+              setIsLooksOpen(false);
+              setMobileDeckTab(tabId);
+            }
+          }}
+        />
       )}
 
       {/* SECONDARY VIEWS (Settings / About / Support): Aligned 2-Column Layout without Jump-to-Section */}

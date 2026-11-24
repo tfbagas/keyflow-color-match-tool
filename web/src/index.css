@@ -221,6 +221,141 @@
   -webkit-backdrop-filter: blur(14px);
 }
 
+/* Apple iOS 26 Liquid Glass Mobile Studio Bottom Pill (Midnight-Slate #090B10 & Sky-Cyan #38BDF8) */
+.liquid-glass-dock {
+  background: rgba(14, 19, 29, 0.62);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.24),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.06),
+    0 16px 36px -8px rgba(0, 0, 0, 0.80);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.liquid-glass-lens-core {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, calc(0.18 + var(--lg-press, 0) * 0.11)) 0%,
+      rgba(255, 255, 255, calc(0.04 + var(--lg-press, 0) * 0.05)) 100%
+    ),
+    radial-gradient(
+      120% 140% at 50% 0%,
+      rgba(56, 189, 248, calc(0.11 + var(--lg-press, 0) * 0.14)) 0%,
+      rgba(9, 11, 16, 0.22) 76%
+    );
+  box-shadow:
+    inset 0 1px 1.5px rgba(255, 255, 255, calc(0.45 + var(--lg-press, 0) * 0.28)),
+    inset 0 -1px 1.5px rgba(56, 189, 248, calc(0.24 + var(--lg-press, 0) * 0.26)),
+    0 0 calc(16px + var(--lg-press, 0) * 10px) -3px rgba(56, 189, 248, calc(0.26 + var(--lg-press, 0) * 0.26)),
+    0 calc(6px + var(--lg-press, 0) * 6px) calc(16px + var(--lg-press, 0) * 10px) -4px rgba(0, 0, 0, calc(0.52 + var(--lg-press, 0) * 0.24));
+  pointer-events: none;
+}
+
+.liquid-glass-lens-rim {
+  padding: 1.5px;
+  background: linear-gradient(
+    168deg,
+    rgba(255, 255, 255, 0.74) 0%,
+    rgba(224, 242, 254, 0.34) 24%,
+    rgba(56, 189, 248, 0.58) 58%,
+    rgba(125, 211, 252, 0.30) 82%,
+    rgba(255, 255, 255, 0.48) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.liquid-glass-lens-caustic {
+  background:
+    radial-gradient(
+      74% 115% at var(--caustic-x, 50%) 14%,
+      rgba(255, 255, 255, calc(0.14 + var(--lg-press, 0) * 0.32)) 0%,
+      rgba(56, 189, 248, calc(0.08 + var(--lg-press, 0) * 0.22)) 38%,
+      transparent 72%
+    ),
+    radial-gradient(
+      60% 62% at calc(100% - var(--caustic-x, 50%)) 96%,
+      rgba(56, 189, 248, calc(0.10 + var(--lg-press, 0) * 0.26)) 0%,
+      transparent 70%
+    );
+  pointer-events: none;
+}
+
+/* Shared Mobile Midnight-Slate & Sky-Cyan Liquid Glass Surface System (< 768px only) */
+@media (max-width: 767px) {
+  .mobile-glass-header {
+    background: rgba(9, 11, 16, 0.78) !important;
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.12),
+      0 8px 24px -12px rgba(0, 0, 0, 0.76);
+  }
+
+  .mobile-glass-surface {
+    background: rgba(14, 19, 29, 0.66);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.20),
+      inset 0 -1px 0 0 rgba(255, 255, 255, 0.05),
+      0 12px 28px -10px rgba(0, 0, 0, 0.76);
+  }
+
+  .mobile-glass-card {
+    background: #0E131D;
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .mobile-glass-pill {
+    background: rgba(19, 26, 38, 0.76);
+    backdrop-filter: blur(18px) saturate(175%);
+    -webkit-backdrop-filter: blur(18px) saturate(175%);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.18),
+      0 6px 18px -6px rgba(0, 0, 0, 0.66);
+  }
+
+  .mobile-glass-active {
+    background: linear-gradient(
+      180deg,
+      rgba(56, 189, 248, 0.24) 0%,
+      rgba(56, 189, 248, 0.09) 100%
+    );
+    border-color: rgba(56, 189, 248, 0.56);
+    box-shadow:
+      inset 0 1px 1px rgba(255, 255, 255, 0.40),
+      inset 0 -1px 1px rgba(56, 189, 248, 0.22),
+      0 0 18px -4px rgba(56, 189, 248, 0.44);
+  }
+
+  .mobile-glass-popover {
+    background: rgba(14, 19, 29, 0.90);
+    backdrop-filter: blur(24px) saturate(185%);
+    -webkit-backdrop-filter: blur(24px) saturate(185%);
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
+      0 20px 44px -10px rgba(0, 0, 0, 0.86);
+  }
+}
+
 /* Tactile Hairline Switch (Optical Shutter Detent) */
 .nle-switch {
   transition:
@@ -665,6 +800,53 @@
 .studio-drawer-right[data-state="closing"] {
   animation: studioDrawerRightOut var(--dur-drawer-out) var(--ease-aperture) both;
   pointer-events: none;
+}
+
+/* Looks Library Responsive Sheet (Mobile Bottom Sheet -> Desktop Centered Modal) */
+@keyframes looksSheetUpIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 32px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes looksSheetDownOut {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(0, 28px, 0);
+  }
+}
+
+.looks-sheet-panel {
+  position: relative;
+  will-change: transform, opacity;
+}
+
+.looks-sheet-panel[data-state="open"] {
+  animation: looksSheetUpIn 280ms var(--ease-shutter) both;
+}
+
+.looks-sheet-panel[data-state="closing"] {
+  animation: looksSheetDownOut 160ms var(--ease-aperture) both;
+  pointer-events: none;
+}
+
+@media (min-width: 768px) {
+  .looks-sheet-panel[data-state="open"] {
+    animation: aperture-dialog-in var(--dur-modal-in) var(--ease-shutter) both;
+  }
+
+  .looks-sheet-panel[data-state="closing"] {
+    animation: aperture-dialog-out var(--dur-modal-out) var(--ease-aperture) both;
+  }
 }
 
 /* Header Popovers, Dropdowns & Hover Tooltips (190ms Optical Unfold) */
@@ -1328,6 +1510,7 @@
   .studio-backdrop,
   .studio-modal,
   .studio-drawer-right,
+  .looks-sheet-panel,
   .studio-popover,
   .studio-popover-enter,
   .studio-toast,

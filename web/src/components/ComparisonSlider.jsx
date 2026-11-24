@@ -134,6 +134,7 @@ export default function ComparisonSlider({
   onOpenLooks = null,
   onImportPreset = null,
   onLoadSampleReference = null,
+  onResetGrade = null,
 }) {
   const { t } = useLanguage();
   const [completedScanKey, setCompletedScanKey] = useState(0);
@@ -827,7 +828,7 @@ export default function ComparisonSlider({
     dismissedStep2ForImage !== currentTargetKey;
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col bg-[#07090D] lg:bg-[#0A0C10] select-none">
+    <div className="flex-1 min-h-0 flex flex-col bg-[#090B10] md:bg-[#07090D] lg:bg-[#0A0C10] select-none">
       {/* Full-Bleed Neutral Cinema Viewport Well (Compact Sticky Stage on <lg) */}
       <div
         ref={containerRef}
@@ -844,7 +845,7 @@ export default function ComparisonSlider({
             ? { touchAction: "none", userSelect: "none" }
             : undefined
         }
-        className={`relative isolate w-full h-[36vh] min-h-[220px] max-h-[300px] lg:h-auto lg:flex-1 lg:min-h-0 lg:max-h-none bg-[#07090D] lg:bg-[#0A0C10] overflow-hidden flex items-center justify-center ${
+        className={`relative isolate w-full h-[34dvh] min-h-[210px] max-h-[270px] md:h-[36vh] md:min-h-[220px] md:max-h-[300px] lg:h-auto lg:flex-1 lg:min-h-0 lg:max-h-none bg-[#090B10] md:bg-[#07090D] lg:bg-[#0A0C10] overflow-hidden flex items-center justify-center ${
           isEyedropperActive && hasImage
             ? "cursor-crosshair"
             : loupeZoom > 0 && hasImage
@@ -1148,63 +1149,130 @@ export default function ComparisonSlider({
           )}
         </AnimatePresence>
 
-        {/* Contextual Step-02 Guidance Pill when Target is loaded and grade is still neutral */}
+        {/* Contextual Step-02 Guidance Overlay when Target is loaded and grade is still neutral */}
         <AnimatePresence>
           {showStep2GuidancePill && !pixelReadout && zoom <= 1.001 && (
-            <motion.div
-              key="studio-step02-guidance"
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              onPointerDown={(e) => e.stopPropagation()}
-              className="absolute top-3 left-1/2 -translate-x-1/2 z-30 max-w-[94%] inline-flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 px-3 py-1.5 rounded-full bg-[#11161F]/95 backdrop-blur-md border border-[#AAB7C5]/18 shadow-[0_8px_24px_rgba(0,0,0,0.68)] text-[11px]"
-            >
-              <span className="font-mono tabular-nums text-[10px] font-semibold text-[#93B8D8]">
-                02
-              </span>
-              <span className="text-[#F4F7FB] font-sans font-medium">
-                {t("preview.step02Guidance")}
-              </span>
-              {onLoadSampleReference && (
-                <button
-                  type="button"
-                  onClick={onLoadSampleReference}
-                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#F4F7FB] hover:bg-[#FBFDFF] text-[#0A0C10] font-sans font-semibold text-[10.5px] cursor-pointer transition-colors"
-                >
-                  <ImageIcon className="w-2.5 h-2.5" />
-                  <span>{t("preview.sampleRefBtn")}</span>
-                </button>
-              )}
-              {onOpenLooks && (
-                <button
-                  type="button"
-                  onClick={onOpenLooks}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#0A0C10]/70 hover:bg-[#1C2430] border border-[#AAB7C5]/18 text-[#C9D7E2] hover:text-[#F4F7FB] font-sans font-medium text-[10.5px] cursor-pointer transition-colors"
-                >
-                  <Bookmark className="w-2.5 h-2.5 text-[#93B8D8]" />
-                  <span>{t("nav.looks")}</span>
-                </button>
-              )}
-              {onImportPreset && (
-                <button
-                  type="button"
-                  onClick={onImportPreset}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#0A0C10]/70 hover:bg-[#1C2430] border border-[#AAB7C5]/18 text-[#C9D7E2] hover:text-[#F4F7FB] font-mono text-[10px] cursor-pointer transition-colors"
-                >
-                  <Upload className="w-2.5 h-2.5 text-[#AAB7C5]" />
-                  <span>.cube / .lut</span>
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setDismissedStep2ForImage(currentTargetKey)}
-                aria-label={t("preview.dismissGuidanceAria")}
-                className="p-0.5 rounded-full text-[#AAB7C5] hover:text-[#F4F7FB] hover:bg-[#1C2430] cursor-pointer transition-colors"
+            <>
+              {/* Mobile (< 768px): Compact Bottom-Anchored Liquid Glass Banner (Never overlaps center split handle) */}
+              <motion.div
+                key="studio-step02-guidance-mobile"
+                data-testid="mobile-step02-banner"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="md:hidden absolute inset-x-3 bottom-3 z-20 rounded-2xl px-3.5 py-2.5 bg-[#0E131D]/88 backdrop-blur-xl border border-white/14 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_12px_28px_rgba(0,0,0,0.78)]"
               >
-                <X className="w-3 h-3" />
-              </button>
-            </motion.div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-mono tabular-nums text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-[#38BDF8]/18 text-[#7DD3FC] border border-[#38BDF8]/40 shrink-0">
+                      02
+                    </span>
+                    <span className="text-[11.5px] font-sans font-medium text-[#F8FAFC] truncate">
+                      Add Reference or LUT
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDismissedStep2ForImage(currentTargetKey)}
+                    aria-label={t("preview.dismissGuidanceAria")}
+                    className="w-6 h-6 rounded-full bg-white/[0.06] hover:bg-white/[0.14] text-[#94A3B8] hover:text-white inline-flex items-center justify-center shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8]"
+                  >
+                    <X className="w-3 h-3" aria-hidden="true" />
+                  </button>
+                </div>
+
+                <div className="mt-2 grid grid-cols-3 gap-1.5">
+                  {onLoadSampleReference && (
+                    <button
+                      type="button"
+                      onClick={onLoadSampleReference}
+                      className="min-h-[32px] px-2 rounded-xl bg-[#F8FAFC] hover:bg-white text-[#090B10] font-sans font-semibold text-[11px] inline-flex items-center justify-center gap-1 cursor-pointer active:scale-[0.97] transition-all"
+                    >
+                      <ImageIcon className="w-3 h-3 shrink-0" aria-hidden="true" />
+                      <span className="truncate">Sample</span>
+                    </button>
+                  )}
+                  {onOpenLooks && (
+                    <button
+                      type="button"
+                      onClick={onOpenLooks}
+                      className="min-h-[32px] px-2 rounded-xl bg-[#38BDF8]/16 hover:bg-[#38BDF8]/24 border border-[#38BDF8]/40 text-[#E0F2FE] font-sans font-medium text-[11px] inline-flex items-center justify-center gap-1 cursor-pointer active:scale-[0.97] transition-all"
+                    >
+                      <Bookmark className="w-3 h-3 text-[#38BDF8] shrink-0" aria-hidden="true" />
+                      <span className="truncate">{t("nav.looks")}</span>
+                    </button>
+                  )}
+                  {onImportPreset && (
+                    <button
+                      type="button"
+                      onClick={onImportPreset}
+                      className="min-h-[32px] px-2 rounded-xl bg-[#131A26]/90 hover:bg-[#1A2435] border border-white/14 text-[#CBD5E1] font-mono text-[10px] inline-flex items-center justify-center gap-1 cursor-pointer active:scale-[0.97] transition-all"
+                    >
+                      <Upload className="w-3 h-3 text-[#94A3B8] shrink-0" aria-hidden="true" />
+                      <span className="truncate">.cube/.lut</span>
+                    </button>
+                  )}
+                </div>
+              </motion.div>
+
+              {/* Desktop / Tablet (>= 768px): Preserved Original Top Pill */}
+              <motion.div
+                key="studio-step02-guidance"
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="hidden md:inline-flex absolute top-3 left-1/2 -translate-x-1/2 z-30 max-w-[94%] flex-wrap items-center justify-center gap-1.5 sm:gap-2 px-3 py-1.5 rounded-full bg-[#11161F]/95 backdrop-blur-md border border-[#AAB7C5]/18 shadow-[0_8px_24px_rgba(0,0,0,0.68)] text-[11px]"
+              >
+                <span className="font-mono tabular-nums text-[10px] font-semibold text-[#93B8D8]">
+                  02
+                </span>
+                <span className="text-[#F4F7FB] font-sans font-medium">
+                  {t("preview.step02Guidance")}
+                </span>
+                {onLoadSampleReference && (
+                  <button
+                    type="button"
+                    onClick={onLoadSampleReference}
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#F4F7FB] hover:bg-[#FBFDFF] text-[#0A0C10] font-sans font-semibold text-[10.5px] cursor-pointer transition-colors"
+                  >
+                    <ImageIcon className="w-2.5 h-2.5" />
+                    <span>{t("preview.sampleRefBtn")}</span>
+                  </button>
+                )}
+                {onOpenLooks && (
+                  <button
+                    type="button"
+                    onClick={onOpenLooks}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#0A0C10]/70 hover:bg-[#1C2430] border border-[#AAB7C5]/18 text-[#C9D7E2] hover:text-[#F4F7FB] font-sans font-medium text-[10.5px] cursor-pointer transition-colors"
+                  >
+                    <Bookmark className="w-2.5 h-2.5 text-[#93B8D8]" />
+                    <span>{t("nav.looks")}</span>
+                  </button>
+                )}
+                {onImportPreset && (
+                  <button
+                    type="button"
+                    onClick={onImportPreset}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#0A0C10]/70 hover:bg-[#1C2430] border border-[#AAB7C5]/18 text-[#C9D7E2] hover:text-[#F4F7FB] font-mono text-[10px] cursor-pointer transition-colors"
+                  >
+                    <Upload className="w-2.5 h-2.5 text-[#AAB7C5]" />
+                    <span>.cube / .lut</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setDismissedStep2ForImage(currentTargetKey)}
+                  aria-label={t("preview.dismissGuidanceAria")}
+                  className="p-0.5 rounded-full text-[#AAB7C5] hover:text-[#F4F7FB] hover:bg-[#1C2430] cursor-pointer transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </motion.div>
+            </>
           )}
         </AnimatePresence>
 
@@ -1513,12 +1581,125 @@ export default function ComparisonSlider({
         </div>
       </div>
 
-      {/* Mobile (<lg) Thumb-Friendly Essential Control Bar + View Popover */}
+      {/* Mobile (<lg) Control Bar + View Popover: Unified Midnight-Slate & Sky-Cyan HUD on <768px, Classic Bar on md..lg */}
       <div
         ref={mobileViewRef}
-        className="lg:hidden relative z-30 shrink-0 bg-[#0D1118] border-t border-[#AAB7C5]/14 px-2.5 pt-1.5 pb-2"
+        className="lg:hidden relative z-30 shrink-0 bg-[#090B10] md:bg-[#0D1118] md:border-t md:border-[#AAB7C5]/14 px-4 py-2 md:px-2.5 md:pt-1.5 md:pb-2"
       >
-        <div className="flex items-center justify-between gap-1 min-h-[44px] overflow-x-auto no-scrollbar">
+        {/* Mobile (< 768px): Single Cohesive Liquid Glass Segmented Pill (Split | Graded | Hold) + Icon-Only Reset */}
+        <div
+          data-testid="mobile-preview-glass-capsule"
+          className="md:hidden flex items-center justify-center gap-2"
+        >
+          <div className="mobile-glass-surface rounded-full p-1 inline-flex items-center gap-0.5">
+            {[
+              { id: "split", label: "Split" },
+              { id: "result", label: "Graded" },
+            ].map((item) => {
+              const isSelected = !isHoldingBefore && mode === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => {
+                    try {
+                      navigator.vibrate?.(5);
+                    } catch {
+                      // ignore
+                    }
+                    onModeChange?.(item.id);
+                  }}
+                  className={`relative min-h-[36px] px-4 rounded-full text-[12px] font-sans whitespace-nowrap cursor-pointer select-none inline-flex items-center justify-center transition-colors active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+                    isSelected
+                      ? "text-[#F8FAFC] font-semibold"
+                      : "text-[#94A3B8] hover:text-[#F8FAFC] font-medium"
+                  }`}
+                >
+                  {isSelected && (
+                    <motion.span
+                      layoutId="mobile-preview-mode-pill"
+                      transition={{ type: "spring", stiffness: 440, damping: 32 }}
+                      aria-hidden="true"
+                      className="mobile-glass-active pointer-events-none absolute inset-0 rounded-full border"
+                    />
+                  )}
+                  <span className="relative z-10">{item.label}</span>
+                </button>
+              );
+            })}
+
+            {/* Unified Hold Before Segment */}
+            <button
+              type="button"
+              disabled={!hasImage}
+              onMouseDown={() => {
+                if (!hasImage) return;
+                try {
+                  navigator.vibrate?.(5);
+                } catch {
+                  // ignore
+                }
+                setIsHoldingBefore(true);
+              }}
+              onMouseUp={() => setIsHoldingBefore(false)}
+              onMouseLeave={() => setIsHoldingBefore(false)}
+              onTouchStart={() => {
+                if (!hasImage) return;
+                try {
+                  navigator.vibrate?.(5);
+                } catch {
+                  // ignore
+                }
+                setIsHoldingBefore(true);
+              }}
+              onTouchEnd={() => setIsHoldingBefore(false)}
+              onTouchCancel={() => setIsHoldingBefore(false)}
+              onContextMenu={(e) => e.preventDefault()}
+              className={`relative min-h-[36px] px-4 rounded-full text-[12px] font-sans whitespace-nowrap select-none inline-flex items-center justify-center gap-1.5 transition-colors touch-none active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+                !hasImage
+                  ? "text-[#94A3B8]/35 cursor-not-allowed"
+                  : isHoldingBefore
+                  ? "mobile-glass-active border text-[#F8FAFC] font-semibold cursor-pointer"
+                  : "text-[#94A3B8] hover:text-[#F8FAFC] font-medium cursor-pointer"
+              }`}
+            >
+              <Eye className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <span>Hold</span>
+            </button>
+          </div>
+
+          {/* Clean Icon-Only Reset Glass Button */}
+          <button
+            type="button"
+            data-testid="mobile-preview-reset-btn"
+            onClick={() => {
+              try {
+                navigator.vibrate?.(6);
+              } catch {
+                // ignore
+              }
+              if (onResetGrade) {
+                onResetGrade();
+              } else {
+                onRematch?.();
+              }
+            }}
+            disabled={!onResetGrade && (!canRematch || isAnalyzing)}
+            aria-label="Reset adjustments"
+            title="Reset adjustments"
+            className={`mobile-glass-pill min-h-[44px] min-w-[44px] rounded-full inline-flex items-center justify-center transition-all active:scale-[0.94] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38BDF8] ${
+              !onResetGrade && (!canRematch || isAnalyzing)
+                ? "opacity-40 text-[#94A3B8] cursor-not-allowed"
+                : "text-[#CBD5E1] hover:text-[#38BDF8] cursor-pointer"
+            }`}
+          >
+            <RotateCcw className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />
+          </button>
+        </div>
+
+        {/* Tablet (768px..1023px): Preserved Original Control Bar */}
+        <div className="hidden md:flex items-center justify-between gap-1 min-h-[44px] overflow-x-auto no-scrollbar">
           {/* Primary Essentials: Split, Graded, Hold Before, View */}
           <div className="flex items-center gap-1 shrink-0">
             <button
@@ -1646,7 +1827,7 @@ export default function ComparisonSlider({
 
         {/* Compact View Inspection Popover */}
         {isMobileViewOpen && (
-          <div className="absolute left-2 right-2 sm:left-auto sm:right-2 sm:w-[300px] top-full mt-1.5 z-50 rounded-xl bg-[#11161F]/98 backdrop-blur-xl border border-[#AAB7C5]/18 shadow-[0_18px_42px_rgba(0,0,0,0.88)] p-2.5 space-y-2.5">
+          <div className="mobile-glass-popover absolute left-2 right-2 sm:left-auto sm:right-2 sm:w-[300px] top-full mt-1.5 z-50 rounded-2xl md:rounded-xl bg-[#11161F]/98 backdrop-blur-xl border border-[#AAB7C5]/18 shadow-[0_18px_42px_rgba(0,0,0,0.88)] p-2.5 space-y-2.5">
             <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-[#AAB7C5]/14">
               <span className="text-[10px] font-sans font-semibold uppercase tracking-[0.08em] text-[#AAB7C5]">
                 {t("preview.viewAndInspection")}

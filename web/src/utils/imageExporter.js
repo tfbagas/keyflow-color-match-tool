@@ -1274,6 +1274,7 @@ export async function exportGradedImage({
   qrUrl = "",
   activeLut = null,
   lutMix = 1.0,
+  returnBlobOnly = false,
 }) {
   if (!source || !width || !height) {
     throw new Error("No valid source media to export.");
@@ -1381,6 +1382,10 @@ export async function exportGradedImage({
       ? "split"
       : "graded";
   const fileName = `${cleanBase}-${suffix}.${normalizedFormat}`;
+
+  if (returnBlobOnly) {
+    return { blob, fileName, mime, width: outW, height: outH, sizeBytes: blob.size };
+  }
 
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
